@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="theme-color" content="#16a34a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="SAFEMAINT - Sistema de Gestão de Manutenção e Segurança">
+    <link rel="manifest" href="/manifest.json">
+    
+    <title>VALE SAFEMAINT | A VIDA EM PRIMEIRO LUGAR</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Fix for mobile signature scrolling */
+      canvas {
+        touch-action: none;
+      }
+      /* CAIXA ALTA GLOBAL */
+      * {
+        text-transform: uppercase !important;
+      }
+      body {
+        background-color: #111827; /* Gray-900 */
+      }
+      
+      /* Animação personalizada para o slogan */
+      @keyframes heartbeat {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.8; }
+      }
+      .animate-heartbeat {
+        animation: heartbeat 2s infinite ease-in-out;
+      }
+
+      /* ANIMAÇÕES DE LOGIN */
+      @keyframes slideDiagonal {
+        0% { background-position: 0 0; }
+        100% { background-position: 40px 40px; }
+      }
+      .animate-slide-diagonal {
+        animation: slideDiagonal 3s linear infinite;
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translate3d(0, 40px, 0);
+        }
+        to {
+          opacity: 1;
+          transform: translate3d(0, 0, 0);
+        }
+      }
+      .animate-fade-in-up {
+        animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+      }
+
+      @keyframes slideInRight {
+        from {
+          opacity: 0;
+          transform: translateX(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      .animate-slide-in-right {
+        animation: slideInRight 0.5s ease-out forwards;
+        opacity: 0; /* Começa invisível */
+      }
+
+      /* BARRA DE ROLAGEM FLUTUANTE / INDUSTRIAL */
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #1f2937; /* Gray-800 */
+        border-radius: 5px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #059669; /* Green-600 */
+        border-radius: 5px;
+        border: 2px solid #1f2937;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #10b981; /* Green-500 */
+      }
+      
+      /* Efeito de vidro para sobreposições */
+      .glass-panel {
+        background: rgba(17, 24, 39, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.10.1",
+        "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+        "react/": "https://aistudiocdn.com/react@^19.2.1/",
+        "react": "https://aistudiocdn.com/react@^19.2.1",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <script>
+      // Service Worker Registration for Offline Capability
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('SW registered: ', registration);
+          }).catch(registrationError => {
+            console.log('SW registration failed: ', registrationError);
+          });
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

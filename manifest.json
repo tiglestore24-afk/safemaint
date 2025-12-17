@@ -1,0 +1,16 @@
+
+{
+  "short_name": "SAFEMAINT",
+  "name": "SAFEMAINT - Gestão à Vista Online",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3096/3096991.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#16a34a",
+  "background_color": "#111827"
+}
