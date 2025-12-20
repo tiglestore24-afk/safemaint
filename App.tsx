@@ -1,31 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './pages/Dashboard';
-import { ARTEmergencial } from './pages/ARTEmergencial';
-import { ARTAtividade } from './pages/ARTAtividade';
-import { Checklist } from './pages/Checklist';
-import { Schedule } from './pages/Schedule';
-import { TVSchedule } from './pages/TVSchedule';
-import { Archive } from './pages/Archive';
-import { Trash } from './pages/Trash';
-import { Report } from './pages/Report';
-import { Settings } from './pages/Settings';
-import { Chat } from './pages/Chat';
-import { Login } from './pages/Login';
-import { OMManagement } from './pages/OMManagement';
-import { StorageService } from './services/storage';
+import { Sidebar } from './components/Sidebar.tsx';
+import { Dashboard } from './pages/Dashboard.tsx';
+import { ARTEmergencial } from './pages/ARTEmergencial.tsx';
+import { ARTAtividade } from './pages/ARTAtividade.tsx';
+import { Checklist } from './pages/Checklist.tsx';
+import { Schedule } from './pages/Schedule.tsx';
+import { TVSchedule } from './pages/TVSchedule.tsx';
+import { Archive } from './pages/Archive.tsx';
+import { Trash } from './pages/Trash.tsx';
+import { Report } from './pages/Report.tsx';
+import { Settings } from './pages/Settings.tsx';
+import { Chat } from './pages/Chat.tsx';
+import { Login } from './pages/Login.tsx';
+import { OMManagement } from './pages/OMManagement.tsx';
+import { StorageService } from './services/storage.ts';
 
 const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check local storage for auth token
     const auth = localStorage.getItem('safemaint_auth');
     if (auth === 'true') {
       setIsAuthenticated(true);
-      // Sync data from Supabase in background
       StorageService.initialSync();
     }
   }, []);
@@ -38,6 +36,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem('safemaint_auth');
     localStorage.removeItem('safemaint_user');
+    localStorage.removeItem('safemaint_role');
     setIsAuthenticated(false);
   };
 
@@ -46,7 +45,6 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/login" element={!isAuthenticated ? <Login onLogin={handleLogin} /> : <Navigate to="/dashboard" />} />
         
-        {/* Protected Routes Wrapper */}
         <Route 
           path="/*" 
           element={
@@ -54,7 +52,6 @@ const App: React.FC = () => {
               <div className="flex h-screen overflow-hidden bg-gray-200">
                 <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} onLogout={handleLogout} />
                 
-                {/* Main Content Area with Industrial Texture Background */}
                 <main 
                     className="flex-1 overflow-auto p-4 md:p-8 pt-16 md:pt-8 w-full relative"
                     style={{
