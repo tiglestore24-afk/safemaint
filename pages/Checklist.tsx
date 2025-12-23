@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { CommonHeader } from '../components/CommonHeader';
 import { SignatureSection } from '../components/SignatureSection';
@@ -124,7 +125,8 @@ export const Checklist: React.FC = () => {
     // Finalizar Manutenção e Redirecionar para Relatório
     if (maintenanceId && status === 'ATIVO') {
         // Encerra a manutenção pois o checklist finaliza o fluxo operacional
-        StorageService.completeMaintenance(maintenanceId, 'FINALIZADO');
+        // Fix: Removed incorrect second argument 'FINALIZADO'
+        StorageService.completeMaintenance(maintenanceId);
         
         // Preparar dados para o Relatório Unificado
         const reportData = {

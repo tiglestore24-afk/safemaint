@@ -32,18 +32,16 @@ export interface ARTRiskItem {
 
 export interface RegisteredART {
   id: string;
-  code: string; // Código da ART (ex: 33777)
+  code: string;
   company: string;
-  taskName: string; // Tarefa a ser executada
-  area: string; // Gerência
+  taskName: string;
+  area: string;
   omve?: string; 
   emissionDate?: string;
-  pdfUrl?: string; // Original PDF URL
-  
-  // PDF Content Structures
+  pdfUrl?: string;
   risks: ARTRiskItem[];
-  controlMeasures: string; // Texto corrido ou HTML das medidas
-  steps: ARTStep[]; // Passo a passo da tarefa
+  controlMeasures: string;
+  steps: ARTStep[];
 }
 
 export interface HeaderData {
@@ -135,6 +133,6 @@ export interface OMRecord {
   type: 'CORRETIVA' | 'PREVENTIVA';
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'CONCLUIDA';
   createdAt: string;
-  pdfUrl?: string; // Simulação do arquivo
+  pdfUrl?: string;
   createdBy: string;
 }

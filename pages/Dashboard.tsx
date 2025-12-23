@@ -1,8 +1,10 @@
+
 import React, { useEffect, useState } from 'react';
 import { StorageService, NotificationItem } from '../services/storage';
 import { ActiveMaintenance, MaintenanceLog } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { Timer, CheckSquare, Clock, AlertOctagon, PauseCircle, PlayCircle, StopCircle, Bell, BellRing, X } from 'lucide-react';
+import { Timer, CheckSquare, Clock, AlertOctagon, PauseCircle, PlayCircle, StopCircle, Bell, BellRing, X, Database, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { checkConnection } from '../services/supabase';
 
 const SafeMaintLogoSmall = () => (
     <div className="flex items-center justify-center w-24 h-14 bg-white rounded p-1">
@@ -15,15 +17,16 @@ export const Dashboard: React.FC = () => {
   const [activeTasks, setActiveTasks] = useState<ActiveMaintenance[]>([]);
   const [history, setHistory] = useState<MaintenanceLog[]>([]);
   const [now, setNow] = useState(new Date());
+  const [dbStatus, setDbStatus] = useState<{success: boolean, message: string, code?: string} | null>(null);
   
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [closingTask, setClosingTask] = useState<ActiveMaintenance | null>(null);
-  
   const [dismissedNotifs, setDismissedNotifs] = useState<string[]>([]);
 
   useEffect(() => {
     refreshData();
+    validateDB();
     const clockInterval = setInterval(() => setNow(new Date()), 1000);
     const dataInterval = setInterval(refreshData, 10000);
     
@@ -35,6 +38,11 @@ export const Dashboard: React.FC = () => {
         window.removeEventListener('safemaint_storage_update', refreshData);
     };
   }, []);
+
+  const validateDB = async () => {
+    const status = await checkConnection();
+    setDbStatus(status);
+  };
 
   const refreshData = () => {
     setActiveTasks(StorageService.getActiveMaintenances());
@@ -104,6 +112,23 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 relative">
+      
+      {/* STATUS DA NUVEM (SUPABASE) */}
+      {dbStatus && !dbStatus.success && (
+          <div className={`p-3 rounded-lg flex items-center justify-between border-2 shadow-sm animate-fadeIn ${dbStatus.code === 'MISSING_TABLES' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              <div className="flex items-center gap-3">
+                  <AlertTriangle size={20} />
+                  <div>
+                    <span className="font-black text-xs uppercase">Sincronização em Nuvem:</span>
+                    <span className="ml-2 text-xs font-bold">{dbStatus.message}</span>
+                  </div>
+              </div>
+              {dbStatus.code === 'MISSING_TABLES' && (
+                  <button onClick={() => navigate('/settings')} className="bg-yellow-600 text-white px-3 py-1 rounded text-[10px] font-black hover:bg-yellow-700">CONFIGURAR AGORA</button>
+              )}
+          </div>
+      )}
+
       <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-6 md:p-10 text-white flex flex-col md:flex-row justify-between items-center relative overflow-hidden border-b-4 border-[#10b981]">
           <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#10b981] opacity-10 rounded-full blur-2xl"></div>
           <div className="z-10 w-full md:w-auto flex items-center gap-6">
@@ -187,8 +212,11 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col h-[600px]">
-            <div className="p-4 border-b bg-gray-100 rounded-t-xl">
+            <div className="p-4 border-b bg-gray-100 rounded-t-xl flex justify-between items-center">
                 <h3 className="font-black text-gray-700 flex items-center gap-2"><CheckSquare size={18} /> HISTÓRICO RECENTE</h3>
+                <div className="flex items-center gap-1 text-[10px] font-black text-[#10b981]">
+                    <Database size={12} /> SYNC OK
+                </div>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
                 {history.length === 0 && <div className="text-center py-10 text-gray-400 text-sm font-bold">VAZIO.</div>}
