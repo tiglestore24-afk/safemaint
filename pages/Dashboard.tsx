@@ -1,10 +1,10 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { StorageService, NotificationItem } from '../services/storage';
 import { ActiveMaintenance, MaintenanceLog } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { Timer, CheckSquare, Clock, AlertOctagon, PauseCircle, PlayCircle, StopCircle, Bell, BellRing, X, Database, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { checkConnection } from '../services/supabase';
+import { Timer, CheckSquare, Clock, AlertOctagon, PauseCircle, PlayCircle, StopCircle, Bell, BellRing, X, Database, AlertTriangle, Wifi, WifiOff } from 'lucide-react';
+import { checkConnection, supabase } from '../services/supabase';
 
 const SafeMaintLogoSmall = () => (
     <div className="flex items-center justify-center w-24 h-14 bg-white rounded p-1">
@@ -17,43 +17,57 @@ export const Dashboard: React.FC = () => {
   const [activeTasks, setActiveTasks] = useState<ActiveMaintenance[]>([]);
   const [history, setHistory] = useState<MaintenanceLog[]>([]);
   const [now, setNow] = useState(new Date());
-  const [dbStatus, setDbStatus] = useState<{success: boolean, message: string, code?: string} | null>(null);
+  const [dbStatus, setDbStatus] = useState<{success: boolean, message: string} | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [closingTask, setClosingTask] = useState<ActiveMaintenance | null>(null);
   const [dismissedNotifs, setDismissedNotifs] = useState<string[]>([]);
 
+  const refreshData = useCallback(async () => {
+    const active = await StorageService.getActiveMaintenances();
+    const hist = await StorageService.getHistory();
+    setActiveTasks(active);
+    setHistory(hist);
+    setNotifications(StorageService.getNotifications());
+  }, []);
+
   useEffect(() => {
     refreshData();
-    validateDB();
+    
+    const validate = async () => {
+        const status = await checkConnection();
+        setDbStatus(status);
+        setIsOnline(status.success);
+    };
+    validate();
+
+    // Inscrição Realtime para Painel Geral
+    const channel = supabase
+      .channel('dashboard-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'active_maintenance' }, refreshData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'history' }, refreshData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat' }, () => {
+          // Pequeno efeito visual ou som para novas mensagens se necessário
+      })
+      .subscribe();
+
     const clockInterval = setInterval(() => setNow(new Date()), 1000);
-    const dataInterval = setInterval(refreshData, 10000);
+    const syncInterval = setInterval(validate, 10000);
     
     window.addEventListener('safemaint_storage_update', refreshData);
     
     return () => { 
         clearInterval(clockInterval); 
-        clearInterval(dataInterval);
+        clearInterval(syncInterval);
+        supabase.removeChannel(channel);
         window.removeEventListener('safemaint_storage_update', refreshData);
     };
-  }, []);
-
-  const validateDB = async () => {
-    const status = await checkConnection();
-    setDbStatus(status);
-  };
-
-  const refreshData = () => {
-    setActiveTasks(StorageService.getActiveMaintenances());
-    setHistory(StorageService.getHistory());
-    setNotifications(StorageService.getNotifications());
-  };
+  }, [refreshData]);
 
   const handleDismissNotification = (id: string) => {
-      if(!dismissedNotifs.includes(id)) {
-          setDismissedNotifs(prev => [...prev, id]);
-      }
+      setDismissedNotifs(prev => [...prev, id]);
   };
 
   const getElapsedTime = (task: ActiveMaintenance) => {
@@ -77,132 +91,140 @@ export const Dashboard: React.FC = () => {
       }
   };
 
-  const handleParcial = () => { if(closingTask){ StorageService.pauseMaintenance(closingTask.id); navigate('/report', { state: { om: closingTask.header.om, tag: closingTask.header.tag, type: closingTask.header.type, date: new Date().toLocaleDateString('pt-BR'), startTime: new Date(closingTask.startTime).toLocaleTimeString().slice(0,5), endTime: new Date().toLocaleTimeString().slice(0,5), executors: [], activities: closingTask.header.description, status: 'PARCIAL', stopReason: 'INTERRUPÇÃO', pendings: '', isPartial: true } }); setClosingTask(null); refreshData(); }};
-  const handleTotal = () => { if(closingTask && window.confirm("ENCERRAR OM?")){ StorageService.completeMaintenance(closingTask.id); navigate('/report', { state: { om: closingTask.header.om, tag: closingTask.header.tag, type: closingTask.header.type, date: new Date().toLocaleDateString('pt-BR'), startTime: new Date(closingTask.startTime).toLocaleTimeString().slice(0,5), endTime: new Date().toLocaleTimeString().slice(0,5), executors: [], activities: closingTask.header.description, status: 'FINALIZADO', stopReason: 'CONCLUÍDO', pendings: '', isPartial: false } }); setClosingTask(null); refreshData(); }};
+  const handleParcial = () => { if(closingTask){ StorageService.pauseMaintenance(closingTask.id); navigate('/report', { state: { ...closingTask.header, status: 'PARCIAL', isPartial: true } }); setClosingTask(null); }};
+  const handleTotal = () => { if(closingTask && window.confirm("ENCERRAR OM?")){ StorageService.completeMaintenance(closingTask.id); navigate('/report', { state: { ...closingTask.header, status: 'FINALIZADO', isPartial: false } }); setClosingTask(null); }};
   const handleChecklist = () => { if(closingTask){ navigate(`/checklist?maintenanceId=${closingTask.id}`); setClosingTask(null); }};
 
   const visibleNotifications = notifications.filter(n => !dismissedNotifs.includes(n.id));
 
-  const NotificationDropdown = () => (
-      <div className="absolute top-20 right-4 md:right-10 z-50 w-80 md:w-96 bg-gray-900 border-2 border-[#10b981] rounded-xl shadow-2xl animate-fadeIn overflow-hidden">
-          <div className="bg-[#10b981] p-3 flex justify-between items-center">
-              <h3 className="font-black text-white flex items-center gap-2"><BellRing size={20} /> NOTIFICAÇÕES ({visibleNotifications.length})</h3>
-              <button onClick={() => setShowNotifications(false)} className="text-white"><X size={20}/></button>
-          </div>
-          <div className="max-h-80 overflow-y-auto custom-scrollbar p-1">
-              {visibleNotifications.length === 0 ? <div className="p-8 text-center text-gray-500 font-bold">Sem notificações novas.</div> : (
-                  <div className="space-y-1">
-                      {visibleNotifications.map(n => (
-                          <div 
-                            key={n.id} 
-                            onClick={() => handleDismissNotification(n.id)}
-                            onMouseLeave={() => handleDismissNotification(n.id)}
-                            className="p-3 rounded bg-gray-800 text-white border-l-4 border-[#10b981] cursor-pointer hover:bg-gray-700 transition-colors"
-                            title="Clique ou passe o mouse para marcar como lida"
-                          >
-                              <h4 className="font-bold">{n.title}</h4>
-                              <p className="text-xs text-gray-400">{n.message}</p>
-                          </div>
-                      ))}
-                  </div>
-              )}
-          </div>
-      </div>
-  );
-
   return (
-    <div className="max-w-7xl mx-auto space-y-8 relative">
+    <div className="max-w-7xl mx-auto space-y-6 relative">
       
-      {/* STATUS DA NUVEM (SUPABASE) */}
-      {dbStatus && !dbStatus.success && (
-          <div className={`p-3 rounded-lg flex items-center justify-between border-2 shadow-sm animate-fadeIn ${dbStatus.code === 'MISSING_TABLES' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-              <div className="flex items-center gap-3">
-                  <AlertTriangle size={20} />
-                  <div>
-                    <span className="font-black text-xs uppercase">Sincronização em Nuvem:</span>
-                    <span className="ml-2 text-xs font-bold">{dbStatus.message}</span>
-                  </div>
+      {/* Barra de Status de Conexão */}
+      {!isOnline && (
+          <div className="bg-vale-cherry text-white px-6 py-2 rounded-xl flex items-center justify-between animate-pulse shadow-lg border-2 border-white/20">
+              <div className="flex items-center gap-2 font-black text-[10px] uppercase">
+                  <WifiOff size={16} /> MODO OFFLINE: OS DADOS SERÃO SINCRONIZADOS AO VOLTAR A REDE
               </div>
-              {dbStatus.code === 'MISSING_TABLES' && (
-                  <button onClick={() => navigate('/settings')} className="bg-yellow-600 text-white px-3 py-1 rounded text-[10px] font-black hover:bg-yellow-700">CONFIGURAR AGORA</button>
-              )}
+              <Database size={16} />
           </div>
       )}
 
-      <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-6 md:p-10 text-white flex flex-col md:flex-row justify-between items-center relative overflow-hidden border-b-4 border-[#10b981]">
-          <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#10b981] opacity-10 rounded-full blur-2xl"></div>
-          <div className="z-10 w-full md:w-auto flex items-center gap-6">
-              <div className="shadow-lg border border-gray-700 rounded-lg">
+      {dbStatus && !dbStatus.success && isOnline && (
+          <div className="bg-vale-yellow/20 border-2 border-vale-yellow text-vale-darkgray p-4 rounded-xl flex items-center justify-between animate-fadeIn">
+              <div className="flex items-center gap-3">
+                  <AlertTriangle size={24} className="text-vale-yellow" />
+                  <div>
+                    <p className="font-black text-xs uppercase">Conexão Supabase: {dbStatus.message}</p>
+                    <p className="text-[10px] font-bold opacity-60">Verifique as políticas de Realtime e RLS no painel.</p>
+                  </div>
+              </div>
+              <button onClick={() => navigate('/settings')} className="bg-vale-yellow text-white px-4 py-2 rounded-lg text-[10px] font-black hover:scale-105 transition-transform">CONFIGURAR</button>
+          </div>
+      )}
+
+      <div className="bg-gradient-to-br from-vale-darkgray to-[#222] rounded-[2.5rem] shadow-2xl p-8 md:p-12 text-white flex flex-col md:flex-row justify-between items-center relative overflow-hidden border-b-8 border-vale-green">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-vale-green opacity-10 rounded-full blur-[100px]"></div>
+          
+          <div className="z-10 flex items-center gap-8">
+              <div className="bg-white p-3 rounded-2xl shadow-xl transform -rotate-3 hover:rotate-0 transition-transform">
                 <SafeMaintLogoSmall />
               </div>
               <div>
-                <h1 className="text-4xl font-black tracking-widest mb-1 flex items-center gap-2 font-sans text-white">SAFEMAINT</h1>
-                <p className="text-[#10b981] font-bold uppercase tracking-widest text-xs">GESTÃO À VISTA ONLINE</p>
+                <h1 className="text-5xl font-black tracking-tighter mb-1 font-sans italic">SAFEMAINT</h1>
+                <p className="text-vale-green font-black uppercase tracking-[0.4em] text-[10px] flex items-center gap-2">
+                    <Wifi size={14} className="animate-pulse" /> MONITORAMENTO LIVE
+                </p>
               </div>
           </div>
 
-          <div className="flex gap-4 md:gap-8 items-center mt-6 md:mt-0 z-10 w-full md:w-auto justify-between md:justify-end">
-              <div className="relative">
-                  <button onClick={() => setShowNotifications(!showNotifications)} className="p-3 bg-black/20 hover:bg-black/30 rounded-full text-[#10b981] transition-colors relative shadow-lg border border-gray-700">
-                      <Bell size={24} />
-                      {visibleNotifications.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-gray-900 animate-bounce">{visibleNotifications.length}</span>}
+          <div className="flex gap-10 items-center mt-8 md:mt-0 z-10">
+              <div className="relative group">
+                  <button onClick={() => setShowNotifications(!showNotifications)} className="p-4 bg-white/10 hover:bg-white/20 rounded-2xl text-vale-green transition-all shadow-inner border border-white/5 relative">
+                      <Bell size={28} />
+                      {visibleNotifications.length > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-vale-cherry text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-vale-darkgray animate-bounce">
+                              {visibleNotifications.length}
+                          </span>
+                      )}
                   </button>
+                  {showNotifications && (
+                      <div className="absolute top-full mt-4 right-0 w-80 bg-white rounded-3xl shadow-2xl border-2 border-gray-100 overflow-hidden z-[100] animate-fade-in-up text-vale-darkgray">
+                          <div className="bg-vale-green p-4 text-white font-black flex justify-between items-center">
+                              <span className="text-xs uppercase flex items-center gap-2"><BellRing size={16}/> Central de Avisos</span>
+                              <button onClick={() => setShowNotifications(false)}><X size={18}/></button>
+                          </div>
+                          <div className="max-h-64 overflow-y-auto p-2 custom-scrollbar">
+                              {visibleNotifications.length === 0 ? <p className="p-8 text-center text-xs font-bold text-gray-300">Sem notificações.</p> : (
+                                  visibleNotifications.map(n => (
+                                      <div key={n.id} onClick={() => handleDismissNotification(n.id)} className="p-3 mb-1 rounded-xl bg-gray-50 hover:bg-gray-100 border-l-4 border-vale-green cursor-pointer transition-colors">
+                                          <h4 className="font-black text-[10px] uppercase text-vale-darkgray">{n.title}</h4>
+                                          <p className="text-[9px] font-bold text-gray-400">{n.message}</p>
+                                      </div>
+                                  ))
+                              )}
+                          </div>
+                      </div>
+                  )}
               </div>
-              <div className="h-10 w-px bg-white/10 hidden md:block"></div>
-              <div className="text-center hidden md:block">
-                  <div className="flex items-center justify-center gap-2 text-[#10b981] mb-1">
-                      <Clock size={20} />
-                      <span className="text-[10px] font-black uppercase tracking-wider">HORA</span>
-                  </div>
-                  <div className="text-2xl font-mono font-bold text-white shadow-sm">{now.toLocaleTimeString()}</div>
+              
+              <div className="h-16 w-px bg-white/10 hidden md:block"></div>
+              
+              <div className="text-right leading-none hidden md:block">
+                  <div className="text-vale-green font-black text-[10px] mb-2 uppercase tracking-widest">HORÁRIO BRASÍLIA</div>
+                  <div className="text-4xl font-mono font-black text-white">{now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})}</div>
               </div>
           </div>
       </div>
 
-      {showNotifications && <NotificationDropdown />}
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-            <h2 className="text-xl font-black text-gray-800 flex items-center gap-2 border-b-2 border-gray-200 pb-2">
-                <Timer className="text-gray-800" /> MANUTENÇÕES EM ANDAMENTO
-            </h2>
+            <div className="flex items-center justify-between border-b-2 border-gray-100 pb-2">
+                <h2 className="text-xl font-black text-vale-darkgray flex items-center gap-3 uppercase">
+                    <Timer className="text-vale-green" size={24} /> ATIVIDADES ATIVAS <span className="text-xs bg-gray-200 px-3 py-1 rounded-full">{activeTasks.length}</span>
+                </h2>
+                <div className="flex gap-1">
+                    <div className="w-2 h-2 rounded-full bg-vale-green animate-ping"></div>
+                    <div className="w-2 h-2 rounded-full bg-vale-green"></div>
+                </div>
+            </div>
             
             {activeTasks.length === 0 && (
-                <div className="bg-white p-10 rounded-lg shadow border-2 border-dashed border-gray-300 text-center">
-                    <Timer size={48} className="mx-auto text-gray-300 mb-2" />
-                    <h3 className="text-lg font-bold text-gray-600">NENHUMA ATIVIDADE ATIVA</h3>
+                <div className="bg-white p-20 rounded-[2.5rem] border-4 border-dashed border-gray-100 text-center flex flex-col items-center justify-center grayscale opacity-50">
+                    <Timer size={80} className="text-gray-200 mb-4" />
+                    <h3 className="text-lg font-black text-gray-400 uppercase tracking-widest">Nenhuma atividade em campo</h3>
                 </div>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {activeTasks.map(task => {
-                    const isCorrective = task.origin === 'CORRETIVA';
+                    const isCorrective = task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL';
                     const isPaused = task.status === 'PAUSADA';
-                    let borderColor = isCorrective ? 'border-red-600' : 'border-[#10b981]';
-                    let bgColor = isCorrective ? 'bg-red-50' : 'bg-green-50';
-                    let badgeColor = isCorrective ? 'bg-red-200 text-red-900' : 'bg-emerald-200 text-emerald-900';
                     
-                    if (isPaused) { borderColor = 'border-gray-500'; bgColor = 'bg-gray-100'; badgeColor = 'bg-gray-300 text-gray-700'; }
-
                     return (
-                        <div key={task.id} className={`rounded-xl shadow-lg border-t-8 overflow-hidden relative hover:shadow-2xl transition-all transform hover:-translate-y-1 ${borderColor} ${bgColor}`}>
-                            <div className="p-5">
-                                <div className="flex justify-between items-start mb-3">
-                                    <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wide flex items-center gap-1 ${badgeColor}`}>
-                                        {isPaused ? <PauseCircle size={12}/> : <PlayCircle size={12}/>}
-                                        {isPaused ? 'PAUSADA' : (isCorrective ? 'CORRETIVA' : 'PREVENTIVA')}
+                        <div key={task.id} className={`bg-white rounded-[2rem] shadow-xl border-t-8 transition-all hover:scale-[1.02] relative overflow-hidden ${isPaused ? 'border-vale-darkgray grayscale' : isCorrective ? 'border-vale-cherry' : 'border-vale-green'}`}>
+                            {isPaused && <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 font-black text-2xl text-vale-darkgray uppercase italic border-2 border-vale-darkgray/20 rounded-[2rem]">ATIVIDADE PAUSADA</div>}
+                            <div className="p-8">
+                                <div className="flex justify-between items-start mb-6">
+                                    <span className={`text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest ${isCorrective ? 'bg-vale-cherry text-white' : 'bg-vale-green text-white'}`}>
+                                        {isCorrective ? 'EMERGÊNCIA' : 'PREVENTIVA'}
                                     </span>
-                                    <div className="text-gray-500 text-xs font-mono font-bold">{new Date(task.startTime).toLocaleTimeString().slice(0,5)}</div>
+                                    <div className="text-vale-darkgray/40 text-[10px] font-black flex items-center gap-1">
+                                        <Clock size={14} /> {new Date(task.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                                    </div>
                                 </div>
-                                <h3 className={`text-2xl font-black mb-1 text-gray-900`}>{task.header.om}</h3>
-                                <p className="text-sm font-black text-gray-600 mb-2">{task.header.tag}</p>
-                                <p className="text-sm text-gray-700 font-bold mb-4 line-clamp-2">{task.header.description}</p>
-                                <div className={`flex justify-center border border-gray-200 rounded-lg py-3 mb-4 shadow-inner bg-white`}>
-                                    <div className={`text-3xl font-mono font-black tracking-widest text-gray-800`}>{getElapsedTime(task)}</div>
+                                <h3 className="text-3xl font-black text-vale-darkgray mb-1 uppercase tracking-tighter">{task.header.om}</h3>
+                                <p className="text-[10px] font-black text-vale-green uppercase mb-4">{task.header.tag}</p>
+                                
+                                <div className="bg-gray-50 rounded-2xl p-6 border-2 border-gray-100 mb-6 flex justify-center">
+                                    <div className={`text-4xl font-mono font-black tracking-widest ${isPaused ? 'text-gray-400' : 'text-vale-darkgray'}`}>
+                                        {getElapsedTime(task)}
+                                    </div>
                                 </div>
-                                <button onClick={() => handleActionClick(task)} className={`w-full font-black py-4 rounded-lg shadow flex items-center justify-center gap-2 transition-transform transform active:scale-95 text-sm ${isPaused ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-800 hover:bg-black text-white'}`}>
+                                
+                                <button onClick={() => handleActionClick(task)} className={`w-full font-black py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3 transition-all active:scale-95 text-xs uppercase ${isPaused ? 'bg-vale-green text-white hover:bg-vale-green/90' : 'bg-vale-darkgray text-white hover:bg-black'}`}>
                                     {isPaused ? <PlayCircle size={20} /> : <StopCircle size={20} />}
-                                    {isPaused ? 'RETOMAR' : 'ENCERRAR'}
+                                    {isPaused ? 'Retomar Trabalho' : 'Finalizar OM'}
                                 </button>
                             </div>
                         </div>
@@ -211,35 +233,58 @@ export const Dashboard: React.FC = () => {
             </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col h-[600px]">
-            <div className="p-4 border-b bg-gray-100 rounded-t-xl flex justify-between items-center">
-                <h3 className="font-black text-gray-700 flex items-center gap-2"><CheckSquare size={18} /> HISTÓRICO RECENTE</h3>
-                <div className="flex items-center gap-1 text-[10px] font-black text-[#10b981]">
-                    <Database size={12} /> SYNC OK
+        <div className="flex flex-col gap-6">
+            <h2 className="text-xl font-black text-vale-darkgray flex items-center gap-3 uppercase border-b-2 border-gray-100 pb-2">
+                <CheckSquare className="text-vale-blue" size={24} /> HISTÓRICO LIVE
+            </h2>
+            <div className="bg-white rounded-[2rem] shadow-xl border-2 border-gray-100 flex-1 overflow-hidden flex flex-col">
+                <div className="p-4 bg-gray-50 border-b-2 border-gray-100 flex justify-between items-center">
+                    <span className="text-[10px] font-black text-gray-400 uppercase">Últimas 30 Atividades</span>
+                    <Database size={14} className="text-vale-green" />
                 </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
-                {history.length === 0 && <div className="text-center py-10 text-gray-400 text-sm font-bold">VAZIO.</div>}
-                {history.map(log => (
-                    <div key={log.id} className="bg-gray-50 hover:bg-white border hover:border-gray-300 p-3 rounded-lg transition-colors group">
-                        <div className="flex justify-between items-start mb-1"><span className="font-black text-gray-800 text-sm">{log.om}</span><span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-gray-200 text-gray-800">{log.status}</span></div>
-                        <div className="text-xs text-gray-600 font-bold mb-2 truncate">{log.description}</div>
-                        <div className="text-[10px] text-gray-400 text-right mt-1 font-mono">{new Date(log.endTime).toLocaleDateString()}</div>
-                    </div>
-                ))}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                    {history.length === 0 ? <p className="text-center py-10 text-xs font-black text-gray-200">SEM REGISTROS</p> : (
+                        history.map(log => (
+                            <div key={log.id} className="p-4 rounded-2xl bg-gray-50 border-2 border-gray-100 hover:border-vale-blue/30 transition-all group">
+                                <div className="flex justify-between items-start mb-1">
+                                    <span className="font-black text-vale-darkgray text-sm group-hover:text-vale-blue transition-colors">{log.om}</span>
+                                    <span className="text-[8px] px-2 py-0.5 rounded-full font-black bg-white border border-gray-200 text-vale-green uppercase">OK</span>
+                                </div>
+                                <div className="text-[9px] font-bold text-gray-400 uppercase truncate mb-2">{log.tag} | {log.description}</div>
+                                <div className="flex justify-between items-center text-[8px] font-black text-gray-300 uppercase">
+                                    <span>{new Date(log.endTime).toLocaleDateString()}</span>
+                                    <span>{new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
             </div>
         </div>
       </div>
 
       {closingTask && (
-          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-                  <div className="bg-gray-900 p-6 text-center border-b-4 border-[#10b981]"><AlertOctagon size={48} className="mx-auto text-[#10b981] mb-2" /><h2 className="text-2xl font-black text-white">OPÇÕES</h2></div>
-                  <div className="p-6 space-y-3">
-                      <button onClick={handleParcial} className="w-full bg-orange-100 text-orange-900 border-2 border-orange-200 p-4 rounded-xl font-black flex items-center gap-3">PARCIAL (TROCA TURNO)</button>
-                      <button onClick={handleTotal} className="w-full bg-red-100 text-red-900 border-2 border-red-200 p-4 rounded-xl font-black flex items-center gap-3">TOTAL (FINALIZAR)</button>
-                      <button onClick={handleChecklist} className="w-full bg-green-100 text-green-900 border-2 border-green-200 p-4 rounded-xl font-black flex items-center gap-3">CHECKLIST (FINAL)</button>
-                      <button onClick={() => setClosingTask(null)} className="w-full bg-gray-200 text-gray-600 p-3 rounded-xl font-bold mt-2">CANCELAR</button>
+          <div className="fixed inset-0 bg-vale-darkgray/90 flex items-center justify-center z-[200] p-6 backdrop-blur-md animate-fadeIn">
+              <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-xl overflow-hidden animate-fade-in-up border-b-8 border-vale-green">
+                  <div className="bg-vale-darkgray p-10 text-center relative">
+                      <button onClick={() => setClosingTask(null)} className="absolute top-6 right-6 text-white/20 hover:text-white"><X size={32}/></button>
+                      <AlertOctagon size={64} className="mx-auto text-vale-green mb-4" />
+                      <h2 className="text-3xl font-black text-white uppercase tracking-tighter">FINALIZAR OM {closingTask.header.om}</h2>
+                      <p className="text-vale-green text-[10px] font-black uppercase mt-2 tracking-widest">O relógio de parada será registrado agora</p>
+                  </div>
+                  <div className="p-10 grid grid-cols-1 gap-4">
+                      <button onClick={handleParcial} className="bg-vale-orange/10 hover:bg-vale-orange text-vale-orange hover:text-white p-6 rounded-[1.5rem] font-black flex items-center justify-between transition-all border-2 border-vale-orange/20 group">
+                          <span className="text-lg">PARCIAL (TROCA TURNO)</span>
+                          <PauseCircle size={28} className="group-hover:scale-110 transition-transform" />
+                      </button>
+                      <button onClick={handleTotal} className="bg-vale-cherry/10 hover:bg-vale-cherry text-vale-cherry hover:text-white p-6 rounded-[1.5rem] font-black flex items-center justify-between transition-all border-2 border-vale-cherry/20 group">
+                          <span className="text-lg">TOTAL (DIRETO)</span>
+                          <StopCircle size={28} className="group-hover:scale-110 transition-transform" />
+                      </button>
+                      <button onClick={handleChecklist} className="bg-vale-green/10 hover:bg-vale-green text-vale-green hover:text-white p-6 rounded-[1.5rem] font-black flex items-center justify-between transition-all border-2 border-vale-green/20 group">
+                          <span className="text-lg">CHECKLIST (PADRÃO)</span>
+                          <CheckSquare size={28} className="group-hover:scale-110 transition-transform" />
+                      </button>
                   </div>
               </div>
           </div>

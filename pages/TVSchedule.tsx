@@ -1,7 +1,9 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { StorageService } from '../services/storage';
 import { ActiveMaintenance, ScheduleItem } from '../types';
-import { Clock } from 'lucide-react';
+import { Clock, Wifi } from 'lucide-react';
+import { supabase } from '../services/supabase';
 
 interface TVItem {
     id: string;
@@ -21,17 +23,23 @@ export const TVSchedule: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    refreshData();
+
+    // Assinatura em Tempo Real para TV Live
+    const tvChannel = supabase
+      .channel('tv-monitor')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'active_maintenance' }, () => refreshData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule' }, () => refreshData())
+      .subscribe();
+
     // Relógio
     const clockInterval = setInterval(() => setNow(new Date()), 1000);
     
-    // Atualização de Dados
-    const dataInterval = setInterval(refreshData, 5000);
     window.addEventListener('safemaint_storage_update', refreshData);
-    refreshData();
 
     return () => { 
         clearInterval(clockInterval); 
-        clearInterval(dataInterval);
+        supabase.removeChannel(tvChannel);
         window.removeEventListener('safemaint_storage_update', refreshData);
     };
   }, []);
@@ -42,17 +50,14 @@ export const TVSchedule: React.FC = () => {
     if (!scrollContainer) return;
 
     let scrollAmount = 0;
-    const speed = 1; // Velocidade do scroll
+    const speed = 1; 
     let direction = 1;
     let pauseCounter = 0;
 
     const scrollInterval = setInterval(() => {
         if (!scrollContainer) return;
-        
-        // Se houver poucso itens, não rola
         if (scrollContainer.scrollHeight <= scrollContainer.clientHeight) return;
 
-        // Pausa no topo e no fundo
         if (pauseCounter > 0) {
             pauseCounter--;
             return;
@@ -61,12 +66,10 @@ export const TVSchedule: React.FC = () => {
         scrollAmount += speed * direction;
         scrollContainer.scrollTop = scrollAmount;
 
-        // Chegou no fundo
         if (scrollAmount >= (scrollContainer.scrollHeight - scrollContainer.clientHeight)) {
-            direction = -1; // Inverte para subir (ou poderia pular pro topo)
-            pauseCounter = 100; // Pausa 2s aprox
+            direction = -1; 
+            pauseCounter = 100; 
         } 
-        // Chegou no topo
         else if (scrollAmount <= 0) {
             direction = 1;
             pauseCounter = 100;
@@ -76,9 +79,9 @@ export const TVSchedule: React.FC = () => {
     return () => clearInterval(scrollInterval);
   }, [items]);
 
-  const refreshData = () => {
-    const activeTasks = StorageService.getActiveMaintenances();
-    const schedule = StorageService.getSchedule();
+  const refreshData = async () => {
+    const activeTasks = await StorageService.getActiveMaintenances();
+    const schedule = await StorageService.getSchedule();
     const tvItems: TVItem[] = [];
 
     activeTasks.forEach(task => {
@@ -94,7 +97,7 @@ export const TVSchedule: React.FC = () => {
             status: status,
             startTime: new Date(task.startTime).toLocaleTimeString().slice(0,5),
             endTime: 'EXEC',
-            responsible: 'MANUTENÇÃO',
+            responsible: 'EQUIPE CAMPO',
             type: task.header.type
         });
     });
@@ -134,23 +137,25 @@ export const TVSchedule: React.FC = () => {
                 </div>
                 <div>
                     <h1 className="font-black text-white text-5xl tracking-widest uppercase mb-1 drop-shadow-md">SAFEMAINT TV</h1>
-                    <p className="text-[#10b981] font-bold text-xl tracking-[0.3em]">MONITORAMENTO EM TEMPO REAL</p>
+                    <p className="text-[#10b981] font-bold text-xl tracking-[0.3em] flex items-center gap-3 uppercase">
+                        Monitoramento em Tempo Real <Wifi size={24} className="animate-pulse" />
+                    </p>
                 </div>
             </div>
             
             <div className="flex items-center gap-12">
                  <div className="flex gap-4">
-                     <div className="flex flex-col items-center bg-red-900/30 px-4 py-2 rounded border border-red-700">
-                        <span className="text-3xl font-black text-red-500">{items.filter(i => i.status === 'EMERGÊNCIA').length}</span>
-                        <span className="text-xs font-bold text-red-400">EMERGÊNCIA</span>
+                     <div className="flex flex-col items-center bg-red-900/30 px-6 py-2 rounded border border-red-700">
+                        <span className="text-4xl font-black text-red-500">{items.filter(i => i.status === 'EMERGÊNCIA').length}</span>
+                        <span className="text-[10px] font-black text-red-400 uppercase">EMERGÊNCIA</span>
                      </div>
-                     <div className="flex flex-col items-center bg-green-900/30 px-4 py-2 rounded border border-green-700">
-                        <span className="text-3xl font-black text-green-500">{items.filter(i => i.status === 'ANDAMENTO').length}</span>
-                        <span className="text-xs font-bold text-green-400">ANDAMENTO</span>
+                     <div className="flex flex-col items-center bg-green-900/30 px-6 py-2 rounded border border-green-700">
+                        <span className="text-4xl font-black text-green-500">{items.filter(i => i.status === 'ANDAMENTO').length}</span>
+                        <span className="text-[10px] font-black text-green-400 uppercase">EM EXECUÇÃO</span>
                      </div>
-                     <div className="flex flex-col items-center bg-gray-800/50 px-4 py-2 rounded border border-gray-600">
-                        <span className="text-3xl font-black text-gray-400">{items.filter(i => i.status === 'PLANEJADO').length}</span>
-                        <span className="text-xs font-bold text-gray-500">PLANEJADO</span>
+                     <div className="flex flex-col items-center bg-gray-800/50 px-6 py-2 rounded border border-gray-600">
+                        <span className="text-4xl font-black text-gray-400">{items.filter(i => i.status === 'PLANEJADO').length}</span>
+                        <span className="text-[10px] font-black text-gray-500 uppercase">PLANEJADO</span>
                      </div>
                 </div>
                 <div className="text-right leading-none border-l border-gray-700 pl-8">
@@ -175,7 +180,7 @@ export const TVSchedule: React.FC = () => {
                 {items.length === 0 && (
                      <div className="h-full flex flex-col items-center justify-center text-gray-600 opacity-50">
                         <Clock size={120} className="mb-8" />
-                        <span className="text-5xl font-black">AGUARDANDO PROGRAMAÇÃO</span>
+                        <span className="text-5xl font-black uppercase">Aguardando dados da programação</span>
                      </div>
                 )}
                 
@@ -185,7 +190,6 @@ export const TVSchedule: React.FC = () => {
                     let tagColor = "text-gray-100";
                     let descColor = "text-gray-400";
 
-                    // Zebra striping subtle
                     if (idx % 2 === 1) rowClass = "bg-[#1f2937]/50 border-b border-gray-800 text-gray-300";
 
                     if (item.status === 'EMERGÊNCIA') {
@@ -215,27 +219,25 @@ export const TVSchedule: React.FC = () => {
                                 {item.startTime}
                             </div>
                             <div className="col-span-2 pl-4 leading-tight">
-                                <div className={`font-black text-3xl ${tagColor}`}>{item.tag}</div>
-                                <div className="text-lg opacity-60 font-mono mt-1">{item.om}</div>
+                                <div className={`font-black text-3xl uppercase ${tagColor}`}>{item.tag}</div>
+                                <div className="text-lg opacity-60 font-mono mt-1 uppercase">{item.om}</div>
                             </div>
                             <div className={`col-span-4 text-2xl font-bold uppercase truncate pr-4 ${descColor}`}>
                                 {item.description}
                             </div>
-                            <div className="col-span-2 text-center text-xl font-bold opacity-70 border-2 border-gray-700 rounded mx-4 py-1">
+                            <div className="col-span-2 text-center text-xl font-bold opacity-70 border-2 border-gray-700 rounded mx-4 py-1 uppercase">
                                 {item.type}
                             </div>
-                            <div className="col-span-1 text-right pr-8 font-bold text-xl truncate opacity-70">
+                            <div className="col-span-1 text-right pr-8 font-bold text-xl truncate opacity-70 uppercase">
                                 {item.responsible}
                             </div>
                         </div>
                     );
                 })}
-                {/* Espaço extra no final para garantir scroll completo */}
                 <div className="h-40"></div>
             </div>
         </div>
         
-        {/* Rodapé Status */}
         <div className="bg-[#10b981] h-2 w-full shadow-[0_-4px_20px_rgba(16,185,129,0.5)]"></div>
         
         <style>{`
