@@ -1,20 +1,21 @@
+
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Sidebar } from './components/Sidebar.tsx';
-import { Dashboard } from './pages/Dashboard.tsx';
-import { ARTEmergencial } from './pages/ARTEmergencial.tsx';
-import { ARTAtividade } from './pages/ARTAtividade.tsx';
-import { Checklist } from './pages/Checklist.tsx';
-import { Schedule } from './pages/Schedule.tsx';
-import { TVSchedule } from './pages/TVSchedule.tsx';
-import { Archive } from './pages/Archive.tsx';
-import { Trash } from './pages/Trash.tsx';
-import { Report } from './pages/Report.tsx';
-import { Settings } from './pages/Settings.tsx';
-import { Chat } from './pages/Chat.tsx';
-import { Login } from './pages/Login.tsx';
-import { OMManagement } from './pages/OMManagement.tsx';
-import { StorageService } from './services/storage.ts';
+import { Sidebar } from './components/Sidebar';
+import { Dashboard } from './pages/Dashboard';
+import { ARTEmergencial } from './pages/ARTEmergencial';
+import { ARTAtividade } from './pages/ARTAtividade';
+import { Checklist } from './pages/Checklist';
+import { Schedule } from './pages/Schedule';
+import { TVSchedule } from './pages/TVSchedule';
+import { Archive } from './pages/Archive';
+import { Trash } from './pages/Trash';
+import { Report } from './pages/Report';
+import { Settings } from './pages/Settings';
+import { Chat } from './pages/Chat';
+import { Login } from './pages/Login';
+import { OMManagement } from './pages/OMManagement';
+import { StorageService } from './services/storage';
 
 const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);

@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-    <meta name="theme-color" content="#007E7A" />
+    <meta name="theme-color" content="#007e7a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="SAFEMAINT - Sistema de Gestão de Manutenção e Segurança">
@@ -17,15 +18,23 @@
         theme: {
           extend: {
             colors: {
-              vale: {
-                green: '#007E7A',
-                yellow: '#EDB111',
-                darkgray: '#555555',
-                white: '#FFFFFF',
-                aqua: '#0ABB98',
-                blue: '#3CB5E5',
-                cherry: '#C03059',
-                orange: '#E37222',
+              'vale': {
+                green: '#007e7a',
+                yellow: '#edb111',
+                dark: '#111827',
+                gray: '#1f2937',
+                cherry: '#e53e3e',
+                blue: '#005c97'
+              }
+            },
+            animation: {
+              'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'shimmer': 'shimmer 2s infinite linear',
+            },
+            keyframes: {
+              shimmer: {
+                '0%': { transform: 'translateX(-100%)' },
+                '100%': { transform: 'translateX(100%)' }
               }
             }
           }
@@ -33,40 +42,52 @@
       }
     </script>
     <style>
-      canvas { touch-action: none; }
-      * { text-transform: uppercase !important; }
-      body { 
-        background-color: #f3f4f6; 
-        color: #555555; 
-        font-family: sans-serif; 
-        margin: 0;
-        padding: 0;
+      canvas {
+        touch-action: none;
       }
-      
-      .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-      .custom-scrollbar::-webkit-scrollbar-track { background: #e5e7eb; }
-      .custom-scrollbar::-webkit-scrollbar-thumb { background: #007E7A; border-radius: 4px; }
+      * {
+        text-transform: uppercase !important;
+      }
+      body {
+        background-color: #111827;
+      }
       
       @keyframes fadeInUp {
         from { opacity: 0; transform: translate3d(0, 40px, 0); }
         to { opacity: 1; transform: translate3d(0, 0, 0); }
       }
-      .animate-fade-in-up { animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
-    </style>
-    <script type="importmap">
-    {
-      "imports": {
-        "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.10.1",
-        "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-        "react/": "https://aistudiocdn.com/react@^19.2.1/",
-        "react": "https://aistudiocdn.com/react@^19.2.1",
-        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
-        "xlsx": "https://esm.sh/xlsx@0.18.5"
+      .animate-fade-in-up {
+        animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
       }
-    }
-    </script>
-  </head>
+
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #111827;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #007e7a;
+        border-radius: 10px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #edb111;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0"
+  }
+}
+</script>
+</head>
   <body>
     <div id="root"></div>
   </body>

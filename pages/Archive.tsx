@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
-import { DocumentRecord } from '../types';
+import { DocumentRecord, SignatureRecord } from '../types';
 import { Eye, Download, Trash2, X, FileText, CheckCircle, Clipboard, Filter, QrCode, Cloud, Archive as ArchiveIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { BackButton } from '../components/BackButton';
 
 interface CardItemProps {
   doc: DocumentRecord;
@@ -197,19 +199,222 @@ export const Archive: React.FC = () => {
 
   const handleShowQR = (e: React.MouseEvent, doc: DocumentRecord) => { e.stopPropagation(); setShowQr(doc); };
 
-  const renderDocContent = (doc: DocumentRecord) => {
+  // --- RENDERIZADORES DE DOCUMENTOS ---
+
+  const renderSignatures = (signatures: SignatureRecord[]) => (
+      <div className="mt-8 border-t-2 border-gray-300 pt-6 break-inside-avoid">
+          <h4 className="font-black text-xs uppercase mb-4 text-gray-700">Assinaturas Registradas</h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+              {signatures.map(sig => (
+                  <div key={sig.id} className="text-center">
+                      <div className="h-16 flex items-end justify-center mb-1">
+                          <img src={sig.signatureData} alt="Assinatura" className="max-h-full max-w-full" />
+                      </div>
+                      <div className="border-t border-gray-400 pt-1">
+                          <p className="font-bold text-[10px] text-gray-900 uppercase">{sig.name}</p>
+                          <p className="text-[9px] text-gray-500 uppercase">{sig.matricula} - {sig.function}</p>
+                          <p className="text-[8px] text-gray-400">{new Date(sig.date).toLocaleString()}</p>
+                      </div>
+                  </div>
+              ))}
+          </div>
+      </div>
+  );
+
+  const renderARTContent = (doc: DocumentRecord) => {
+      const isEmergencial = doc.type === 'ART_EMERGENCIAL';
+      const content = doc.content;
+
       return (
-          <div className="text-sm font-mono bg-gray-50 p-6 rounded-xl border-2 border-dashed border-gray-200 mt-4 overflow-auto max-h-[400px]">
-              <h4 className="font-black text-vale-darkgray mb-4 border-b pb-2 uppercase tracking-widest text-xs">Dados Estruturados do Documento</h4>
-              <pre className="text-[10px] leading-relaxed text-vale-darkgray/80">{JSON.stringify(doc.content, null, 2)}</pre>
+          <div className="space-y-6">
+              {/* Cabeçalho Específico ART */}
+              <div className="bg-gray-100 p-4 border border-gray-300 rounded text-center">
+                  <h2 className="font-black text-xl text-gray-800">ANÁLISE DE RISCO DA TAREFA (ART)</h2>
+                  <p className="text-xs font-bold text-gray-600">{isEmergencial ? 'EMERGENCIAL / CORRETIVA' : 'ATIVIDADE / ROTINA'}</p>
+                  {content.artNumber && <p className="text-xs font-black mt-2">ART BASE: {content.artNumber} - {content.artName}</p>}
+              </div>
+
+              {/* Tabela de Riscos */}
+              {isEmergencial ? (
+                  <div className="border border-gray-300">
+                      <div className="bg-gray-800 text-white p-2 text-xs font-black text-center">RISCOS IDENTIFICADOS E MEDIDAS (CHECKLIST DE CAMPO)</div>
+                      <table className="w-full text-xs">
+                          <thead className="bg-gray-200 font-bold">
+                              <tr>
+                                  <th className="p-2 border text-left">RISCO</th>
+                                  <th className="p-2 border text-left">MEDIDA DE CONTROLE APLICADA</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {Object.entries(content.checklistRisks || {}).map(([key, val]: any) => (
+                                  val.checked && (
+                                    <tr key={key}>
+                                        <td className="p-2 border font-bold text-gray-800">{key} (ITEM LISTA)</td>
+                                        <td className="p-2 border text-gray-600">{val.control || 'PADRÃO'}</td>
+                                    </tr>
+                                  )
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              ) : (
+                  <div className="p-4 bg-gray-50 border border-gray-200 text-sm">
+                      <p className="font-bold text-gray-700 mb-2">PROCEDIMENTO PADRÃO VINCULADO:</p>
+                      <p className="text-gray-600 italic">Esta ART segue os riscos e controles definidos no procedimento padrão da biblioteca.</p>
+                  </div>
+              )}
+              
+              {renderSignatures(doc.signatures)}
+          </div>
+      );
+  };
+
+  const renderChecklistContent = (doc: DocumentRecord) => {
+      const items = doc.content.checklistItems || [];
+      return (
+          <div className="space-y-6">
+               <div className="bg-gray-100 p-4 border border-gray-300 rounded text-center">
+                  <h2 className="font-black text-xl text-gray-800">CHECKLIST DE EQUIPAMENTO</h2>
+                  <p className="text-xs font-bold text-gray-600">INSPEÇÃO PÓS-MANUTENÇÃO</p>
+              </div>
+
+              <table className="w-full text-xs border border-gray-300">
+                  <thead className="bg-gray-800 text-white font-black">
+                      <tr>
+                          <th className="p-2 border border-gray-600 text-left w-10">#</th>
+                          <th className="p-2 border border-gray-600 text-left">ITEM / DESCRIÇÃO</th>
+                          <th className="p-2 border border-gray-600 text-center w-24">STATUS</th>
+                          <th className="p-2 border border-gray-600 text-left">OBSERVAÇÃO</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      {items.map((item: any) => (
+                          <tr key={item.id} className={item.status === 'NAO_ATENDE' ? 'bg-red-50' : 'bg-white'}>
+                              <td className="p-2 border font-bold text-center">{item.id}</td>
+                              <td className="p-2 border font-bold text-gray-700">
+                                  <span className="block text-[9px] text-gray-400">{item.section}</span>
+                                  {item.desc}
+                              </td>
+                              <td className="p-2 border text-center font-bold">
+                                  {item.status === 'ATENDE' ? 
+                                    <span className="text-green-700">OK</span> : 
+                                    item.status === 'NAO_ATENDE' ? <span className="text-red-600">FALHA</span> : '-'}
+                              </td>
+                              <td className="p-2 border text-gray-600 italic">{item.obs}</td>
+                          </tr>
+                      ))}
+                  </tbody>
+              </table>
+
+              {renderSignatures(doc.signatures)}
+          </div>
+      );
+  };
+
+  const renderReportContent = (doc: DocumentRecord) => {
+      const content = doc.content;
+      return (
+          <div className="space-y-6">
+               <div className="bg-gray-100 p-4 border border-gray-300 rounded text-center">
+                  <h2 className="font-black text-xl text-gray-800">RELATÓRIO DE MANUTENÇÃO</h2>
+                  <p className="text-xs font-bold text-gray-600">{content.isManualUpload ? 'REGISTRO MANUAL DIGITALIZADO' : 'REGISTRO DIGITAL'}</p>
+              </div>
+
+              {content.isManualUpload ? (
+                  <div className="border-2 border-dashed border-gray-300 p-4 bg-gray-50 text-center">
+                      <p className="font-bold text-gray-700 mb-4">ANEXO ORIGINAL:</p>
+                      {content.manualFileUrl ? (
+                          <img src={content.manualFileUrl} alt="Relatório" className="max-w-full h-auto mx-auto shadow-lg" />
+                      ) : (
+                          <p className="text-red-500 font-bold">IMAGEM NÃO DISPONÍVEL</p>
+                      )}
+                  </div>
+              ) : (
+                  <div className="grid grid-cols-1 gap-4 border border-gray-300 p-6 bg-white">
+                      <div className="bg-gray-50 p-3 border-l-4 border-gray-800">
+                          <span className="block text-[10px] font-black uppercase text-gray-500">MOTIVO DA PARADA</span>
+                          <p className="font-bold text-sm text-gray-800 whitespace-pre-wrap">{content.stopReason || 'N/A'}</p>
+                      </div>
+                      
+                      <div className="bg-gray-50 p-3 border-l-4 border-blue-600">
+                          <span className="block text-[10px] font-black uppercase text-gray-500">ATIVIDADES REALIZADAS</span>
+                          <p className="font-bold text-sm text-gray-800 whitespace-pre-wrap">{content.activities || 'N/A'}</p>
+                      </div>
+
+                      <div className="bg-red-50 p-3 border-l-4 border-red-600">
+                          <span className="block text-[10px] font-black uppercase text-gray-500 text-red-800">PENDÊNCIAS</span>
+                          <p className="font-bold text-sm text-red-900 whitespace-pre-wrap">{content.pendings || 'NENHUMA'}</p>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center">
+                          <span className="font-black text-gray-500">STATUS FINAL:</span>
+                          <span className="px-4 py-1 bg-black text-white font-black rounded uppercase">{content.finalStatus}</span>
+                      </div>
+                  </div>
+              )}
+          </div>
+      );
+  };
+
+  const renderFullDocument = (doc: DocumentRecord) => {
+      return (
+          <div className="bg-white p-8 md:p-12 shadow-none max-w-4xl mx-auto print:p-0 print:shadow-none font-sans text-gray-900">
+              {/* HEADER PADRÃO VALE */}
+              <div className="flex justify-between items-center border-b-4 border-[#007e7a] pb-6 mb-8">
+                  <div>
+                      <h1 className="text-3xl font-black text-[#111827] uppercase tracking-tight">SAFEMAINT</h1>
+                      <p className="text-xs font-bold text-[#007e7a] tracking-[0.3em] uppercase">Gestão de Manutenção Integrada</p>
+                  </div>
+                  <div className="text-right">
+                      <p className="text-[10px] font-black text-gray-400 uppercase">DOCUMENTO Nº</p>
+                      <p className="text-xl font-mono font-bold text-gray-800">{doc.id.slice(0,8).toUpperCase()}</p>
+                  </div>
+              </div>
+
+              {/* DADOS DO CABEÇALHO */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 bg-gray-50 p-6 rounded-lg border border-gray-200">
+                  <div>
+                      <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">DATA</span>
+                      <span className="font-bold text-sm">{new Date(doc.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <div>
+                      <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">HORA</span>
+                      <span className="font-bold text-sm">{new Date(doc.createdAt).toLocaleTimeString().slice(0,5)}</span>
+                  </div>
+                  <div>
+                      <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">ORDEM (OM)</span>
+                      <span className="font-bold text-sm">{doc.header.om}</span>
+                  </div>
+                  <div>
+                      <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">TAG</span>
+                      <span className="font-bold text-sm">{doc.header.tag}</span>
+                  </div>
+                  <div className="col-span-2 md:col-span-4 border-t pt-4 mt-2">
+                       <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">DESCRIÇÃO DA ATIVIDADE</span>
+                       <span className="font-bold text-sm">{doc.header.description}</span>
+                  </div>
+              </div>
+
+              {/* CONTEÚDO ESPECÍFICO */}
+              {doc.type.includes('ART') && renderARTContent(doc)}
+              {doc.type === 'CHECKLIST' && renderChecklistContent(doc)}
+              {doc.type === 'RELATORIO' && renderReportContent(doc)}
+
+              {/* RODAPÉ */}
+              <div className="mt-12 pt-6 border-t border-gray-200 text-center">
+                  <p className="text-[9px] font-black text-gray-400 uppercase">GERADO AUTOMATICAMENTE PELO SISTEMA SAFEMAINT</p>
+                  <p className="text-[8px] text-gray-300 font-mono mt-1">{doc.id}</p>
+              </div>
           </div>
       );
   };
 
   return (
     <div className="max-w-7xl mx-auto pb-20 px-4">
+      {/* ... (Header e Tabs permanecem iguais, focar na alteração do Modal abaixo) ... */}
       <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4 border-b border-gray-200 pb-6">
           <div className="flex items-center gap-4">
+            <BackButton />
             <div className="bg-vale-green p-3 rounded-2xl text-white shadow-lg"><Filter size={28} /></div>
             <div>
                 <h2 className="text-3xl font-black text-vale-darkgray uppercase tracking-tighter">Arquivo Digital</h2>
@@ -293,45 +498,36 @@ export const Archive: React.FC = () => {
           </div>
       )}
 
-      {/* MODAL DE VISUALIZAÇÃO */}
+      {/* MODAL DE VISUALIZAÇÃO COM CORREÇÃO DO BOTÃO FECHAR */}
       {viewDoc && (
-        <div className="fixed inset-0 bg-vale-darkgray/90 flex items-center justify-center z-[100] p-4 backdrop-blur-md animate-fadeIn">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden animate-fade-in-up border-b-8 border-vale-green">
-                <div className="bg-vale-green text-white p-6 flex justify-between items-center shrink-0 shadow-lg">
+        <div className="fixed inset-0 bg-vale-dark/95 flex items-center justify-center z-[100] p-4 backdrop-blur-md animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden animate-fade-in-up border-b-8 border-vale-green relative">
+                
+                {/* Header do Modal com Botão Fechar Garantido */}
+                <div className="bg-vale-green text-white p-6 flex justify-between items-center shrink-0 shadow-lg relative z-50">
                     <div className="flex items-center gap-3">
                         <FileText size={24} className="text-vale-yellow" />
                         <div>
                             <h3 className="font-black text-xl leading-none uppercase tracking-tighter">Visualização Digital</h3>
-                            <p className="text-[10px] font-bold text-white/70 uppercase mt-1 tracking-widest">{viewDoc.type} | {viewDoc.header.om}</p>
+                            <p className="text-[10px] font-bold text-white/70 uppercase mt-1 tracking-widest">{viewDoc.type}</p>
                         </div>
                     </div>
-                    <button onClick={() => setViewDoc(null)} className="hover:bg-white/20 p-2 rounded-full transition-all active:scale-90 shadow-inner">
+                    {/* Botão Fechar com Contraste e Z-Index */}
+                    <button 
+                        onClick={() => setViewDoc(null)} 
+                        className="bg-white/20 hover:bg-white text-white hover:text-vale-green p-2 rounded-full transition-all active:scale-90 shadow-inner"
+                        title="Fechar Visualização"
+                    >
                         <X size={28}/>
                     </button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-8 bg-gray-100 custom-scrollbar">
-                    <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-200 max-w-3xl mx-auto">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                                <span className="text-[10px] text-vale-darkgray/40 font-black block mb-1 uppercase">Ordem de Manutenção</span>
-                                <span className="font-black text-lg text-vale-darkgray uppercase">{viewDoc.header.om}</span>
-                            </div>
-                            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                                <span className="text-[10px] text-vale-darkgray/40 font-black block mb-1 uppercase">TAG Equipamento</span>
-                                <span className="font-black text-lg text-vale-darkgray uppercase">{viewDoc.header.tag}</span>
-                            </div>
-                            <div className="md:col-span-2 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                                <span className="text-[10px] text-vale-darkgray/40 font-black block mb-1 uppercase">Descrição da Atividade</span>
-                                <span className="font-bold text-vale-darkgray/80 leading-relaxed uppercase">{viewDoc.header.description}</span>
-                            </div>
-                        </div>
-                        
-                        <div className="h-px bg-gray-200 mb-8"></div>
-                        
-                        {renderDocContent(viewDoc)}
-                    </div>
+
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-200 custom-scrollbar">
+                     {/* Conteúdo Renderizado Estilo PDF */}
+                     {renderFullDocument(viewDoc)}
                 </div>
-                <div className="p-6 bg-white border-t border-gray-100 flex justify-end gap-3 shrink-0">
+
+                <div className="p-4 bg-white border-t border-gray-100 flex justify-end gap-3 shrink-0">
                     <button 
                         onClick={() => setViewDoc(null)} 
                         className="px-8 py-3 bg-gray-100 text-vale-darkgray font-black rounded-2xl hover:bg-gray-200 transition-all active:scale-95 text-xs uppercase"
@@ -342,7 +538,7 @@ export const Archive: React.FC = () => {
                         onClick={(e) => { e.stopPropagation(); window.print(); }} 
                         className="px-8 py-3 bg-vale-green text-white font-black rounded-2xl hover:bg-vale-blue transition-all active:scale-95 text-xs uppercase shadow-lg flex items-center gap-2"
                     >
-                        <Download size={18} /> SALVAR PDF
+                        <Download size={18} /> IMPRIMIR / PDF
                     </button>
                 </div>
             </div>
@@ -353,19 +549,12 @@ export const Archive: React.FC = () => {
       {showQr && (
           <div className="fixed inset-0 bg-vale-darkgray/95 flex items-center justify-center z-[110] p-4 backdrop-blur-lg animate-fadeIn" onClick={() => setShowQr(null)}>
                <div className="bg-white rounded-[3rem] p-10 max-w-sm w-full text-center relative shadow-2xl animate-fade-in-up border-b-8 border-vale-yellow" onClick={e => e.stopPropagation()}>
-                   <div className="absolute top-4 right-6">
-                        <button onClick={() => setShowQr(null)} className="text-vale-darkgray/20 hover:text-vale-cherry transition-colors"><X size={24}/></button>
+                   <div className="absolute top-4 right-4">
+                       <button onClick={() => setShowQr(null)} className="text-gray-400 hover:text-vale-cherry"><X size={24} /></button>
                    </div>
-                   <h3 className="font-black text-2xl text-vale-darkgray mb-6 uppercase tracking-tighter">Identidade Digital</h3>
-                   <div className="bg-white p-4 inline-block border-8 border-gray-100 rounded-[2.5rem] mb-6 shadow-inner">
-                        <img 
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(showQr.id)}&bgcolor=ffffff&color=007E7A&margin=10`} 
-                            alt="QR" 
-                            className="w-56 h-56 rounded-2xl"
-                        />
-                   </div>
-                   <p className="text-[10px] text-vale-darkgray/40 font-mono font-black break-all uppercase px-4 bg-gray-50 py-2 rounded-full">ID: {showQr.id}</p>
-                   <p className="mt-6 text-[9px] font-black text-vale-aqua uppercase tracking-widest animate-pulse">Scan para validação de segurança</p>
+                   <QrCode size={120} className="mx-auto text-vale-darkgray mb-6" />
+                   <h3 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter mb-2">QR Code Gerado</h3>
+                   <p className="text-xs font-bold text-gray-500 uppercase">Use o leitor para acessar o documento {showQr.id.slice(0,8)}</p>
                </div>
           </div>
       )}

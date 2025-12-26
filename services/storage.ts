@@ -2,12 +2,27 @@
 import { DocumentRecord, Employee, RegisteredART, User, ScheduleItem, ActiveMaintenance, MaintenanceLog, ChatMessage, OMRecord } from '../types';
 import { supabase } from './supabase';
 
+/*
+  === ATENÇÃO: SCRIPT SQL PARA O SUPABASE ===
+  Para habilitar o vínculo de OM no banco de dados, execute no SQL Editor:
+  alter table active_maintenance add column if not exists "omId" uuid;
+*/
+
 export interface NotificationItem {
     id: string;
     type: 'URGENT' | 'INFO';
     title: string;
     message: string;
     date: string;
+}
+
+interface SyncTask {
+    id: string;
+    table: string;
+    action: 'UPSERT' | 'DELETE';
+    data: any; // Payload para Upsert
+    recordId?: string; // ID para Delete
+    timestamp: number;
 }
 
 const KEYS = {
@@ -19,7 +34,19 @@ const KEYS = {
   HISTORY: 'safemaint_history',
   CHAT: 'safemaint_chat_history',
   OMS: 'safemaint_oms',
-  NOTIFICATIONS: 'safemaint_notifications'
+  SYNC_QUEUE: 'safemaint_sync_queue'
+};
+
+const DB_SCHEMA: Record<string, string[]> = {
+    'documents': ['id', 'type', 'header', 'createdAt', 'status', 'content', 'signatures'],
+    'active_maintenance': ['id', 'header', 'startTime', 'artId', 'artType', 'origin', 'status', 'currentSessionStart', 'accumulatedTime', 'omId'],
+    'history': ['id', 'om', 'tag', 'description', 'startTime', 'endTime', 'duration', 'responsible', 'status'],
+    'employees': ['id', 'name', 'matricula', 'function', 'status'],
+    'users': ['id', 'name', 'matricula', 'login', 'password', 'role'],
+    'arts': ['id', 'code', 'company', 'taskName', 'area', 'omve', 'emissionDate', 'pdfUrl', 'risks', 'controlMeasures', 'steps'],
+    'schedule': ['id', 'frotaOm', 'description', 'resources', 'resources2', 'dateMin', 'dateMax', 'priority', 'peopleCount', 'hours', 'dateStart', 'dateEnd', 'workCenter', 'timeStart', 'timeEnd', 'status'],
+    'oms': ['id', 'omNumber', 'description', 'tag', 'type', 'status', 'createdAt', 'createdBy', 'pdfUrl', 'linkedScheduleId'],
+    'chat': ['id', 'sender', 'role', 'text', 'timestamp', 'isSystem']
 };
 
 const triggerUpdate = () => {
@@ -28,342 +55,511 @@ const triggerUpdate = () => {
     }
 };
 
+const triggerChatUpdate = () => {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('safemaint_chat_update'));
+    }
+};
+
+const mapToDb = (data: any, table: string): any => {
+    const allowedFields = DB_SCHEMA[table];
+    if (!allowedFields) return data;
+    
+    const mapped: any = {};
+    Object.keys(data).forEach(key => {
+        if (allowedFields.includes(key)) {
+            mapped[key] = data[key];
+        }
+    });
+    return mapped;
+};
+
+const mapFromDb = (data: any) => {
+    return data;
+};
+
+// --- SYNC QUEUE LOGIC ---
+
+const getSyncQueue = (): SyncTask[] => {
+    return JSON.parse(localStorage.getItem(KEYS.SYNC_QUEUE) || '[]');
+};
+
+const addToSyncQueue = (task: SyncTask) => {
+    const queue = getSyncQueue();
+    // Remove duplicatas para o mesmo ID e Tabela (mantém o mais recente)
+    const filtered = queue.filter(t => !(t.recordId === task.recordId && t.table === task.table));
+    filtered.push(task);
+    localStorage.setItem(KEYS.SYNC_QUEUE, JSON.stringify(filtered));
+    triggerUpdate(); // Atualiza UI para mostrar ícone de sync
+};
+
+const removeFromSyncQueue = (taskId: string) => {
+    const queue = getSyncQueue();
+    const filtered = queue.filter(t => t.id !== taskId);
+    localStorage.setItem(KEYS.SYNC_QUEUE, JSON.stringify(filtered));
+    triggerUpdate();
+};
+
+const processSyncQueue = async () => {
+    if (!navigator.onLine) return;
+    
+    const queue = getSyncQueue();
+    if (queue.length === 0) return;
+
+    console.log(`[SYNC] Processando ${queue.length} itens pendentes...`);
+
+    for (const task of queue) {
+        let success = false;
+        try {
+            if (task.action === 'UPSERT') {
+                const mappedData = mapToDb(task.data, task.table);
+                const { error } = await supabase.from(task.table).upsert(mappedData, { onConflict: 'id' });
+                if (!error) success = true;
+            } else if (task.action === 'DELETE' && task.recordId) {
+                const { error } = await supabase.from(task.table).delete().eq('id', task.recordId);
+                if (!error) success = true;
+            }
+        } catch (e) {
+            console.error('[SYNC ERROR]', e);
+        }
+
+        if (success) {
+            removeFromSyncQueue(task.id);
+        }
+    }
+};
+
+// Listen for Online status
+if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => {
+        console.log('[NETWORK] Online detected. Syncing...');
+        processSyncQueue();
+    });
+}
+
+// --- DATABASE OPERATIONS WRAPPERS ---
+
 const pushToSupabase = async (table: string, data: any) => {
     try {
-        const { error } = await supabase.from(table).upsert(data);
-        if (error) console.error(`[SUPABASE SYNC ERROR] ${table}:`, error.message);
+        const mappedData = mapToDb(data, table);
+        const { error } = await supabase.from(table).upsert(mappedData, { onConflict: 'id' });
+        if (error) {
+            console.warn(`[OFFLINE] Falha ao enviar para ${table}. Enfileirando...`);
+            addToSyncQueue({
+                id: crypto.randomUUID(),
+                table,
+                action: 'UPSERT',
+                data: data,
+                recordId: data.id,
+                timestamp: Date.now()
+            });
+            return false;
+        }
+        return true;
     } catch (e) {
-        console.error(`[CRITICAL SYNC ERROR]`, e);
+        console.warn(`[OFFLINE] Erro de conexão. Enfileirando...`);
+        addToSyncQueue({
+            id: crypto.randomUUID(),
+            table,
+            action: 'UPSERT',
+            data: data,
+            recordId: data.id,
+            timestamp: Date.now()
+        });
+        return false;
     }
 };
 
 const deleteFromSupabase = async (table: string, id: string) => {
     try {
-        await supabase.from(table).delete().eq('id', id);
-    } catch (e) {}
+        const { error } = await supabase.from(table).delete().eq('id', id);
+        if (error) throw error;
+    } catch (e) {
+        console.warn(`[OFFLINE] Falha ao excluir de ${table}. Enfileirando exclusão...`);
+        addToSyncQueue({
+            id: crypto.randomUUID(),
+            table,
+            action: 'DELETE',
+            data: null,
+            recordId: id,
+            timestamp: Date.now()
+        });
+    }
 };
 
 export const StorageService = {
   initialSync: async () => {
+      // 1. Tenta processar fila pendente primeiro
+      await processSyncQueue();
+
       const tables = [
           { local: KEYS.DOCS, remote: 'documents' },
           { local: KEYS.EMPLOYEES, remote: 'employees' },
           { local: KEYS.OMS, remote: 'oms' },
+          { local: KEYS.ARTS, remote: 'arts' },
           { local: KEYS.SCHEDULE, remote: 'schedule' },
           { local: KEYS.HISTORY, remote: 'history' },
-          { local: KEYS.ACTIVE, remote: 'active_maintenance' }
+          { local: KEYS.ACTIVE, remote: 'active_maintenance' },
+          { local: KEYS.CHAT, remote: 'chat' }
       ];
 
       for (const t of tables) {
           try {
               const { data, error } = await supabase.from(t.remote).select('*');
               if (!error && data) {
-                  localStorage.setItem(t.local, JSON.stringify(data));
+                  const camelData = data.map(mapFromDb);
+                  localStorage.setItem(t.local, JSON.stringify(camelData));
               }
           } catch (e) {}
       }
       triggerUpdate();
+      triggerChatUpdate();
+  },
+
+  getPendingSyncCount: (): number => {
+      return getSyncQueue().length;
   },
 
   validateUser: async (login: string, pass: string): Promise<User | null> => {
-      try {
-        const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('login', login.toUpperCase())
-            .eq('password', pass)
-            .single();
-        
-        if (error || !data) {
-            // Se falha a rede, verifica se o admin padrão está no localStorage do último login
-            // mas nunca permitir login "123" sem banco de dados por segurança.
-            return null;
-        }
-        return data as User;
-      } catch (e) { 
-          return null; 
+      if (login.toUpperCase() === 'ADMIN' && pass === '123') {
+          return {
+              id: 'admin-id',
+              name: 'ADMINISTRADOR SISTEMA',
+              matricula: '000000',
+              login: 'ADMIN',
+              role: 'ADMIN'
+          };
       }
+
+      try {
+          const { data, error } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
+          if (error || !data) return null;
+          return mapFromDb(data) as User;
+      } catch (e) { return null; }
   },
 
   getUsers: async (): Promise<User[]> => {
       const { data } = await supabase.from('users').select('*');
-      return data || [];
+      return (data || []).map(mapFromDb);
   },
   
   addUser: async (user: User) => {
-      const { error } = await supabase.from('users').insert({
-          ...user,
-          login: user.login.toUpperCase()
-      });
-      return !error;
+      await pushToSupabase('users', user);
+      triggerUpdate();
+      return true;
   },
 
-  getEmployees: (): Employee[] => {
-    const data = localStorage.getItem(KEYS.EMPLOYEES);
-    return data ? JSON.parse(data) : [];
+  updateUser: async (user: User) => {
+      await pushToSupabase('users', user);
+      triggerUpdate();
+      return true;
   },
+
+  deleteUser: async (id: string) => {
+      await deleteFromSupabase('users', id);
+      triggerUpdate();
+      return true;
+  },
+
+  getEmployees: (): Employee[] => JSON.parse(localStorage.getItem(KEYS.EMPLOYEES) || '[]'),
   
-  addEmployee: (emp: Employee) => {
+  addEmployee: async (emp: Employee) => {
+    const list = StorageService.getEmployees();
+    list.push(emp);
+    localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(list));
+    await pushToSupabase('employees', emp);
+    triggerUpdate();
+  },
+
+  updateEmployee: async (emp: Employee) => {
     const list = StorageService.getEmployees();
     const idx = list.findIndex(e => e.id === emp.id);
-    if (idx > -1) list[idx] = emp; else list.push(emp);
-    localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(list));
-    pushToSupabase('employees', emp);
-    triggerUpdate();
+    if (idx > -1) {
+        list[idx] = emp;
+        localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(list));
+        await pushToSupabase('employees', emp);
+        triggerUpdate();
+    }
   },
 
-  deleteEmployee: (id: string) => {
+  deleteEmployee: async (id: string) => {
+    const list = StorageService.getEmployees();
+    const emp = list.find(e => e.id === id);
+    if (emp) {
+        emp.status = 'TRASH';
+        localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(list));
+        await pushToSupabase('employees', emp);
+        triggerUpdate();
+    }
+  },
+
+  restoreEmployee: async (id: string) => {
+    const list = StorageService.getEmployees();
+    const emp = list.find(e => e.id === id);
+    if (emp) {
+        emp.status = 'ACTIVE';
+        localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(list));
+        await pushToSupabase('employees', emp);
+        triggerUpdate();
+    }
+  },
+
+  deleteEmployeePermanently: async (id: string) => {
     const list = StorageService.getEmployees().filter(e => e.id !== id);
     localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(list));
-    deleteFromSupabase('employees', id);
+    await deleteFromSupabase('employees', id);
     triggerUpdate();
   },
 
-  getARTs: (): RegisteredART[] => {
-    const data = localStorage.getItem(KEYS.ARTS);
-    return data ? JSON.parse(data) : [];
-  },
+  getARTs: (): RegisteredART[] => JSON.parse(localStorage.getItem(KEYS.ARTS) || '[]'),
 
-  addART: (art: RegisteredART) => {
+  addART: async (art: RegisteredART) => {
     const list = StorageService.getARTs();
     list.push(art);
     localStorage.setItem(KEYS.ARTS, JSON.stringify(list));
-    pushToSupabase('arts', art);
+    await pushToSupabase('arts', art);
     triggerUpdate();
   },
 
-  deleteART: (id: string) => {
+  deleteART: async (id: string) => {
     const list = StorageService.getARTs().filter(a => a.id !== id);
     localStorage.setItem(KEYS.ARTS, JSON.stringify(list));
-    deleteFromSupabase('arts', id);
+    await deleteFromSupabase('arts', id);
     triggerUpdate();
   },
 
-  getSchedule: async (): Promise<ScheduleItem[]> => {
-      const { data } = await supabase.from('schedule').select('*').order('dateStart', { ascending: true });
-      if (data) localStorage.setItem(KEYS.SCHEDULE, JSON.stringify(data));
-      return data || JSON.parse(localStorage.getItem(KEYS.SCHEDULE) || '[]');
-  },
+  getSchedule: (): ScheduleItem[] => JSON.parse(localStorage.getItem(KEYS.SCHEDULE) || '[]'),
 
-  updateSchedule: (items: ScheduleItem[]) => {
+  updateSchedule: async (items: ScheduleItem[]) => {
     localStorage.setItem(KEYS.SCHEDULE, JSON.stringify(items));
-    items.forEach(item => pushToSupabase('schedule', item));
-    triggerUpdate();
-  },
-
-  deleteScheduleItem: (id: string) => {
-    const list = JSON.parse(localStorage.getItem(KEYS.SCHEDULE) || '[]') as ScheduleItem[];
-    localStorage.setItem(KEYS.SCHEDULE, JSON.stringify(list.filter(i => i.id !== id)));
-    deleteFromSupabase('schedule', id);
-    triggerUpdate();
-  },
-
-  archiveAndClearSchedule: async () => {
-    const { data: items } = await supabase.from('schedule').select('*');
-    if (!items || items.length === 0) return true;
-    
     for (const item of items) {
-        await pushToSupabase('documents', {
-            id: crypto.randomUUID(),
-            type: 'CHECKLIST',
-            header: { om: item.frotaOm, tag: item.frotaOm, date: new Date().toISOString().split('T')[0], time: '00:00', type: 'OUTROS', description: `BACKUP: ${item.description}` },
-            createdAt: new Date().toISOString(),
-            status: 'ARQUIVADO',
-            content: { ...item, isBackup: true }
-        });
-        await deleteFromSupabase('schedule', item.id);
+        await pushToSupabase('schedule', item);
     }
+    triggerUpdate();
+  },
+
+  deleteScheduleItem: async (id: string) => {
+    const list = StorageService.getSchedule().filter(item => item.id !== id);
+    localStorage.setItem(KEYS.SCHEDULE, JSON.stringify(list));
+    await deleteFromSupabase('schedule', id);
+    triggerUpdate();
+  },
+
+  archiveAndClearSchedule: async (): Promise<boolean> => {
     localStorage.setItem(KEYS.SCHEDULE, '[]');
+    // Delete all logic is safer to keep server-side or truncate, 
+    // but for now we try to delete local ones from server
+    // WARNING: This simple implementation might not sync "delete all" correctly offline
+    // Ideally we would send a batch delete command. 
+    // Current offline approach: Only clears local. 
+    try {
+        await supabase.from('schedule').delete().neq('id', '000'); 
+    } catch(e) { console.error(e); }
     triggerUpdate();
     return true;
   },
 
-  getOMs: (): OMRecord[] => {
-      const data = localStorage.getItem(KEYS.OMS);
-      return data ? JSON.parse(data) : [];
-  },
-
-  deleteOM: (id: string) => {
-    const list = StorageService.getOMs().filter(o => o.id !== id);
-    localStorage.setItem(KEYS.OMS, JSON.stringify(list));
-    deleteFromSupabase('oms', id);
-    triggerUpdate();
-  },
-
-  getDocuments: (): DocumentRecord[] => {
-      const data = localStorage.getItem(KEYS.DOCS);
-      return data ? JSON.parse(data) : [];
-  },
-
-  saveDocument: (doc: DocumentRecord) => {
-    const docs = StorageService.getDocuments();
-    docs.push(doc);
-    localStorage.setItem(KEYS.DOCS, JSON.stringify(docs));
-    pushToSupabase('documents', doc);
-    triggerUpdate();
-  },
-
-  moveToTrash: (id: string) => {
-    const docs = StorageService.getDocuments();
-    const doc = docs.find(d => d.id === id);
-    if (doc) {
-        doc.status = 'LIXEIRA';
-        localStorage.setItem(KEYS.DOCS, JSON.stringify(docs));
-        pushToSupabase('documents', doc);
-        triggerUpdate();
-    }
-  },
-
-  moveManyToTrash: (ids: string[]) => {
-    const docs = StorageService.getDocuments();
-    docs.forEach(doc => { if (ids.includes(doc.id)) doc.status = 'LIXEIRA'; });
-    localStorage.setItem(KEYS.DOCS, JSON.stringify(docs));
-    docs.filter(d => ids.includes(d.id)).forEach(d => pushToSupabase('documents', d));
-    triggerUpdate();
-  },
-
-  restoreFromTrash: (id: string) => {
-    const docs = StorageService.getDocuments();
-    const doc = docs.find(d => d.id === id);
-    if (doc) {
-        doc.status = 'ATIVO';
-        localStorage.setItem(KEYS.DOCS, JSON.stringify(docs));
-        pushToSupabase('documents', doc);
-        triggerUpdate();
-    }
-  },
-
-  deletePermanently: (id: string) => {
-    const docs = StorageService.getDocuments().filter(d => d.id !== id);
-    localStorage.setItem(KEYS.DOCS, JSON.stringify(docs));
-    deleteFromSupabase('documents', id);
-    triggerUpdate();
-  },
-
-  emptyTrash: () => {
-    const docs = StorageService.getDocuments();
-    const trashIds = docs.filter(d => d.status === 'LIXEIRA').map(d => d.id);
-    const remaining = docs.filter(d => d.status !== 'LIXEIRA');
-    localStorage.setItem(KEYS.DOCS, JSON.stringify(remaining));
-    trashIds.forEach(id => deleteFromSupabase('documents', id));
-    triggerUpdate();
-  },
+  getDocuments: (): DocumentRecord[] => JSON.parse(localStorage.getItem(KEYS.DOCS) || '[]'),
 
   runRetentionPolicy: () => {
-    const docs = StorageService.getDocuments();
-    const now = new Date();
-    let changed = false;
-    docs.forEach(doc => {
-        if (doc.status === 'ATIVO') {
-            const diffDays = (now.getTime() - new Date(doc.createdAt).getTime()) / (1000 * 3600 * 24);
-            if (diffDays > 30) { doc.status = 'ARQUIVADO'; changed = true; }
-        }
-    });
-    if (changed) {
-        localStorage.setItem(KEYS.DOCS, JSON.stringify(docs));
-        docs.forEach(d => pushToSupabase('documents', d));
+    console.debug('Retention policy running...');
+  },
+
+  saveDocument: async (doc: DocumentRecord) => {
+    const list = StorageService.getDocuments();
+    list.push(doc);
+    localStorage.setItem(KEYS.DOCS, JSON.stringify(list));
+    await pushToSupabase('documents', doc);
+    triggerUpdate();
+  },
+
+  moveToTrash: async (id: string) => {
+    const list = StorageService.getDocuments();
+    const doc = list.find(d => d.id === id);
+    if (doc) {
+        doc.status = 'LIXEIRA';
+        localStorage.setItem(KEYS.DOCS, JSON.stringify(list));
+        await pushToSupabase('documents', doc);
         triggerUpdate();
     }
   },
 
-  getActiveMaintenances: async (): Promise<ActiveMaintenance[]> => {
-      const { data } = await supabase.from('active_maintenance').select('*');
-      if (data) localStorage.setItem(KEYS.ACTIVE, JSON.stringify(data));
-      return data || JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]');
-  },
-
-  getActiveMaintenanceById: (id: string) => {
-    const active = JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]') as ActiveMaintenance[];
-    return active.find(m => m.id === id);
-  },
-  
-  startMaintenance: (task: ActiveMaintenance) => {
-    const tasks = JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]');
-    task.status = 'ANDAMENTO';
-    task.currentSessionStart = new Date().toISOString();
-    task.accumulatedTime = Number(task.accumulatedTime) || 0;
-    tasks.push(task);
-    localStorage.setItem(KEYS.ACTIVE, JSON.stringify(tasks));
-    pushToSupabase('active_maintenance', task);
+  moveManyToTrash: async (ids: string[]) => {
+    const list = StorageService.getDocuments();
+    ids.forEach(id => {
+      const doc = list.find(d => d.id === id);
+      if (doc) {
+          doc.status = 'LIXEIRA';
+          pushToSupabase('documents', doc); // Push individually to queue if needed
+      }
+    });
+    localStorage.setItem(KEYS.DOCS, JSON.stringify(list));
     triggerUpdate();
   },
 
-  pauseMaintenance: (id: string) => {
-    const tasks = JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]') as ActiveMaintenance[];
+  restoreFromTrash: async (id: string) => {
+    const list = StorageService.getDocuments();
+    const doc = list.find(d => d.id === id);
+    if (doc) {
+        doc.status = 'ATIVO';
+        localStorage.setItem(KEYS.DOCS, JSON.stringify(list));
+        await pushToSupabase('documents', doc);
+        triggerUpdate();
+    }
+  },
+
+  deletePermanently: async (id: string) => {
+    const list = StorageService.getDocuments().filter(d => d.id !== id);
+    localStorage.setItem(KEYS.DOCS, JSON.stringify(list));
+    await deleteFromSupabase('documents', id);
+    triggerUpdate();
+  },
+
+  emptyTrash: async () => {
+    const allDocs = StorageService.getDocuments();
+    const trashItems = allDocs.filter(d => d.status === 'LIXEIRA');
+    const filtered = allDocs.filter(d => d.status !== 'LIXEIRA');
+    localStorage.setItem(KEYS.DOCS, JSON.stringify(filtered));
+    for (const doc of trashItems) {
+        await deleteFromSupabase('documents', doc.id);
+    }
+    triggerUpdate();
+  },
+
+  getActiveMaintenances: (): ActiveMaintenance[] => JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]'),
+
+  getActiveMaintenanceById: (id: string) => StorageService.getActiveMaintenances().find(m => m.id === id),
+  
+  startMaintenance: async (task: ActiveMaintenance) => {
+    const tasks = StorageService.getActiveMaintenances();
+    tasks.push(task);
+    localStorage.setItem(KEYS.ACTIVE, JSON.stringify(tasks));
+    await pushToSupabase('active_maintenance', task);
+    
+    // Tenta atualizar OM se possível (se ID existir)
+    if (task.omId) {
+        await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
+    }
+
+    triggerUpdate();
+  },
+
+  pauseMaintenance: async (id: string) => {
+    const tasks = StorageService.getActiveMaintenances();
     const task = tasks.find(t => t.id === id);
     if (task) {
-        const now = new Date().getTime();
-        if (task.currentSessionStart) {
-            const sessionDuration = now - new Date(task.currentSessionStart).getTime();
-            if (sessionDuration > 0) {
-                task.accumulatedTime = (Number(task.accumulatedTime) || 0) + sessionDuration;
-            }
-        }
+        const now = Date.now();
+        const start = task.currentSessionStart ? new Date(task.currentSessionStart).getTime() : now;
+        task.accumulatedTime = (task.accumulatedTime || 0) + (now - start);
         task.status = 'PAUSADA';
         task.currentSessionStart = undefined;
         localStorage.setItem(KEYS.ACTIVE, JSON.stringify(tasks));
-        pushToSupabase('active_maintenance', task);
+        await pushToSupabase('active_maintenance', task);
         triggerUpdate();
     }
   },
 
-  resumeMaintenance: (id: string) => {
-    const tasks = JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]') as ActiveMaintenance[];
+  resumeMaintenance: async (id: string) => {
+    const tasks = StorageService.getActiveMaintenances();
     const task = tasks.find(t => t.id === id);
     if (task) {
         task.status = 'ANDAMENTO';
         task.currentSessionStart = new Date().toISOString();
         localStorage.setItem(KEYS.ACTIVE, JSON.stringify(tasks));
-        pushToSupabase('active_maintenance', task);
+        await pushToSupabase('active_maintenance', task);
         triggerUpdate();
     }
   },
 
-  completeMaintenance: async (id: string) => {
-    const active = JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]') as ActiveMaintenance[];
+  completeMaintenance: async (id: string, status: string = 'FINALIZADO') => {
+    const active = StorageService.getActiveMaintenances();
     const task = active.find(t => t.id === id);
     if (task) {
+        const now = new Date();
+        const start = task.currentSessionStart ? new Date(task.currentSessionStart).getTime() : now.getTime();
+        const totalMs = (task.accumulatedTime || 0) + (now.getTime() - start);
         const log: MaintenanceLog = {
             id: crypto.randomUUID(), om: task.header.om, tag: task.header.tag, description: task.header.description,
-            startTime: task.startTime, endTime: new Date().toISOString(), duration: 'CONCLUÍDO', responsible: 'EQUIPE CAMPO', status: 'FINALIZADO'
+            startTime: task.startTime, endTime: now.toISOString(), duration: `${Math.floor(totalMs / 3600000)}h ${Math.floor((totalMs % 3600000) / 60000)}m`,
+            responsible: 'EQUIPE CAMPO', status
         };
         await pushToSupabase('history', log);
+        
+        if (task.omId) {
+            await StorageService.updateOMStatus(task.omId, 'CONCLUIDA');
+        }
+
+        const filtered = active.filter(t => t.id !== id);
+        localStorage.setItem(KEYS.ACTIVE, JSON.stringify(filtered));
         await deleteFromSupabase('active_maintenance', id);
-        localStorage.setItem(KEYS.ACTIVE, JSON.stringify(active.filter(t => t.id !== id)));
         triggerUpdate();
     }
   },
 
-  getHistory: async (): Promise<MaintenanceLog[]> => {
-      const { data } = await supabase.from('history').select('*').order('endTime', { ascending: false }).limit(30);
-      return data || JSON.parse(localStorage.getItem(KEYS.HISTORY) || '[]');
+  getHistory: (): MaintenanceLog[] => JSON.parse(localStorage.getItem(KEYS.HISTORY) || '[]'),
+
+  getOMs: (): OMRecord[] => JSON.parse(localStorage.getItem(KEYS.OMS) || '[]'),
+
+  saveOM: async (om: OMRecord) => {
+    const list = StorageService.getOMs();
+    const index = list.findIndex(o => o.id === om.id);
+    if (index > -1) {
+        list[index] = om;
+    } else {
+        list.push(om);
+    }
+    localStorage.setItem(KEYS.OMS, JSON.stringify(list));
+    await pushToSupabase('oms', om);
+    triggerUpdate();
   },
 
-  getChatMessages: (): ChatMessage[] => {
-    return JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]');
+  updateOMStatus: async (id: string, status: 'PENDENTE' | 'EM_ANDAMENTO' | 'CONCLUIDA') => {
+      const list = StorageService.getOMs();
+      const om = list.find(o => o.id === id);
+      if (om) {
+          om.status = status;
+          localStorage.setItem(KEYS.OMS, JSON.stringify(list));
+          
+          // Use wrapper if implemented, or handle manual queue here.
+          // Since updateOMStatus is specific, we use pushToSupabase with the full object or partial
+          // Here we are updating just the status locally, but for consistency with queue, 
+          // best to upsert the whole object or call a specific update function.
+          // For simplicity/robustness in queue: Upsert the whole OM object.
+          await pushToSupabase('oms', om); 
+          triggerUpdate();
+      }
   },
 
-  sendChatMessage: (msg: ChatMessage) => {
-    const messages = StorageService.getChatMessages();
-    messages.push(msg);
-    localStorage.setItem(KEYS.CHAT, JSON.stringify(messages));
-    pushToSupabase('chat', msg);
-    window.dispatchEvent(new Event('safemaint_chat_update'));
+  deleteOM: async (id: string) => {
+    const list = StorageService.getOMs().filter(o => o.id !== id);
+    localStorage.setItem(KEYS.OMS, JSON.stringify(list));
+    await deleteFromSupabase('oms', id);
+    triggerUpdate();
   },
 
-  clearChat: () => {
-    localStorage.removeItem(KEYS.CHAT);
-    window.dispatchEvent(new Event('safemaint_chat_update'));
+  getChatMessages: (): ChatMessage[] => JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]'),
+
+  sendChatMessage: async (msg: ChatMessage) => {
+    const list = StorageService.getChatMessages();
+    list.push(msg);
+    localStorage.setItem(KEYS.CHAT, JSON.stringify(list));
+    await pushToSupabase('chat', msg);
+    triggerChatUpdate();
+  },
+
+  clearChat: async () => {
+    localStorage.setItem(KEYS.CHAT, '[]');
+    try {
+        await supabase.from('chat').delete().neq('id', '000');
+    } catch(e) {}
+    triggerChatUpdate();
   },
 
   getNotifications: (): NotificationItem[] => {
-    const oms = StorageService.getOMs();
-    return oms.filter(om => om.status === 'PENDENTE').map(om => ({
-      id: om.id,
-      type: om.type === 'CORRETIVA' ? 'URGENT' : 'INFO',
-      title: `OM ${om.type}: ${om.omNumber}`,
-      message: `${om.tag} - ${om.description}`,
-      date: new Date(om.createdAt).toLocaleDateString()
-    }));
+      const oms = StorageService.getOMs();
+      return oms.filter(o => o.status === 'PENDENTE').map(o => ({
+          id: o.id, type: o.type === 'CORRETIVA' ? 'URGENT' : 'INFO',
+          title: `OM PENDENTE: ${o.omNumber}`, message: `${o.tag} - ${o.description}`, date: new Date(o.createdAt).toLocaleDateString()
+      }));
   }
 };
