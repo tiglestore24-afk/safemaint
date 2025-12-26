@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { CommonHeader } from '../components/CommonHeader';
 import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
-import { HeaderData, DocumentRecord, Employee, ActiveMaintenance, SignatureRecord } from '../types';
+import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, CheckCircle } from 'lucide-react';
+import { ShieldCheck, CheckCircle } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 
 export const ARTEmergencial: React.FC = () => {
@@ -209,7 +208,7 @@ export const ARTEmergencial: React.FC = () => {
                                 id={`risk-${index}`}
                                 className="mt-1 h-5 w-5 text-red-600 rounded focus:ring-red-500"
                                 checked={isChecked}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRiskChange(index, e.target.checked)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRiskChange(index, e.currentTarget.checked)}
                               />
                               <div className="flex-1">
                                 <label 

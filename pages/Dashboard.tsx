@@ -75,6 +75,24 @@ export const Dashboard: React.FC = () => {
       setClosingTask(null);
   };
 
+  const handleNotificationClick = (notification: NotificationItem) => {
+      const oms = StorageService.getOMs();
+      const om = oms.find(o => o.id === notification.id);
+      
+      if (om) {
+          // Remove visualmente imediato
+          setNotifications(prev => prev.filter(n => n.id !== notification.id));
+          setShowNotifications(false);
+
+          // Navega para a execução baseada no tipo da OM
+          if (om.type === 'CORRETIVA') {
+              navigate('/art-emergencial', { state: { omId: om.id, om: om.omNumber, tag: om.tag, description: om.description, type: om.type } });
+          } else {
+              navigate('/art-atividade', { state: { omId: om.id, om: om.omNumber, tag: om.tag, description: om.description, type: om.type } });
+          }
+      }
+  };
+
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-fadeIn pb-20">
       
@@ -127,10 +145,17 @@ export const Dashboard: React.FC = () => {
                                   {notifications.length === 0 ? (
                                     <div className="text-center py-8 text-gray-500 font-black text-[10px] uppercase">Nenhum alerta crítico</div>
                                   ) : notifications.map(n => (
-                                      <div key={n.id} className="p-4 bg-white/5 border-l-4 border-vale-green mb-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer">
-                                          <h4 className="font-black text-[10px] text-white uppercase tracking-tight">{n.title}</h4>
+                                      <div 
+                                        key={n.id} 
+                                        onClick={() => handleNotificationClick(n)}
+                                        className="p-4 bg-white/5 border-l-4 border-vale-green mb-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer group"
+                                      >
+                                          <h4 className="font-black text-[10px] text-white uppercase tracking-tight group-hover:text-vale-green transition-colors">{n.title}</h4>
                                           <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">{n.message}</p>
-                                          <span className="text-[8px] text-vale-green font-black mt-1 block">{n.date}</span>
+                                          <div className="flex justify-between items-center mt-2">
+                                              <span className="text-[8px] text-vale-green font-black">{n.date}</span>
+                                              <span className="text-[8px] bg-white/10 px-2 py-0.5 rounded text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity">IR PARA OM</span>
+                                          </div>
                                       </div>
                                   ))}
                               </div>
