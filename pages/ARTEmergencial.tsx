@@ -161,7 +161,8 @@ export const ARTEmergencial: React.FC = () => {
 
   // Helper Check for Status
   const hasHeader = !!(header.om && header.tag);
-  const hasRisks = Object.values(checklistRisks).some(r => r.checked);
+  // FIX: Explicitly type 'r' as any to avoid 'unknown' error
+  const hasRisks = Object.values(checklistRisks).some((r: any) => r.checked);
   const hasSignatures = signatures.length > 0;
 
   return (
@@ -208,7 +209,7 @@ export const ARTEmergencial: React.FC = () => {
                                 id={`risk-${index}`}
                                 className="mt-1 h-5 w-5 text-red-600 rounded focus:ring-red-500"
                                 checked={isChecked}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRiskChange(index, e.currentTarget.checked)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRiskChange(index, e.target.checked)}
                               />
                               <div className="flex-1">
                                 <label 

@@ -15,6 +15,7 @@ import { Settings } from './pages/Settings';
 import { Chat } from './pages/Chat';
 import { Login } from './pages/Login';
 import { OMManagement } from './pages/OMManagement';
+import { AvailabilityBoard } from './pages/AvailabilityBoard'; // NEW
 import { StorageService } from './services/storage';
 
 const App: React.FC = () => {
@@ -28,6 +29,21 @@ const App: React.FC = () => {
       StorageService.initialSync();
     }
   }, []);
+
+  // --- AUTO UPDATE (10 SEGUNDOS) ---
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const intervalId = setInterval(() => {
+        // Sincroniza apenas se estiver online para evitar erros de rede
+        if (navigator.onLine) {
+            // console.log('[AUTO-SYNC] Sincronizando dados a cada 10s...');
+            StorageService.initialSync();
+        }
+    }, 10000); // 10 Segundos conforme solicitado
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated]);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
@@ -71,6 +87,7 @@ const App: React.FC = () => {
                     <Route path="/art-atividade" element={<ARTAtividade />} />
                     <Route path="/checklist" element={<Checklist />} />
                     <Route path="/schedule" element={<Schedule />} />
+                    <Route path="/availability" element={<AvailabilityBoard />} /> 
                     <Route path="/tv-schedule" element={<TVSchedule />} />
                     <Route path="/archive" element={<Archive />} />
                     <Route path="/trash" element={<Trash />} />

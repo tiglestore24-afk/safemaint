@@ -102,9 +102,10 @@ export interface ActiveMaintenance {
   artId: string;
   artType: 'ART_EMERGENCIAL' | 'ART_ATIVIDADE';
   origin: 'PREVENTIVA' | 'CORRETIVA';
-  status?: 'ANDAMENTO' | 'PAUSADA';
+  status?: 'ANDAMENTO' | 'PAUSADA' | 'AGUARDANDO';
   currentSessionStart?: string;
   accumulatedTime?: number;
+  openedBy?: string; // LOGIN do usuário que abriu a tarefa
 }
 
 export interface MaintenanceLog {
@@ -128,6 +129,13 @@ export interface ChatMessage {
   isSystem?: boolean;
 }
 
+export interface OMHistoryItem {
+  date: string;
+  type: string;
+  om: string;
+  description: string;
+}
+
 export interface OMRecord {
   id: string;
   omNumber: string;
@@ -139,4 +147,25 @@ export interface OMRecord {
   pdfUrl?: string; // Simulação do arquivo
   createdBy: string;
   linkedScheduleId?: string; // ID do item da programação vinculado
+  
+  // Novos campos extraídos do PDF
+  installationLocation?: string; // Pagina 2
+  maintenanceHistory?: OMHistoryItem[]; // Pagina 3
+}
+
+export interface ChecklistTemplateItem {
+  id: string;       // UUID do banco
+  legacyId: number; // ID numérico (1, 2, 3...) para ordenação
+  section: string;
+  description: string;
+}
+
+// --- NEW TYPES FOR AVAILABILITY BOARD ---
+export type AvailabilityStatus = 'OK' | 'CORRETIVA' | 'PREVENTIVA' | 'PR' | 'LS' | 'META' | 'INSPECAO' | 'EMPTY';
+
+export interface AvailabilityRecord {
+  id: string;
+  tag: string;
+  // Map of "YYYY-MM-DD" -> Array of Statuses (allows multiple per day)
+  statusMap: Record<string, AvailabilityStatus[]>; 
 }

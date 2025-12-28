@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { StorageService } from '../services/storage';
 import { ScheduleItem } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Clock, Maximize2, Trash2, Cloud, X, ShieldAlert, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PlayCircle, Clock, Maximize2, Trash2, Cloud, X, ShieldAlert, Loader2, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { TVSchedule } from './TVSchedule';
 import { BackButton } from '../components/BackButton';
 
@@ -34,13 +34,10 @@ export const Schedule: React.FC = () => {
   }, []);
 
   const loadSchedule = () => {
-      setIsLoading(true);
-      // Small timeout to allow UI to paint the loader before heavy parsing/rendering
-      setTimeout(() => {
-          const data = StorageService.getSchedule();
-          setScheduleItems(data);
-          setIsLoading(false);
-      }, 100);
+      // Não seta loading true aqui para evitar flicker durante updates automáticos
+      const data = StorageService.getSchedule();
+      setScheduleItems(data);
+      setIsLoading(false);
   };
 
   const isMaintenanceDay = (dateStr: string) => {
@@ -53,6 +50,7 @@ export const Schedule: React.FC = () => {
       let om = item.frotaOm;
       let tag = item.frotaOm;
 
+      // Logic to split OM/TAG if combined
       if (item.frotaOm.includes('\n')) {
           const parts = item.frotaOm.split('\n');
           tag = parts[0].trim();
@@ -66,7 +64,9 @@ export const Schedule: React.FC = () => {
       const params = new URLSearchParams();
       params.append('om', om);
       params.append('tag', tag);
-      params.append('desc', item.description);
+      params.append('desc', item.description || 'Manutenção Programada'); // Fallback description
+      params.append('scheduleId', item.id); // IMPORTANT: Pass ID to remove from list later
+      
       navigate(`/art-atividade?${params.toString()}`);
   };
 
@@ -83,6 +83,48 @@ export const Schedule: React.FC = () => {
               setCurrentPage(1);
           }, 500);
       }
+  };
+
+  const handleExportCSV = () => {
+      if (scheduleItems.length === 0) {
+          alert("Sem dados para exportar.");
+          return;
+      }
+
+      const headers = ["ID", "FROTA/OM", "DESCRIÇÃO", "DATA MIN", "DATA MAX", "PRIORIDADE", "PESSOAS", "HORAS", "DATA INI", "DATA FIM", "CENTRO TRAB", "HORA INI", "HORA FIM", "RECURSOS", "RECURSOS 2"];
+      
+      const rows = scheduleItems.map(i => [
+          i.id,
+          `"${(i.frotaOm || '').replace(/"/g, '""')}"`, // Escape quotes
+          `"${(i.description || '').replace(/"/g, '""')}"`,
+          i.dateMin || '',
+          i.dateMax || '',
+          i.priority || '',
+          i.peopleCount || 0,
+          i.hours || 0,
+          i.dateStart || '',
+          i.dateEnd || '',
+          i.workCenter || '',
+          i.timeStart || '',
+          i.timeEnd || '',
+          `"${(i.resources || '').replace(/"/g, '""')}"`,
+          `"${(i.resources2 || '').replace(/"/g, '""')}"`
+      ]);
+
+      // Adiciona BOM (\uFEFF) para forçar o Excel a ler como UTF-8
+      const csvContent = "\uFEFF" + [
+          headers.join(";"), 
+          ...rows.map(row => row.join(";"))
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `programacao_safemaint_${new Date().toLocaleDateString().replace(/\//g,'-')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
   };
 
   const handleDeleteItem = (id: string) => {
@@ -244,6 +286,16 @@ export const Schedule: React.FC = () => {
                 </div>
                 
                 <div className="flex gap-2">
+                    <button 
+                        onClick={handleExportCSV}
+                        disabled={scheduleItems.length === 0}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-black shadow-lg flex items-center gap-2 transition-transform active:scale-95 border-2 border-blue-800 disabled:opacity-50"
+                        title="Baixar lista em Excel/CSV"
+                    >
+                        <Download size={20} />
+                        <span className="hidden md:inline">EXPORTAR CSV</span>
+                    </button>
+
                     <button 
                         onClick={handleClearAll}
                         disabled={isLoading}

@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { CommonHeader } from '../components/CommonHeader';
 import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
-import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord } from '../types';
+import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord, ChecklistTemplateItem } from '../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle, ArrowLeft } from 'lucide-react';
+import { CheckCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 
 export const Checklist: React.FC = () => {
@@ -18,94 +18,82 @@ export const Checklist: React.FC = () => {
   });
 
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
+  const [checklistItems, setChecklistItems] = useState<ChecklistTemplateItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Checklist State
-  const [checks, setChecks] = useState<Record<number, { status: 'ATENDE' | 'NAO_ATENDE' | null; obs: string }>>({});
+  // Usaremos string (UUID) ou number (Legacy) como chave, dependendo do que vier
+  const [checks, setChecks] = useState<Record<string, { status: 'ATENDE' | 'NAO_ATENDE' | null; obs: string }>>({});
 
   useEffect(() => {
+    // 1. Carregar cabeçalho da manutenção ativa (se houver)
     if (maintenanceId) {
         const task = StorageService.getActiveMaintenanceById(maintenanceId);
         if (task) {
-            setHeader(task.header); // Load header from the active task
+            setHeader(task.header);
         }
     }
-  }, [maintenanceId]);
 
-  const checklistItems = [
-    { id: 1, section: "MOTOR", desc: "Vazamento de óleo em geral e próximo a partes quentes" },
-    { id: 2, section: "MOTOR", desc: "Vazamento líquido de arrefecimento" },
-    { id: 3, section: "MOTOR", desc: "Interferências entre tubos, mangueiras e cabos" },
-    { id: 4, section: "MOTOR", desc: "Nível de óleo" },
-    { id: 5, section: "SISTEMA HIDRÁULICO", desc: "Vazamento do óleo" },
-    { id: 6, section: "SISTEMA HIDRÁULICO", desc: "Nível de óleo" },
-    { id: 7, section: "SISTEMA HIDRÁULICO", desc: "Abraçadeiras de fixação" },
-    { id: 8, section: "SISTEMA HIDRÁULICO", desc: "Interferências entre tubos, mangueiras e cabos" },
-    { id: 9, section: "TRANSMISSÃO", desc: "Vazamento do óleo" },
-    { id: 10, section: "TRANSMISSÃO", desc: "Parafusos folgados" },
-    { id: 11, section: "TRANSMISSÃO", desc: "Abraçadeiras de fixação" },
-    { id: 12, section: "TRANSMISSÃO", desc: "Interferências entre tubos, mangueiras e cabos" },
-    { id: 13, section: "TRANSMISSÃO", desc: "Proteção do cardan" },
-    { id: 14, section: "DIFERENCIAL", desc: "Bujão de dreno do diferencial (Fixação)" },
-    { id: 15, section: "COMANDO FINAL", desc: "Bujão de dreno e inspeção comando direito (Fixação)" },
-    { id: 16, section: "COMANDO FINAL", desc: "Bujão de dreno e inspeção comando esquerdo (Fixação)" },
-    { id: 17, section: "CONVERSOR", desc: "Nível de óleo do conversor e transmissão" },
-    { id: 18, section: "SISTEMA DE DIREÇÃO", desc: "Vazamento de óleo" },
-    { id: 19, section: "SISTEMA DE DIREÇÃO", desc: "Nível de óleo" },
-    { id: 20, section: "SISTEMA DE DIREÇÃO", desc: "Parafusos/pinos folgados" },
-    { id: 21, section: "SISTEMA DE DIREÇÃO", desc: "Abraçadeiras de fixação" },
-    { id: 22, section: "SISTEMA DE DIREÇÃO", desc: "Interferências entre tubos, mangueiras e cabos" },
-    { id: 23, section: "ILUMINAÇÃO, AR CONDICIONADO", desc: "Farol de Alta e Baixa" },
-    { id: 24, section: "ILUMINAÇÃO, AR CONDICIONADO", desc: "Setas" },
-    { id: 25, section: "ILUMINAÇÃO, AR CONDICIONADO", desc: "Buzina" },
-    { id: 26, section: "ILUMINAÇÃO, AR CONDICIONADO", desc: "Ar Condicionado" },
-    { id: 27, section: "ESCADAS, CORRIMÃO, GUARDA CORPO", desc: "Escadas (Principal e de emergência)" },
-    { id: 28, section: "ESCADAS, CORRIMÃO, GUARDA CORPO", desc: "Guarda Corpo (Plataforma)" },
-    { id: 29, section: "ESCADAS, CORRIMÃO, GUARDA CORPO", desc: "Tag's laterais e traseiro" },
-    { id: 30, section: "ESCADAS, CORRIMÃO, GUARDA CORPO", desc: "Corrimão das Escadas" },
-    { id: 31, section: "CONDIÇÕES DE LIMPEZA E ORGANIZAÇÃO", desc: "Cabine" },
-    { id: 32, section: "CONDIÇÕES DE LIMPEZA E ORGANIZAÇÃO", desc: "Plataforma" },
-    { id: 33, section: "CONDIÇÕES DE LIMPEZA E ORGANIZAÇÃO", desc: "Escadas e Corrimões" },
-    { id: 34, section: "CONDIÇÕES DE LIMPEZA E ORGANIZAÇÃO", desc: "Retrovisores" }
-  ];
+    // 2. Carregar Itens do Checklist (Template)
+    const loadItems = () => {
+        const items = StorageService.getChecklistTemplate();
+        setChecklistItems(items);
+        setIsLoading(false);
+    };
+
+    loadItems();
+    
+    // Opcional: ouvir atualizações caso o admin mude o template em tempo real
+    window.addEventListener('safemaint_storage_update', loadItems);
+    return () => window.removeEventListener('safemaint_storage_update', loadItems);
+  }, [maintenanceId]);
 
   // Group items by section
   const groupedItems = checklistItems.reduce((acc, item) => {
     (acc[item.section] = acc[item.section] || []).push(item);
     return acc;
-  }, {} as Record<string, typeof checklistItems>);
+  }, {} as Record<string, ChecklistTemplateItem[]>);
 
-  const handleStatus = (id: number, status: 'ATENDE' | 'NAO_ATENDE') => {
+  const handleStatus = (id: string, status: 'ATENDE' | 'NAO_ATENDE') => {
     setChecks(prev => ({ ...prev, [id]: { ...(prev[id] || { obs: '' }), status } }));
   };
 
-  const handleObs = (id: number, obs: string) => {
+  const handleObs = (id: string, obs: string) => {
     setChecks(prev => ({ ...prev, [id]: { ...(prev[id] || { status: null }), obs } }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (signatures.length === 0) {
         alert("ASSINATURA OBRIGATÓRIA PARA FINALIZAR O CHECKLIST.");
         return;
     }
 
-    const isComplete = signatures.length > 0;
-    const status = isComplete ? 'ATIVO' : 'RASCUNHO';
+    // SEM RASCUNHOS - SEMPRE ATIVO
+    const status = 'ATIVO';
     
+    // --- LÓGICA DE CÁLCULO DE TEMPO REAL ---
     let startTimeFormatted = '';
-    
+    let endTimeFormatted = new Date().toLocaleTimeString().slice(0,5); // Hora atual é a hora de fim
+    let activeTask: ActiveMaintenance | undefined;
+
     if (maintenanceId) {
-        const activeTask = StorageService.getActiveMaintenanceById(maintenanceId);
+        activeTask = StorageService.getActiveMaintenanceById(maintenanceId);
         if(activeTask) {
+            // Pega o horário real de quando a OM foi iniciada no sistema
             startTimeFormatted = new Date(activeTask.startTime).toLocaleTimeString().slice(0,5);
         }
+    } else {
+        // Fallback se não tiver ID (ex: checklist avulso)
+        startTimeFormatted = new Date().toLocaleTimeString().slice(0,5);
     }
 
     // MAP FULL CHECKLIST CONTENT (DESCRIPTION + STATUS)
     const fullContent = checklistItems.map(item => ({
-        id: item.id,
+        id: item.legacyId, // Mantendo legacyId para compatibilidade visual nos relatórios antigos
+        dbId: item.id,     // ID real do banco
         section: item.section,
-        desc: item.desc,
-        status: checks[item.id]?.status || 'NAO_AVALIADO',
+        desc: item.description,
+        status: checks[item.id]?.status || 'NAO_AVALIADO', // Usa ID string como chave do state
         obs: checks[item.id]?.obs || ''
     }));
 
@@ -119,12 +107,12 @@ export const Checklist: React.FC = () => {
       content: { checklistItems: fullContent }, // Saving full array
       signatures
     };
-    StorageService.saveDocument(doc);
+    await StorageService.saveDocument(doc);
 
     // Finalizar Manutenção e Redirecionar para Relatório
-    if (maintenanceId && status === 'ATIVO') {
-        // Encerra a manutenção pois o checklist finaliza o fluxo operacional
-        StorageService.completeMaintenance(maintenanceId, 'FINALIZADO');
+    if (maintenanceId) {
+        // Encerra a manutenção com status "VIA CHECKLIST" e fecha a OM
+        await StorageService.completeMaintenance(maintenanceId, 'VIA CHECKLIST', true);
         
         // Preparar dados para o Relatório Unificado
         const reportData = {
@@ -132,9 +120,9 @@ export const Checklist: React.FC = () => {
             tag: header.tag,
             type: header.type,
             date: new Date().toLocaleDateString('pt-BR'),
-            startTime: startTimeFormatted,
-            endTime: new Date().toLocaleTimeString().slice(0,5),
-            executors: signatures.map(s => s.name), // Pega nomes das assinaturas
+            startTime: startTimeFormatted, // Início Real da Atividade
+            endTime: endTimeFormatted,     // Fim Real da Atividade
+            executors: signatures.map(s => s.name), // Nomes extraídos das assinaturas
             activities: header.description,
             status: 'FINALIZADO',
             stopReason: 'MANUTENÇÃO CONCLUÍDA',
@@ -145,13 +133,19 @@ export const Checklist: React.FC = () => {
         // Navega para o relatório passando os dados
         navigate('/report', { state: reportData });
 
-    } else if (status === 'RASCUNHO') {
-        alert('CHECKLIST SALVO COMO RASCUNHO (PENDENTE ASSINATURAS).');
-        navigate('/archive');
     } else {
         navigate('/archive');
     }
   };
+
+  if (isLoading) {
+      return (
+          <div className="flex flex-col items-center justify-center min-h-screen text-vale-green">
+              <Loader2 size={48} className="animate-spin mb-4" />
+              <p className="font-bold uppercase tracking-widest">Carregando Checklist...</p>
+          </div>
+      );
+  }
 
   return (
     <div className="max-w-4xl mx-auto pb-24">
@@ -175,7 +169,7 @@ export const Checklist: React.FC = () => {
       <CommonHeader data={header} onChange={setHeader} readOnly={!!maintenanceId} />
 
       <div className="bg-white rounded-lg shadow-md border-2 border-gray-100 mb-6 overflow-hidden">
-        {Object.entries(groupedItems).map(([section, items]) => (
+        {Object.entries(groupedItems).map(([section, items]: [string, ChecklistTemplateItem[]]) => (
             <div key={section}>
                 <div className="bg-vale-dark px-4 py-2 border-y border-gray-700">
                     <h3 className="text-sm font-black text-white uppercase tracking-wider">{section}</h3>
@@ -193,9 +187,9 @@ export const Checklist: React.FC = () => {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {items.map(item => (
                                 <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-4 py-3 text-sm text-gray-900 font-bold w-12">{item.id}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-900 font-bold w-12">{item.legacyId}</td>
                                     <td className="px-4 py-3 text-sm text-gray-700 font-bold">
-                                        {item.desc}
+                                        {item.description}
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <div className="flex justify-center gap-1">

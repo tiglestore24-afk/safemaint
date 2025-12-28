@@ -1,16 +1,17 @@
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { StorageService, NotificationItem } from '../services/storage.ts';
-import { ActiveMaintenance, MaintenanceLog } from '../types.ts';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { StorageService, NotificationItem } from '../services/storage';
+import { ActiveMaintenance, MaintenanceLog } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { 
   CheckSquare, Clock, AlertOctagon, PauseCircle, 
   StopCircle, Bell, X, Activity, 
-  ShieldCheck, Wifi, WifiOff, Database, Settings, Wrench, PlayCircle, Timer
+  ShieldCheck, Wifi, WifiOff, Database, Settings, Wrench, PlayCircle, Timer, User, Lock, ArrowRightCircle, Users,
+  Volume2, VolumeX, BarChart3, TrendingUp, AlertTriangle
 } from 'lucide-react';
-import { checkConnection } from '../services/supabase.ts';
-import { Logo } from '../components/Logo.tsx';
-import { BackButton } from '../components/BackButton.tsx';
+import { checkConnection } from '../services/supabase';
+import { Logo } from '../components/Logo';
+import { BackButton } from '../components/BackButton';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -21,14 +22,31 @@ export const Dashboard: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [closingTask, setClosingTask] = useState<ActiveMaintenance | null>(null);
+  const [currentUser, setCurrentUser] = useState('');
+  
+  // Analytics State
+  const [downtimeStats, setDowntimeStats] = useState<{tag: string, totalMinutes: number, formatted: string, percentage: number}[]>([]);
+  
+  // Audio & Settings State
+  const [isMuted, setIsMuted] = useState(() => localStorage.getItem('safemaint_sound_muted') === 'true');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const prevNotificationCount = useRef(0);
 
   const refreshData = useCallback(() => {
     setActiveTasks(StorageService.getActiveMaintenances());
-    setHistory(StorageService.getHistory());
+    const hist = StorageService.getHistory();
+    setHistory(hist);
     setNotifications(StorageService.getNotifications());
+    calculateDowntimeStats(hist);
   }, []);
 
   useEffect(() => {
+    const user = localStorage.getItem('safemaint_user');
+    if(user) setCurrentUser(user);
+    
+    // Initialize Alert Sound (Generic Beep)
+    audioRef.current = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+
     refreshData();
     const validateConn = async () => setIsOnline(await checkConnection());
     validateConn();
@@ -42,6 +60,76 @@ export const Dashboard: React.FC = () => {
     };
   }, [refreshData]);
 
+  // Toggle Sound Preference
+  const toggleMute = () => {
+      const newState = !isMuted;
+      setIsMuted(newState);
+      localStorage.setItem('safemaint_sound_muted', String(newState));
+  };
+
+  // ALERTS: Sound & Vibration on NEW Urgent Notifications
+  useEffect(() => {
+      const urgentCount = notifications.filter(n => n.type === 'URGENT').length;
+      
+      if (urgentCount > prevNotificationCount.current) {
+          // Play Sound ONLY if not muted
+          if (audioRef.current && !isMuted) {
+              audioRef.current.play().catch(e => console.log('Audio Blocked:', e));
+          }
+          // Vibrate Device (Pattern: 200ms vibe, 100ms pause, 200ms vibe) - Always Vibrate if possible
+          if (navigator.vibrate) {
+              navigator.vibrate([200, 100, 200]);
+          }
+      }
+      prevNotificationCount.current = urgentCount;
+  }, [notifications, isMuted]);
+
+  // --- ANALYTICS LOGIC ---
+  const calculateDowntimeStats = (logs: MaintenanceLog[]) => {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const recentLogs = logs.filter(log => new Date(log.endTime) >= thirtyDaysAgo);
+      const tagMap: Record<string, number> = {};
+
+      recentLogs.forEach(log => {
+          if (!log.duration || log.duration.includes('PARCIAL')) return;
+          // Parse "Xh Ym"
+          const parts = log.duration.match(/(\d+)h\s*(\d+)m/);
+          let minutes = 0;
+          if (parts) {
+              minutes = (parseInt(parts[1]) * 60) + parseInt(parts[2]);
+          } else {
+              // Fallback simple heuristics or 0
+              minutes = 0; 
+          }
+          
+          if (minutes > 0) {
+              tagMap[log.tag] = (tagMap[log.tag] || 0) + minutes;
+          }
+      });
+
+      // Sort and Take Top 5
+      const sortedTags = Object.entries(tagMap)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 5);
+
+      const maxMinutes = sortedTags.length > 0 ? sortedTags[0][1] : 1; 
+
+      const stats = sortedTags.map(([tag, minutes]) => {
+          const h = Math.floor(minutes / 60);
+          const m = minutes % 60;
+          return {
+              tag,
+              totalMinutes: minutes,
+              formatted: `${h}h ${m}m`,
+              percentage: (minutes / maxMinutes) * 100
+          };
+      });
+
+      setDowntimeStats(stats);
+  };
+
   const getElapsedTime = (task: ActiveMaintenance) => {
     let totalMs = task.accumulatedTime || 0;
     if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
@@ -54,22 +142,25 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleAction = (task: ActiveMaintenance) => {
-      if (task.status === 'PAUSADA') {
+      if (task.status === 'PAUSADA' || task.status === 'AGUARDANDO') {
           StorageService.resumeMaintenance(task.id);
       } else {
           setClosingTask(task);
       }
   };
 
-  const completeAction = (type: 'PARCIAL' | 'TOTAL' | 'CHECKLIST') => {
+  const completeAction = async (type: 'PARCIAL' | 'TOTAL' | 'CHECKLIST') => {
       if(!closingTask) return;
+      
       if(type === 'PARCIAL') {
-          StorageService.pauseMaintenance(closingTask.id);
-          navigate('/report', { state: { ...closingTask.header, status: 'PARCIAL', startTime: closingTask.startTime } });
+          // Parcial: Mantém na tela (status AGUARDANDO - card AZUL), libera ownership
+          StorageService.setMaintenancePartial(closingTask.id);
       } else if(type === 'TOTAL') {
-          StorageService.completeMaintenance(closingTask.id);
+          // Total: Encerra tarefa, joga pro histórico como TOTAL, FECHA a OM (Concluída)
+          await StorageService.completeMaintenance(closingTask.id, 'TOTAL (MANUAL)', true);
           navigate('/report', { state: { ...closingTask.header, status: 'FINALIZADO', startTime: closingTask.startTime } });
       } else {
+          // Checklist: Redireciona para Checklist, lá ele chamará o completeMaintenance
           navigate(`/checklist?maintenanceId=${closingTask.id}`);
       }
       setClosingTask(null);
@@ -80,282 +171,349 @@ export const Dashboard: React.FC = () => {
       const om = oms.find(o => o.id === notification.id);
       
       if (om) {
-          // Remove visualmente imediato
           setNotifications(prev => prev.filter(n => n.id !== notification.id));
           setShowNotifications(false);
-
-          // Navega para a execução baseada no tipo da OM
+          
+          // DIRECCIONAMENTO INTELIGENTE
           if (om.type === 'CORRETIVA') {
-              navigate('/art-emergencial', { state: { omId: om.id, om: om.omNumber, tag: om.tag, description: om.description, type: om.type } });
+              // OM Corretiva -> ART Emergencial
+              navigate('/art-emergencial', { 
+                  state: { 
+                      omId: om.id, 
+                      om: om.omNumber,
+                      tag: om.tag,
+                      description: om.description,
+                      type: om.type
+                  } 
+              });
           } else {
-              navigate('/art-atividade', { state: { omId: om.id, om: om.omNumber, tag: om.tag, description: om.description, type: om.type } });
+              // OM Preventiva -> ART Atividade
+              navigate('/art-atividade', { 
+                  state: { 
+                      omId: om.id, 
+                      om: om.omNumber, 
+                      tag: om.tag, 
+                      description: om.description 
+                  } 
+              });
           }
+      } else {
+          // Fallback if OM not found (deleted?)
+          setNotifications(prev => prev.filter(n => n.id !== notification.id));
       }
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-8 animate-fadeIn pb-20">
-      
-      {/* PROFESSIONAL MISSION CONTROL HEADER */}
-      <div className="bg-vale-dark border-b-4 border-vale-green rounded-[2rem] text-white shadow-2xl relative">
-          <div className="absolute inset-0 overflow-hidden rounded-[2rem]">
-             <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-vale-green/10 to-transparent"></div>
-             <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-vale-green/5 rounded-full blur-3xl"></div>
-          </div>
-          
-          <div className="p-5 flex flex-col xl:flex-row justify-between items-center gap-6 relative z-10">
-              <div className="flex flex-col md:flex-row items-center gap-6">
-                  <BackButton className="mr-2 border-white/20 text-vale-green hover:bg-white/10" />
-                  <Logo size="md" light />
-                  <div className="flex gap-3 md:border-l border-white/10 md:pl-6">
-                      <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black border uppercase tracking-widest transition-all ${isOnline ? 'bg-vale-green/20 text-vale-green border-vale-green/30' : 'bg-vale-cherry/20 text-vale-cherry border-vale-cherry/30 animate-pulse'}`}>
-                          {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-                          {isOnline ? 'Online' : 'Offline'}
-                      </div>
-                      <div className="flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black bg-white/5 text-gray-400 border border-white/5 uppercase tracking-widest">
-                          <Database size={14} /> Sync
-                      </div>
-                  </div>
-              </div>
+    <div className="max-w-[1600px] mx-auto pb-20 relative">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex items-center gap-3">
+            <div className="bg-vale-green p-2 rounded-lg">
+                <ShieldCheck size={32} className="text-white" />
+            </div>
+            <div>
+                <h2 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter">Central de Controle</h2>
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded flex items-center gap-1">
+                        {isOnline ? <Wifi size={10} className="text-green-500" /> : <WifiOff size={10} className="text-red-500" />}
+                        {isOnline ? 'CONECTADO' : 'OFFLINE MODE'}
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded flex items-center gap-1">
+                        <Database size={10} className="text-blue-500" />
+                        SYNC ATIVO
+                    </span>
+                </div>
+            </div>
+        </div>
 
-              <div className="flex items-center gap-8">
-                  <div className="text-right hidden xl:block border-r border-white/10 pr-8">
-                      <span className="text-[9px] font-black text-vale-green uppercase tracking-[0.3em] block mb-1 opacity-70">Hora Local</span>
-                      <div className="text-4xl font-mono font-black text-white leading-none shadow-black drop-shadow-lg">{now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second: '2-digit'})}</div>
-                  </div>
+        <div className="flex gap-4 items-center">
+            {/* ALERT SOUND TOGGLE */}
+            <button 
+                onClick={toggleMute}
+                className={`p-3 rounded-full shadow-md transition-all ${isMuted ? 'bg-gray-200 text-gray-500' : 'bg-white text-vale-green border-2 border-vale-green'}`}
+                title={isMuted ? "Ativar Sons" : "Silenciar Alertas"}
+            >
+                {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            </button>
 
-                  {/* Notification System */}
-                  <div className="relative">
-                      <button onClick={() => setShowNotifications(!showNotifications)} className="p-4 bg-white/5 hover:bg-white/10 rounded-2xl text-vale-green transition-all border border-white/10 shadow-lg relative group/btn">
-                          <Bell size={24} className="group-hover/btn:scale-110 transition-transform" />
-                          {notifications.length > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-vale-cherry w-5 h-5 rounded-full border-2 border-vale-dark flex items-center justify-center animate-bounce">
-                              <span className="text-[9px] font-black text-white">{notifications.length}</span>
-                            </span>
-                          )}
-                      </button>
-                      
-                      {showNotifications && (
-                          <div className="absolute top-full mt-4 right-0 w-80 bg-vale-gray rounded-2xl shadow-2xl border border-white/10 overflow-hidden z-[100] animate-fade-in-up ring-4 ring-black/20">
-                              <div className="bg-vale-dark p-4 text-white font-black text-xs uppercase flex justify-between border-b border-white/5">
-                                <span>Painel de Alertas</span> 
-                                <button onClick={() => setShowNotifications(false)} className="hover:text-vale-cherry"><X size={16}/></button>
-                              </div>
-                              <div className="max-h-80 overflow-y-auto p-3 custom-scrollbar bg-gray-900">
-                                  {notifications.length === 0 ? (
-                                    <div className="text-center py-8 text-gray-500 font-black text-[10px] uppercase">Nenhum alerta crítico</div>
-                                  ) : notifications.map(n => (
-                                      <div 
+            {/* NOTIFICATION BELL */}
+            <div className="relative">
+                <button 
+                    onClick={() => setShowNotifications(!showNotifications)}
+                    className="p-3 bg-white rounded-full shadow-md hover:bg-gray-50 transition-colors border-2 border-gray-100 relative"
+                >
+                    <Bell size={24} className="text-vale-darkgray" />
+                    {notifications.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full animate-bounce">
+                            {notifications.length}
+                        </span>
+                    )}
+                </button>
+
+                {/* DROPDOWN NOTIFICATIONS */}
+                {showNotifications && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden animate-fade-in-up">
+                        <div className="bg-vale-dark p-3 flex justify-between items-center text-white">
+                            <span className="font-bold text-xs uppercase">Notificações Pendentes</span>
+                            <button onClick={() => setShowNotifications(false)}><X size={16}/></button>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                            {notifications.length === 0 ? (
+                                <div className="p-6 text-center text-gray-400 text-xs font-bold">NENHUMA NOTIFICAÇÃO</div>
+                            ) : (
+                                notifications.map(n => (
+                                    <div 
                                         key={n.id} 
                                         onClick={() => handleNotificationClick(n)}
-                                        className="p-4 bg-white/5 border-l-4 border-vale-green mb-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer group"
-                                      >
-                                          <h4 className="font-black text-[10px] text-white uppercase tracking-tight group-hover:text-vale-green transition-colors">{n.title}</h4>
-                                          <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">{n.message}</p>
-                                          <div className="flex justify-between items-center mt-2">
-                                              <span className="text-[8px] text-vale-green font-black">{n.date}</span>
-                                              <span className="text-[8px] bg-white/10 px-2 py-0.5 rounded text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity">IR PARA OM</span>
-                                          </div>
-                                      </div>
-                                  ))}
-                              </div>
-                          </div>
-                      )}
-                  </div>
-              </div>
-          </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-          
-          {/* OPERATIONS HUD - MAIN FEED */}
-          <div className="xl:col-span-8 space-y-6">
-              <div className="flex items-center justify-between border-b-4 border-gray-200 pb-3">
-                  <h2 className="text-2xl font-black text-vale-dark flex items-center gap-3 uppercase tracking-tighter">
-                      <div className="p-3 bg-vale-green rounded-xl text-white shadow-lg"><Activity size={24} /></div>
-                      Atividades em Andamento
-                      <div className="bg-vale-dark text-white text-[9px] px-3 py-1 rounded-full font-black ml-2 shadow-lg tracking-widest">{activeTasks.length} Ativas</div>
-                  </h2>
-              </div>
-
-              {activeTasks.length === 0 ? (
-                  <div className="bg-vale-dark rounded-[3rem] p-16 border-4 border-vale-green/30 relative overflow-hidden group min-h-[400px] flex items-center justify-center shadow-2xl">
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-vale-green/10 via-transparent to-transparent opacity-50 animate-pulse"></div>
-                      <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(#007e7a 1px, transparent 1px)', backgroundSize: '40px 40px', opacity: 0.1 }}></div>
-
-                      <div className="relative z-10 flex flex-col items-center">
-                          <div className="relative w-48 h-48 mb-8">
-                              <div className="absolute inset-0 border-4 border-dashed border-vale-green/30 rounded-full animate-[spin_20s_linear_infinite]"></div>
-                              <div className="absolute inset-4 text-vale-green animate-[spin_10s_linear_infinite]">
-                                  <Settings size={160} strokeWidth={1} />
-                              </div>
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                  <div className="bg-vale-dark p-4 rounded-full border-2 border-vale-green shadow-[0_0_30px_rgba(0,126,122,0.4)] animate-bounce">
-                                      <Wrench size={32} className="text-white" />
-                                  </div>
-                              </div>
-                          </div>
-
-                          <h3 className="text-3xl font-black text-white uppercase tracking-[0.2em] mb-2 text-center drop-shadow-lg">
-                              Sistema em Espera
-                          </h3>
-                          <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mb-6">Aguardando início de ordem de manutenção</p>
-                          
-                          <div className="flex items-center gap-2 bg-vale-green/10 px-6 py-3 rounded-full border border-vale-green/20 backdrop-blur-sm">
-                              <span className="relative flex h-3 w-3">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-vale-green opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-3 w-3 bg-vale-green"></span>
-                              </span>
-                              <span className="text-[10px] font-black text-vale-green uppercase tracking-widest">Monitoramento Ativo</span>
-                          </div>
-                      </div>
-                  </div>
-              ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {activeTasks.map(task => {
-                          const isUrgent = task.origin === 'CORRETIVA';
-                          const isPaused = task.status === 'PAUSADA';
-                          const isRunning = task.status === 'ANDAMENTO';
-                          
-                          return (
-                              <div key={task.id} className={`bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all border border-gray-100 overflow-hidden flex flex-col ${isRunning ? 'ring-2 ring-vale-green/50' : ''}`}>
-                                  
-                                  {/* Card Header */}
-                                  <div className={`p-4 flex justify-between items-center text-white ${isUrgent ? 'bg-vale-cherry' : 'bg-vale-green'}`}>
-                                      <div className="flex items-center gap-2">
-                                          {isUrgent ? <AlertOctagon size={20} /> : <Wrench size={20} />}
-                                          <span className="font-black text-xs uppercase tracking-widest">{task.origin}</span>
-                                      </div>
-                                      <div className="px-3 py-1 bg-black/20 rounded-lg text-[10px] font-mono font-bold">
-                                          OM: {task.header.om}
-                                      </div>
-                                  </div>
-
-                                  {/* Card Body */}
-                                  <div className="p-6 flex-1 flex flex-col relative bg-gray-50/50">
-                                      {isRunning && (
-                                          <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-green-100 text-green-700 px-3 py-1 rounded-full border border-green-200 shadow-sm animate-pulse">
-                                              <div className="w-2 h-2 rounded-full bg-green-600"></div>
-                                              <span className="text-[9px] font-black uppercase tracking-wider">Executando</span>
-                                          </div>
-                                      )}
-                                      
-                                      <div className="mb-4 pr-16">
-                                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">TAG / EQUIPAMENTO</span>
-                                          <h3 className="text-xl font-black text-vale-dark leading-tight">{task.header.tag}</h3>
-                                      </div>
-
-                                      <div className="bg-white border border-gray-200 p-4 rounded-xl mb-4 shadow-sm flex-1">
-                                          <p className="text-xs text-gray-600 font-bold leading-relaxed line-clamp-3">
-                                              {task.header.description}
-                                          </p>
-                                      </div>
-
-                                      {/* Timer Big */}
-                                      <div className="flex items-center justify-center gap-3 py-2">
-                                          <Timer size={20} className={isUrgent ? 'text-vale-cherry' : 'text-vale-green'} />
-                                          <span className="text-4xl font-mono font-black text-vale-dark tracking-tighter">
-                                              {getElapsedTime(task)}
-                                          </span>
-                                      </div>
-                                  </div>
-
-                                  {/* Card Footer Actions */}
-                                  <div className="p-4 bg-gray-100 border-t border-gray-200 grid grid-cols-2 gap-3">
-                                       <button 
-                                          onClick={() => handleAction(task)}
-                                          className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-95 border-b-4 ${isPaused ? 'bg-vale-green text-white border-green-800 hover:bg-green-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
-                                      >
-                                          {isPaused ? <><PlayCircle size={16}/> RETOMAR</> : <><PauseCircle size={16}/> PAUSAR/ENCERRAR</>}
-                                      </button>
-                                      <button 
-                                          onClick={() => { setClosingTask(task); completeAction('CHECKLIST'); }}
-                                          className="bg-vale-blue text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-95 border-b-4 border-blue-800 hover:bg-blue-700"
-                                      >
-                                          <CheckSquare size={16} /> CHECKLIST
-                                      </button>
-                                  </div>
-                              </div>
-                          );
-                      })}
-                  </div>
-              )}
-          </div>
-
-          {/* SIDEBAR - MISSION LOGS */}
-          <div className="xl:col-span-4 space-y-6">
-              <h2 className="text-2xl font-black text-vale-dark flex items-center gap-3 uppercase tracking-tighter border-b-4 border-gray-200 pb-3">
-                  <div className="p-3 bg-vale-blue rounded-xl text-white shadow-xl"><CheckSquare size={24} /></div>
-                  Histórico Recente
-              </h2>
-              <div className="bg-vale-dark rounded-[2.5rem] shadow-2xl border border-white/5 h-[600px] overflow-hidden flex flex-col relative">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-vale-green/10 blur-3xl"></div>
-                  
-                  <div className="p-6 bg-white/5 border-b border-white/5 flex justify-between items-center text-[9px] font-black text-gray-500 uppercase tracking-[0.3em]">
-                      <span className="flex items-center gap-2"><Clock size={14} className="text-vale-green" /> Últimas 24h</span>
-                      <Database size={14} />
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
-                      {history.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center opacity-20 grayscale">
-                            <Database size={40} className="text-white mb-4" />
-                            <span className="text-[9px] font-black uppercase tracking-widest text-white">Vazio</span>
+                                        className={`p-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${n.type === 'URGENT' ? 'bg-red-50/50' : ''}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className={`text-[10px] font-black px-2 py-0.5 rounded ${n.type === 'URGENT' ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}`}>
+                                                {n.type}
+                                            </span>
+                                            <span className="text-[9px] text-gray-400 font-mono">{n.date}</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-gray-800 line-clamp-2">{n.title}</p>
+                                        <p className="text-[10px] text-gray-500 mt-1 line-clamp-1">{n.message}</p>
+                                    </div>
+                                ))
+                            )}
                         </div>
-                      ) : history.map(log => (
-                          <div key={log.id} className="p-5 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-vale-green/30 transition-all border-l-4 border-vale-green group/log">
-                              <div className="flex justify-between items-start mb-2">
-                                  <div className="flex flex-col">
-                                    <span className="text-[8px] font-black text-vale-green uppercase tracking-[0.2em] mb-1">OM {log.om}</span>
-                                    <span className="font-black text-lg text-white uppercase tracking-tight group-hover/log:text-vale-green transition-colors truncate max-w-[150px]">{log.tag}</span>
-                                  </div>
-                                  <div className="bg-vale-green/20 p-1.5 rounded-lg"><ShieldCheck size={16} className="text-vale-green" /></div>
-                              </div>
-                              <p className="text-[9px] font-bold text-gray-500 uppercase line-clamp-1 mb-3">{log.description}</p>
-                              <div className="flex justify-between items-center border-t border-white/5 pt-3 text-[10px] font-black text-gray-600">
-                                  <span className="flex items-center gap-1 text-gray-400"><Clock size={12} className="text-vale-blue"/> {new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                                  <span className="text-vale-blue bg-vale-blue/10 px-3 py-1 rounded-lg uppercase tracking-widest shadow-inner">{log.duration}</span>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-              </div>
-          </div>
+                    </div>
+                )}
+            </div>
+        </div>
       </div>
 
-      {/* MODAL DE CONCLUSÃO INDUSTRIAL */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* LEFT COLUMN: ACTIVE TASKS */}
+        <div className="lg:col-span-8 space-y-6">
+            <h3 className="font-black text-xl text-vale-darkgray flex items-center gap-2">
+                <Activity className="text-vale-green" />
+                EXECUÇÃO EM TEMPO REAL
+            </h3>
+
+            {activeTasks.length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 text-center shadow-lg border-2 border-dashed border-gray-200">
+                    <Wrench className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-xl font-black text-gray-400 uppercase">Nenhuma Manutenção Ativa</h3>
+                    <p className="text-sm text-gray-400 mt-2">Inicie uma atividade via ART ou Programação.</p>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {activeTasks.map(task => {
+                        const isRed = task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL';
+                        const isPaused = task.status === 'PAUSADA';
+                        const isWaiting = task.status === 'AGUARDANDO';
+                        const isMine = task.openedBy === currentUser;
+
+                        let cardBg = 'bg-white';
+                        let cardBorder = isRed ? 'border-red-500' : 'border-vale-green';
+                        let iconColor = isRed ? 'text-red-500' : 'text-vale-green';
+                        
+                        if (isPaused) {
+                            cardBg = 'bg-yellow-50';
+                            cardBorder = 'border-yellow-500';
+                            iconColor = 'text-yellow-600';
+                        } else if (isWaiting) {
+                            cardBg = 'bg-blue-50'; // STATUS AZUL PARA AGUARDANDO
+                            cardBorder = 'border-blue-500';
+                            iconColor = 'text-blue-600';
+                        }
+
+                        return (
+                            <div key={task.id} className={`rounded-2xl p-6 shadow-lg border-l-8 ${cardBorder} ${cardBg} relative overflow-hidden transition-all hover:scale-[1.01]`}>
+                                {isPaused && <div className="absolute top-0 right-0 bg-yellow-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl">PAUSADA</div>}
+                                {isWaiting && <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl">AGUARDANDO TÉCNICO</div>}
+                                
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-3 rounded-full bg-white shadow-sm border ${isRed ? 'border-red-100' : 'border-green-100'}`}>
+                                            {isRed ? <AlertOctagon size={24} className="text-red-600 animate-pulse"/> : <Wrench size={24} className="text-vale-green"/>}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-black text-2xl text-gray-800 leading-none">{task.header.om}</h4>
+                                            <p className={`text-sm font-bold uppercase ${isRed ? 'text-red-600' : 'text-vale-green'}`}>{task.header.tag}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right bg-black/5 px-4 py-2 rounded-lg">
+                                        <p className="text-[10px] font-black text-gray-500 uppercase mb-1 flex items-center justify-end gap-1">
+                                            <Timer size={12}/> TEMPO DECORRIDO
+                                        </p>
+                                        <p className="text-3xl font-mono font-black text-gray-800 leading-none">
+                                            {getElapsedTime(task)}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-black/5 p-3 rounded-lg mb-4">
+                                    <p className="text-xs font-bold text-gray-600 line-clamp-2 uppercase">
+                                        {task.header.description}
+                                    </p>
+                                </div>
+
+                                <div className="flex justify-between items-center mt-4 pt-4 border-t border-black/5">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-gray-500">
+                                        <User size={14} />
+                                        <span className="uppercase">{task.openedBy || 'AGUARDANDO'}</span>
+                                        {!isMine && task.status === 'ANDAMENTO' && (
+                                            <span className="text-[9px] bg-gray-200 px-2 py-0.5 rounded text-gray-600 ml-1">EM USO</span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        {/* AÇÕES DISPONÍVEIS */}
+                                        {task.status === 'ANDAMENTO' ? (
+                                            <>
+                                                {isMine ? (
+                                                    // Se for dono, pode pausar ou parar
+                                                    <>
+                                                        <button 
+                                                            onClick={() => StorageService.pauseMaintenance(task.id)}
+                                                            className="flex items-center gap-1 bg-yellow-100 text-yellow-700 px-4 py-2 rounded-lg font-black text-xs hover:bg-yellow-200 transition-colors"
+                                                        >
+                                                            <PauseCircle size={16} /> PAUSAR
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleAction(task)}
+                                                            className="flex items-center gap-1 bg-red-600 text-white px-6 py-2 rounded-lg font-black text-xs hover:bg-red-700 transition-colors shadow-lg animate-pulse"
+                                                        >
+                                                            <StopCircle size={16} /> PARAR / FINALIZAR
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    // Se não for dono, não pode mexer (apenas visualizar)
+                                                    <span className="text-[10px] font-black text-gray-400 bg-gray-100 px-3 py-1 rounded flex items-center gap-1">
+                                                        <Lock size={12}/> BLOQUEADO POR {task.openedBy}
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : (
+                                            // Se pausada ou aguardando, qualquer um pode assumir
+                                            <button 
+                                                onClick={() => handleAction(task)}
+                                                className="flex items-center gap-1 bg-green-600 text-white px-6 py-2 rounded-lg font-black text-xs hover:bg-green-700 transition-colors shadow-lg"
+                                            >
+                                                <PlayCircle size={16} /> RETOMAR ATIVIDADE
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+
+        {/* RIGHT COLUMN: ANALYTICS & HISTORY */}
+        <div className="lg:col-span-4 space-y-6">
+            
+            {/* STATS PANEL - TOP 5 DOWNTIME */}
+            {downtimeStats.length > 0 && (
+                <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 mb-6 animate-fadeIn">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="bg-red-100 p-2 rounded-xl text-red-600">
+                            <BarChart3 size={24} />
+                        </div>
+                        <div>
+                            <h3 className="font-black text-lg text-gray-800 uppercase tracking-tight">Top 5 - Indisponibilidade (30 Dias)</h3>
+                            <p className="text-xs font-bold text-gray-400 uppercase">Equipamentos com maior tempo de parada</p>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        {downtimeStats.map((stat, idx) => (
+                            <div key={stat.tag} className="relative">
+                                <div className="flex justify-between items-end mb-1">
+                                    <span className="font-black text-xs text-gray-700 uppercase flex items-center gap-2">
+                                        <span className="bg-gray-800 text-white w-5 h-5 flex items-center justify-center rounded-full text-[10px]">{idx + 1}</span>
+                                        {stat.tag}
+                                    </span>
+                                    <span className="font-bold text-xs text-red-600">{stat.formatted}</span>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                                    <div 
+                                        className="bg-gradient-to-r from-red-500 to-orange-500 h-full rounded-full transition-all duration-1000 ease-out"
+                                        style={{ width: `${stat.percentage}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* HISTORY LIST */}
+            <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 h-[500px] flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-black text-lg text-vale-darkgray flex items-center gap-2">
+                        <Clock className="text-gray-400" />
+                        HISTÓRICO RECENTE
+                    </h3>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
+                    {history.length === 0 && <p className="text-gray-400 text-center text-xs py-10 font-bold">SEM REGISTROS AINDA.</p>}
+                    {history.map(log => (
+                        <div key={log.id} className="border-l-4 border-gray-300 pl-4 py-1 hover:border-vale-green transition-colors group">
+                            <div className="flex justify-between items-start">
+                                <span className="font-black text-gray-800 text-sm">{log.om}</span>
+                                <span className="text-[10px] font-mono text-gray-400">{new Date(log.endTime).toLocaleDateString()}</span>
+                            </div>
+                            <div className="text-xs font-bold text-vale-green mb-1">{log.tag}</div>
+                            <div className="flex justify-between items-center text-[10px] font-bold text-gray-500">
+                                <span>{log.duration}</span>
+                                <span className="uppercase bg-gray-100 px-2 py-0.5 rounded group-hover:bg-green-100 group-hover:text-green-800 transition-colors">{log.status}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+      </div>
+
+      {/* STOP TASK MODAL */}
       {closingTask && (
-          <div className="fixed inset-0 bg-vale-dark/95 z-[300] flex items-center justify-center p-4 backdrop-blur-xl animate-fadeIn">
-              <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden animate-fade-in-up border-b-[8px] border-vale-cherry shadow-[0_0_60px_rgba(229,62,62,0.3)]">
-                  <div className="bg-vale-dark p-8 text-center relative overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-b from-vale-green/10 to-transparent"></div>
-                      <AlertOctagon size={64} className="mx-auto text-vale-cherry mb-4 drop-shadow-2xl" />
-                      <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-2">Encerrar Atividade</h2>
-                      <p className="text-gray-400 font-bold uppercase tracking-[0.2em] text-[10px]">OM: {closingTask.header.om} | {closingTask.header.tag}</p>
+          <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl relative">
+                  <button onClick={() => setClosingTask(null)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-800"><X size={24}/></button>
+                  
+                  <div className="text-center mb-8">
+                      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <StopCircle size={40} className="text-red-600" />
+                      </div>
+                      <h3 className="text-2xl font-black text-gray-800 uppercase leading-none">Finalizar Atividade</h3>
+                      <p className="text-xs font-bold text-gray-400 mt-2 uppercase tracking-widest">
+                          {closingTask.header.om} - {closingTask.header.tag}
+                      </p>
                   </div>
-                  <div className="p-8 grid grid-cols-1 gap-4 bg-gray-50">
-                      <button onClick={() => completeAction('PARCIAL')} className="p-5 bg-white hover:bg-vale-green hover:text-white rounded-[2rem] font-black text-left flex justify-between items-center transition-all group/opt shadow-md border border-gray-100 hover:scale-[1.02]">
-                          <div>
-                              <span className="block text-xl uppercase tracking-tighter mb-0.5">Pausa (Parcial)</span>
-                              <span className="text-[9px] opacity-60 uppercase tracking-widest font-black">Interrupção para troca de turno</span>
-                          </div>
-                          <PauseCircle size={32} className="group-hover/opt:scale-110 transition-transform" />
+
+                  <div className="space-y-3">
+                      <button 
+                          onClick={() => completeAction('CHECKLIST')}
+                          className="w-full bg-vale-green text-white p-4 rounded-xl font-black text-sm hover:bg-emerald-600 transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95"
+                      >
+                          <CheckSquare size={20} />
+                          CHECKLIST & ENCERRAR (PADRÃO)
                       </button>
-                      <button onClick={() => completeAction('TOTAL')} className="p-5 bg-white hover:bg-vale-cherry hover:text-white rounded-[2rem] font-black text-left flex justify-between items-center transition-all group/opt shadow-md border border-gray-100 hover:scale-[1.02]">
-                          <div>
-                              <span className="block text-xl uppercase tracking-tighter mb-0.5">Encerrar Ordem</span>
-                              <span className="text-[9px] opacity-60 uppercase tracking-widest font-black">Finalização total da manutenção</span>
-                          </div>
-                          <StopCircle size={32} className="group-hover/opt:scale-110 transition-transform" />
-                      </button>
-                      <button onClick={() => completeAction('CHECKLIST')} className="p-5 bg-white hover:bg-vale-blue hover:text-white rounded-[2rem] font-black text-left flex justify-between items-center transition-all group/opt shadow-md border border-gray-100 hover:scale-[1.02]">
-                          <div>
-                              <span className="block text-xl uppercase tracking-tighter mb-0.5">Ficha de Inspeção</span>
-                              <span className="text-[9px] opacity-60 uppercase tracking-widest font-black">Checklist técnico de liberação</span>
-                          </div>
-                          <CheckSquare size={32} className="group-hover/opt:scale-110 transition-transform" />
-                      </button>
-                      <button onClick={() => setClosingTask(null)} className="mt-4 text-xs font-black text-gray-400 uppercase tracking-[0.4em] hover:text-vale-dark transition-colors text-center underline underline-offset-4">Abortar Ação</button>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                          <button 
+                              onClick={() => completeAction('PARCIAL')}
+                              className="bg-blue-50 text-blue-700 border-2 border-blue-100 p-4 rounded-xl font-black text-xs hover:bg-blue-100 transition-colors flex flex-col items-center gap-1"
+                          >
+                              <Users size={20} />
+                              PARADA PARCIAL / TROCA
+                          </button>
+                          <button 
+                              onClick={() => completeAction('TOTAL')}
+                              className="bg-gray-50 text-gray-700 border-2 border-gray-200 p-4 rounded-xl font-black text-xs hover:bg-gray-100 transition-colors flex flex-col items-center gap-1"
+                          >
+                              <StopCircle size={20} />
+                              ENCERRAR MANUALMENTE
+                          </button>
+                      </div>
                   </div>
               </div>
           </div>

@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Camera, Upload, FileText, PenTool, CheckCircle } from 'lucide-react';
+import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock } from 'lucide-react';
+import { Logo } from '../components/Logo';
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -29,6 +30,7 @@ export const Report: React.FC = () => {
     const [executors, setExecutors] = useState('');
     const [timeStart, setTimeStart] = useState('');
     const [timeEnd, setTimeEnd] = useState('');
+    const [duration, setDuration] = useState(''); // Novo state para duração
     
     // Fields to be edited by user
     const [stopReason, setStopReason] = useState('');
@@ -39,10 +41,28 @@ export const Report: React.FC = () => {
     // Manual State
     const [manualFile, setManualFile] = useState<string | null>(null);
 
+    // Helper para calcular duração entre duas strings de hora (HH:mm)
+    const calculateDuration = (start: string, end: string) => {
+        if (!start || !end) return '';
+        try {
+            const [h1, m1] = start.split(':').map(Number);
+            const [h2, m2] = end.split(':').map(Number);
+            
+            let diffMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
+            if (diffMinutes < 0) diffMinutes += 24 * 60; // Caso vire o dia (simplificado)
+
+            const h = Math.floor(diffMinutes / 60);
+            const m = diffMinutes % 60;
+            return `${h}h ${m}m`;
+        } catch (e) {
+            return '';
+        }
+    };
+
     useEffect(() => {
         // Load data passed from Checklist/Dashboard
         if (location.state) {
-            const data = location.state;
+            const data = location.state as any;
             setOm(data.om || '');
             setType(data.type || 'MECANICA');
             setEquipment(data.tag || '');
@@ -60,11 +80,25 @@ export const Report: React.FC = () => {
             setActivities(data.activities || '');
             setStopReason(data.stopReason || '');
             setStatus(data.status || 'FINALIZADO');
+
+            // Calcular ou usar duração vinda do estado
+            if (data.duration) {
+                setDuration(data.duration);
+            } else if (data.startTime && data.endTime) {
+                setDuration(calculateDuration(data.startTime, data.endTime));
+            }
         } else {
              // Fallback: Just load date
              setDate(new Date().toLocaleDateString('pt-BR'));
         }
     }, [location]);
+
+    useEffect(() => {
+        // Recalcular duração se o usuário editar as horas manualmente
+        if(timeStart && timeEnd) {
+            setDuration(calculateDuration(timeStart, timeEnd));
+        }
+    }, [timeStart, timeEnd]);
 
     // Template exato solicitado
     const generateText = () => {
@@ -76,6 +110,7 @@ export const Report: React.FC = () => {
 👥 EXECUTANTE: ${executors}
 ⏱⁠HORA INÍCIO: ${timeStart}
 ⏱⁠HORA FIM: ${timeEnd}
+⏳ TEMPO TOTAL: ${duration}
  MOTIVO DA PARADA 
  ${stopReason}
  ATIVIDADE REALIZADA :
@@ -112,6 +147,9 @@ export const Report: React.FC = () => {
                 stopReason,
                 activities,
                 pendings,
+                duration, // Salva a duração
+                startTime: timeStart,
+                endTime: timeEnd,
                 rawText: isManual ? 'Relatório em Anexo (Manual)' : generateText(),
                 manualFileUrl: manualFile,
                 isManualUpload: isManual
@@ -134,11 +172,8 @@ export const Report: React.FC = () => {
         }
     };
 
-    // Style for "Paper" Inputs
-    const paperInputClass = "bg-transparent border-b border-gray-300 focus:border-black focus:ring-0 w-full px-1 py-0.5 text-gray-900 font-bold placeholder-gray-300 transition-colors uppercase";
-
     return (
-        <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 px-4 print:bg-white print:p-0">
+        <div className="flex flex-col items-center bg-gray-100 min-h-screen py-8 px-4 print:bg-white print:p-0">
             
             {/* TABS HEADER */}
             <div className="bg-white rounded-full p-1 shadow-lg mb-6 flex w-full max-w-md print:hidden">
@@ -158,100 +193,126 @@ export const Report: React.FC = () => {
                 </button>
             </div>
 
-            {/* PAPER CONTAINER */}
-            <div className="bg-white shadow-2xl w-full max-w-[21cm] min-h-[20cm] p-8 md:p-12 relative print:shadow-none print:w-full print:max-w-none print:p-4 border-t-8 border-gray-800 animate-fadeIn">
+            {/* DOCUMENT PAPER CONTAINER (A4 Style) */}
+            <div className="bg-white shadow-2xl w-full max-w-[21cm] min-h-[29.7cm] p-8 md:p-12 relative print:shadow-none print:w-full print:max-w-none print:p-4 animate-fadeIn flex flex-col border border-gray-200">
                 
-                {/* Visual Header imitating the text lines */}
-                <div className="border-b-2 border-dashed border-gray-400 pb-4 mb-6 text-center text-gray-400 font-mono text-xs">
-                    —————————————————
-                </div>
-
                 {/* --- ABA DIGITAL --- */}
                 {activeTab === 'DIGITAL' && (
-                    <div className="space-y-4 font-mono text-sm md:text-base">
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-xl">📝</span>
-                            <label className="font-black text-gray-800 whitespace-nowrap">RETORNO OM</label>
-                            <input type="text" value={om} onChange={e => setOm(e.target.value)} className={paperInputClass} />
-                        </div>
-
-                        <div className="flex items-baseline gap-2">
-                            <span className="font-black text-gray-800 whitespace-nowrap">▪ TIPO:</span>
-                            <input type="text" value={type} onChange={e => setType(e.target.value)} className={paperInputClass} />
-                        </div>
-
-                        <div className="flex items-baseline gap-2">
-                             <span className="text-xl">🚜</span>
-                            <label className="font-black text-gray-800 whitespace-nowrap">EQUIPAMENTO:</label>
-                            <input type="text" value={equipment} onChange={e => setEquipment(e.target.value)} className={paperInputClass} />
-                        </div>
-
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-xl">🗓</span>
-                            <label className="font-black text-gray-800 whitespace-nowrap">DATA:</label>
-                            <input type="text" value={date} onChange={e => setDate(e.target.value)} className={paperInputClass} />
-                        </div>
-
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-xl">👥</span>
-                            <label className="font-black text-gray-800 whitespace-nowrap">EXECUTANTE:</label>
-                            <input type="text" value={executors} onChange={e => setExecutors(e.target.value)} className={paperInputClass} />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="flex items-baseline gap-2">
-                                 <span className="text-xl">⏱</span>
-                                <label className="font-black text-gray-800 whitespace-nowrap">HORA INÍCIO:</label>
-                                <input type="time" value={timeStart} onChange={e => setTimeStart(e.target.value)} className={paperInputClass} />
+                    <div className="flex-1 flex flex-col h-full">
+                        {/* HEADER PROFISSIONAL */}
+                        <div className="border-b-4 border-vale-green pb-4 mb-8 flex justify-between items-end">
+                            <div className="flex items-center gap-4">
+                                <Logo size="lg" />
+                                <div className="border-l-2 border-gray-300 pl-4 h-12 flex flex-col justify-center">
+                                    <h1 className="text-xl font-black text-vale-darkgray uppercase leading-none">RELATÓRIO DE MANUTENÇÃO</h1>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">RETORNO TÉCNICO DE SERVIÇO</p>
+                                </div>
                             </div>
-                            <div className="flex items-baseline gap-2">
-                                 <span className="text-xl">⏱</span>
-                                <label className="font-black text-gray-800 whitespace-nowrap">HORA FIM:</label>
-                                <input type="time" value={timeEnd} onChange={e => setTimeEnd(e.target.value)} className={paperInputClass} />
+                            <div className="text-right">
+                                <p className="text-[9px] font-black text-gray-400 uppercase">DATA DO RELATÓRIO</p>
+                                <p className="text-lg font-black text-gray-800">{new Date().toLocaleDateString()}</p>
                             </div>
                         </div>
 
-                        {/* SECTIONS */}
-                        <div className="pt-4 space-y-4">
-                            <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
-                                <label className="font-black text-gray-800 block mb-1">MOTIVO DA PARADA</label>
+                        {/* GRID DE INFORMAÇÕES TÉCNICAS */}
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6">
+                            <h3 className="font-black text-xs text-vale-green uppercase mb-4 border-b border-gray-200 pb-2">DADOS DA ORDEM</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                <div>
+                                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">ORDEM (OM)</label>
+                                    <input type="text" value={om} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-black text-lg text-blue-900" />
+                                </div>
+                                <div>
+                                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">TIPO</label>
+                                    <input type="text" value={type} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-bold text-sm text-gray-800" />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">EQUIPAMENTO (TAG)</label>
+                                    <input type="text" value={equipment} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-black text-lg text-vale-green" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* EXECUÇÃO E TEMPOS (DESTACADO) */}
+                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 mb-6 relative shadow-inner">
+                            <div className="absolute top-4 right-4 text-blue-300">
+                                <Lock size={16} />
+                            </div>
+                            <h3 className="font-black text-xs text-blue-800 uppercase mb-4 border-b border-blue-200 pb-2">REGISTRO DE EXECUÇÃO E TEMPO</h3>
+                            
+                            {/* DESTAQUE TEMPO TOTAL */}
+                            <div className="mb-6 bg-white border-2 border-blue-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-blue-600 text-white p-3 rounded-lg">
+                                        <Clock size={24} />
+                                    </div>
+                                    <div>
+                                        <span className="block text-[10px] font-black text-blue-400 uppercase tracking-widest">TEMPO TOTAL DE MANUTENÇÃO</span>
+                                        <span className="text-3xl font-black text-blue-900 tracking-tight">{duration || '0h 0m'}</span>
+                                    </div>
+                                </div>
+                                <div className="text-right hidden md:block">
+                                    <span className="text-xs font-bold text-blue-300 uppercase">Duração Calculada</span>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="md:col-span-3">
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">EXECUTANTES (VINCULADOS)</label>
+                                    <input type="text" value={executors} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-bold text-sm text-gray-700" />
+                                </div>
+                                <div>
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">HORA INÍCIO (REAL)</label>
+                                    <input type="text" value={timeStart} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center" />
+                                </div>
+                                <div>
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">HORA FIM (REAL)</label>
+                                    <input type="text" value={timeEnd} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center" />
+                                </div>
+                                <div>
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">STATUS FINAL</label>
+                                    <select 
+                                        value={status} 
+                                        onChange={e => setStatus(e.target.value)} 
+                                        className="w-full bg-white border-2 border-blue-300 rounded p-2 font-black text-sm text-blue-900 uppercase focus:outline-none"
+                                    >
+                                        <option value="FINALIZADO">FINALIZADO</option>
+                                        <option value="PARCIAL">PARCIAL</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* CAMPOS DESCRITIVOS */}
+                        <div className="space-y-4 flex-1">
+                            <div>
+                                <label className="block text-xs font-black text-gray-700 uppercase mb-1 bg-gray-100 p-1 pl-2 border-l-4 border-gray-400">MOTIVO DA PARADA</label>
                                 <textarea 
                                     value={stopReason} 
                                     onChange={e => setStopReason(e.target.value)} 
-                                    className="w-full bg-transparent border-b border-gray-400 focus:border-black focus:ring-0 p-1 font-bold h-16 resize-none"
-                                    placeholder="Descreva o motivo..."
+                                    className="w-full border border-gray-300 p-3 rounded text-sm font-medium h-20 resize-none focus:ring-1 focus:ring-vale-green focus:border-vale-green outline-none"
+                                    placeholder="Descreva o motivo principal..."
                                 />
                             </div>
 
                             <div>
-                                <label className="font-black text-gray-800 block mb-1">ATIVIDADE REALIZADA :</label>
+                                <label className="block text-xs font-black text-gray-700 uppercase mb-1 bg-gray-100 p-1 pl-2 border-l-4 border-vale-green">ATIVIDADES REALIZADAS</label>
                                 <textarea 
                                     value={activities} 
                                     onChange={e => setActivities(e.target.value)} 
-                                    className="w-full bg-gray-50 border border-gray-300 p-2 font-bold h-24 rounded"
+                                    className="w-full border border-gray-300 p-3 rounded text-sm font-medium h-32 resize-none focus:ring-1 focus:ring-vale-green focus:border-vale-green outline-none"
+                                    placeholder="Detalhamento do serviço..."
                                 />
                             </div>
 
-                            <div className="bg-red-50 p-3 rounded border border-red-200">
-                                <label className="font-black text-gray-800 block mb-1">PENDENCIAS:</label>
+                            <div>
+                                <label className="block text-xs font-black text-gray-700 uppercase mb-1 bg-gray-100 p-1 pl-2 border-l-4 border-red-500">PENDÊNCIAS TÉCNICAS</label>
                                 <textarea 
                                     value={pendings} 
                                     onChange={e => setPendings(e.target.value)} 
-                                    className="w-full bg-transparent border-b border-gray-400 focus:border-black focus:ring-0 p-1 font-bold h-16 resize-none text-red-700"
-                                    placeholder="Liste as pendências..."
+                                    className="w-full border border-gray-300 p-3 rounded text-sm font-medium h-20 resize-none text-red-800 focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                                    placeholder="Liste se houver pendências..."
                                 />
-                            </div>
-                            
-                            <div className="flex items-baseline gap-2 pt-2">
-                                <span className="font-black text-gray-800 whitespace-nowrap">▪ STATUS:</span>
-                                 <select 
-                                    value={status} 
-                                    onChange={e => setStatus(e.target.value)} 
-                                    className="bg-transparent border-b-2 border-gray-800 font-bold text-lg focus:outline-none px-2 py-1 uppercase"
-                                >
-                                    <option value="FINALIZADO">FINALIZADO</option>
-                                    <option value="PARCIAL">PARCIAL</option>
-                                </select>
                             </div>
                         </div>
                     </div>
@@ -268,11 +329,11 @@ export const Report: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">OM</label>
-                                <input type="text" value={om} onChange={e => setOm(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold" />
+                                <input type="text" value={om} onChange={e => setOm(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-black text-lg text-blue-900" />
                              </div>
                              <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">TAG</label>
-                                <input type="text" value={equipment} onChange={e => setEquipment(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold" />
+                                <input type="text" value={equipment} onChange={e => setEquipment(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-black text-lg text-vale-green" />
                              </div>
                              <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">DATA</label>
@@ -294,7 +355,6 @@ export const Report: React.FC = () => {
                             {manualFile ? (
                                 <div className="space-y-3">
                                     <div className="w-full h-48 bg-gray-200 rounded overflow-hidden flex items-center justify-center">
-                                        {/* Simple preview logic */}
                                         <img src={manualFile} alt="Preview" className="max-h-full max-w-full object-contain" />
                                     </div>
                                     <p className="text-green-600 font-bold flex items-center justify-center gap-2">
@@ -327,9 +387,10 @@ export const Report: React.FC = () => {
                     </div>
                 )}
 
-
-                <div className="border-t-2 border-dashed border-gray-400 pt-4 mt-6 text-center text-gray-400 font-mono text-xs">
-                    —————————————————
+                {/* Footer do Documento */}
+                <div className="mt-auto pt-8 border-t-2 border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase">
+                    <span>SAFEMAINT - SISTEMA DE GESTÃO INTEGRADA</span>
+                    <span>{new Date().toISOString()}</span>
                 </div>
 
                 {/* Floating Actions */}
@@ -340,15 +401,15 @@ export const Report: React.FC = () => {
                             className="bg-green-500 text-white px-6 py-4 rounded-full shadow-xl hover:bg-green-600 font-black flex items-center justify-center gap-3 transition-transform hover:scale-105 border-4 border-white"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            COPIAR RELATÓRIO
+                            COPIAR (ZAP)
                         </button>
                     )}
                     <button 
                         onClick={handleSave}
                         className="bg-gray-800 text-white px-6 py-4 rounded-full shadow-xl hover:bg-black font-black flex items-center justify-center gap-3 transition-transform hover:scale-105 border-4 border-white"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                        SALVAR E SAIR
+                        <CheckCircle size={20} />
+                        SALVAR E ARQUIVAR
                     </button>
                 </div>
             </div>

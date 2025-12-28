@@ -16,8 +16,6 @@ interface CardItemProps {
 }
 
 const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, onDownload, onDelete }) => {
-    const isDraft = doc.status === 'RASCUNHO';
-    
     // Mapeamento de cores baseado no tipo para uniformidade
     const getTypeStyles = () => {
         if (isArchived) return { border: 'border-vale-darkgray', text: 'text-vale-darkgray', bg: 'bg-vale-darkgray' };
@@ -31,7 +29,6 @@ const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, 
     };
 
     const styles = getTypeStyles();
-    const canDownload = !isDraft || doc.type === 'CHECKLIST';
 
     return (
       <div 
@@ -41,18 +38,12 @@ const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, 
             shadow-[0_4px_10px_rgba(0,0,0,0.05),_inset_0_-2px_4px_rgba(0,0,0,0.02)] 
             border-2 transition-all duration-300 flex flex-col relative cursor-pointer overflow-hidden
             hover:shadow-[0_15px_30px_-10px_rgba(0,0,0,0.15)] hover:-translate-y-1
-            ${isDraft ? 'border-vale-yellow' : isArchived ? 'border-gray-200 opacity-80' : 'border-gray-100'}
+            ${isArchived ? 'border-gray-200 opacity-80' : 'border-gray-100'}
           `}
       >
           {/* Barra Superior Colorida por Tipo */}
           <div className={`h-2 w-full ${styles.bg}`}></div>
 
-          {/* Badges de Status */}
-          {isDraft && (
-              <div className="absolute top-2 right-2 bg-vale-yellow text-vale-green text-[9px] font-black px-2 py-0.5 rounded-full z-10 shadow-sm">
-                  RASCUNHO
-              </div>
-          )}
           {isArchived && (
               <div className="absolute top-2 right-2 bg-vale-darkgray text-white text-[9px] font-black px-2 py-0.5 rounded-full z-10 shadow-sm flex items-center gap-1">
                   <ArchiveIcon size={10} /> ARQUIVADO
@@ -71,7 +62,8 @@ const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, 
               
               <div className="mb-4">
                   <p className="text-[9px] text-vale-darkgray/50 uppercase font-black mb-0.5 tracking-tighter">ORDEM DE MANUTENÇÃO</p>
-                  <h3 className="font-black text-vale-darkgray text-lg leading-tight group-hover:text-vale-green transition-colors">
+                  {/* DESTAQUE OM EM COR FORTE */}
+                  <h3 className="font-black text-vale-blue text-2xl leading-none tracking-tight group-hover:text-vale-green transition-colors">
                       {doc.header.om || 'SEM OM'}
                   </h3>
               </div>
@@ -79,7 +71,8 @@ const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, 
               <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
                       <p className="text-[9px] text-vale-darkgray/50 uppercase font-black tracking-tighter">TAG</p>
-                      <p className="text-xs font-bold text-vale-darkgray/80 truncate">{doc.header.tag || 'N/D'}</p>
+                      {/* DESTAQUE TAG EM COR FORTE */}
+                      <p className="text-sm font-black text-vale-green truncate uppercase">{doc.header.tag || 'N/D'}</p>
                   </div>
                   <div>
                       <p className="text-[9px] text-vale-darkgray/50 uppercase font-black tracking-tighter">TIPO</p>
@@ -115,15 +108,13 @@ const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, 
               </div>
               
               <div className="flex gap-1.5">
-                  {canDownload && (
-                      <button 
-                          title="Baixar PDF" 
-                          onClick={(e) => onDownload(e, doc)} 
-                          className="p-2.5 bg-white text-vale-blue hover:bg-vale-blue hover:text-white border border-gray-200 rounded-xl transition-all shadow-sm active:scale-95"
-                      >
-                          <Download size={18} />
-                      </button>
-                  )}
+                  <button 
+                      title="Baixar PDF" 
+                      onClick={(e) => onDownload(e, doc)} 
+                      className="p-2.5 bg-white text-vale-blue hover:bg-vale-blue hover:text-white border border-gray-200 rounded-xl transition-all shadow-sm active:scale-95"
+                  >
+                      <Download size={18} />
+                  </button>
                   <button 
                       title="Mover para Lixeira" 
                       onClick={(e) => onDelete(e, doc.id)} 
@@ -357,6 +348,9 @@ export const Archive: React.FC = () => {
   };
 
   const renderFullDocument = (doc: DocumentRecord) => {
+      // Duração se existir no conteúdo
+      const duration = doc.content?.duration || '';
+
       return (
           <div className="bg-white p-8 md:p-12 shadow-none max-w-4xl mx-auto print:p-0 print:shadow-none font-sans text-gray-900">
               {/* HEADER PADRÃO VALE */}
@@ -371,7 +365,7 @@ export const Archive: React.FC = () => {
                   </div>
               </div>
 
-              {/* DADOS DO CABEÇALHO */}
+              {/* DADOS DO CABEÇALHO COM TEMPO TOTAL */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 bg-gray-50 p-6 rounded-lg border border-gray-200">
                   <div>
                       <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">DATA</span>
@@ -381,13 +375,22 @@ export const Archive: React.FC = () => {
                       <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">HORA</span>
                       <span className="font-bold text-sm">{new Date(doc.createdAt).toLocaleTimeString().slice(0,5)}</span>
                   </div>
+                  
+                  {/* DESTAQUE TEMPO TOTAL SE EXISTIR */}
+                  {duration && (
+                      <div className="col-span-2 bg-blue-100 rounded px-2 py-1 flex flex-col justify-center border-l-4 border-blue-500">
+                          <span className="block text-[9px] font-black text-blue-500 uppercase">TEMPO TOTAL DE MANUTENÇÃO</span>
+                          <span className="font-black text-sm text-blue-900">{duration}</span>
+                      </div>
+                  )}
+
                   <div>
                       <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">ORDEM (OM)</span>
-                      <span className="font-bold text-sm">{doc.header.om}</span>
+                      <span className="font-black text-sm text-gray-800">{doc.header.om}</span>
                   </div>
-                  <div>
+                  <div className={duration ? "" : "col-span-3"}>
                       <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">TAG</span>
-                      <span className="font-bold text-sm">{doc.header.tag}</span>
+                      <span className="font-black text-sm text-gray-800">{doc.header.tag}</span>
                   </div>
                   <div className="col-span-2 md:col-span-4 border-t pt-4 mt-2">
                        <span className="block text-[9px] font-black text-gray-400 uppercase mb-1">DESCRIÇÃO DA ATIVIDADE</span>
@@ -411,7 +414,7 @@ export const Archive: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto pb-20 px-4">
-      {/* ... (Header e Tabs permanecem iguais, focar na alteração do Modal abaixo) ... */}
+      {/* ... (Header e Tabs permanecem iguais) ... */}
       <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4 border-b border-gray-200 pb-6">
           <div className="flex items-center gap-4">
             <BackButton />
@@ -545,16 +548,23 @@ export const Archive: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL QR CODE */}
+      {/* MODAL QR CODE REAL */}
       {showQr && (
           <div className="fixed inset-0 bg-vale-darkgray/95 flex items-center justify-center z-[110] p-4 backdrop-blur-lg animate-fadeIn" onClick={() => setShowQr(null)}>
                <div className="bg-white rounded-[3rem] p-10 max-w-sm w-full text-center relative shadow-2xl animate-fade-in-up border-b-8 border-vale-yellow" onClick={e => e.stopPropagation()}>
                    <div className="absolute top-4 right-4">
                        <button onClick={() => setShowQr(null)} className="text-gray-400 hover:text-vale-cherry"><X size={24} /></button>
                    </div>
-                   <QrCode size={120} className="mx-auto text-vale-darkgray mb-6" />
-                   <h3 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter mb-2">QR Code Gerado</h3>
-                   <p className="text-xs font-bold text-gray-500 uppercase">Use o leitor para acessar o documento {showQr.id.slice(0,8)}</p>
+                   <div className="bg-white p-2 inline-block">
+                       <img 
+                           src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.origin + '/#/doc/' + showQr.id)}`} 
+                           alt="QR Code do Documento" 
+                           className="mx-auto mb-6 w-48 h-48"
+                       />
+                   </div>
+                   <h3 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter mb-2">Acesso Rápido</h3>
+                   <p className="text-xs font-bold text-gray-500 uppercase">Use a câmera para abrir este documento digitalmente.</p>
+                   <p className="text-[10px] font-mono text-gray-400 mt-2">ID: {showQr.id.slice(0,8)}</p>
                </div>
           </div>
       )}

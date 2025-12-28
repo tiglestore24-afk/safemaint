@@ -22,7 +22,7 @@ import {
   Wifi,
   WifiOff,
   CloudUpload,
-  RefreshCw
+  BarChart2
 } from 'lucide-react';
 import { Logo } from './Logo';
 import { StorageService } from '../services/storage';
@@ -82,6 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
       items: [
         { path: '/om-management', label: 'Gestão de OMs', icon: <FileInput size={22} /> },
         { path: '/schedule', label: 'Programação', icon: <Calendar size={22} /> },
+        { path: '/availability', label: 'Histórico Equipamentos', icon: <BarChart2 size={22} /> }, // NEW ITEM
         { path: '/art-emergencial', label: 'ART Emergencial', icon: <AlertTriangle size={22} /> },
         { path: '/art-atividade', label: 'ART Atividade', icon: <FileText size={22} /> },
         { path: '/checklist', label: 'Check List', icon: <CheckSquare size={22} /> },

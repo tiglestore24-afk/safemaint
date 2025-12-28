@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://ekyfihmbvwuospxqydzu.supabase.co';
@@ -12,8 +13,10 @@ export const checkConnection = async () => {
         if (error) throw error;
         console.log('Supabase Connected! Count OMs:', count);
         return true;
-    } catch (e) {
-        console.error('Supabase Connection Failed:', e);
+    } catch (e: any) {
+        // Extrai mensagem de erro detalhada para evitar [object Object]
+        const errorMsg = e.message || (typeof e === 'object' ? JSON.stringify(e) : String(e));
+        console.error('Supabase Connection Failed:', errorMsg);
         return false;
     }
 };

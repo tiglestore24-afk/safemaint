@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 
 interface SignaturePadProps {
@@ -7,21 +8,43 @@ interface SignaturePadProps {
 
 export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
 
+  // Resize logic to ensure canvas fits container (crucial for modals/mobile)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.width = canvas.parentElement?.clientWidth || 300;
-      canvas.height = 150;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
+    const resizeCanvas = () => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (canvas && container) {
+        // Set canvas dimensions to match container width
+        canvas.width = container.clientWidth;
+        canvas.height = 150; // Fixed height or dynamic
+        
+        // Reset Context after resize
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+        }
       }
-    }
+    };
+
+    // Call initially
+    resizeCanvas();
+    
+    // Call after a small delay to handle modal animations
+    const timer = setTimeout(resizeCanvas, 100);
+
+    // Call on window resize
+    window.addEventListener('resize', resizeCanvas);
+
+    return () => {
+        window.removeEventListener('resize', resizeCanvas);
+        clearTimeout(timer);
+    };
   }, []);
 
   const getPos = (e: React.MouseEvent | React.TouchEvent) => {
@@ -37,6 +60,9 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    // IMPORTANT: Prevents scrolling on touch devices
+    if(e.cancelable && e.type === 'touchstart') e.preventDefault();
+    
     setIsDrawing(true);
     const ctx = canvasRef.current?.getContext('2d');
     const pos = getPos(e);
@@ -46,6 +72,8 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return;
+    if(e.cancelable && e.type === 'touchmove') e.preventDefault();
+
     const ctx = canvasRef.current?.getContext('2d');
     const pos = getPos(e);
     ctx?.lineTo(pos.x, pos.y);
@@ -63,7 +91,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
     if (canvas && ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       setHasSignature(false);
-      onSave('');
+      onSave(''); // Clear in parent
     }
   };
 
@@ -74,11 +102,12 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
   };
 
   return (
-    <div className="border border-gray-300 rounded p-2 bg-white shadow-sm">
+    <div className="border border-gray-300 rounded p-2 bg-white shadow-sm" ref={containerRef}>
       <label className="block text-sm font-bold text-gray-700 mb-1">{label}</label>
-      <div className="border border-dashed border-gray-400 bg-gray-50 mb-2 cursor-crosshair">
+      <div className="border border-dashed border-gray-400 bg-gray-50 mb-2 cursor-crosshair overflow-hidden relative">
         <canvas
           ref={canvasRef}
+          style={{ touchAction: 'none', willChange: 'contents' }} // CRITICAL FIX FOR MOBILE
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}
@@ -86,24 +115,29 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
           onTouchStart={startDrawing}
           onTouchMove={draw}
           onTouchEnd={stopDrawing}
-          className="w-full"
+          className="w-full block"
         />
+        {!hasSignature && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300 text-xs font-bold uppercase select-none">
+                Assine aqui
+            </div>
+        )}
       </div>
       <div className="flex gap-2">
         <button
           type="button"
           onClick={clear}
-          className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+          className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 font-bold"
         >
-          Limpar
+          LIMPAR
         </button>
         <button
           type="button"
           onClick={save}
-          className={`px-3 py-1 text-xs text-white rounded ${hasSignature ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'}`}
+          className={`px-3 py-1 text-xs text-white rounded font-bold flex-1 ${hasSignature ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'}`}
           disabled={!hasSignature}
         >
-          Confirmar Assinatura
+          CONFIRMAR ASSINATURA
         </button>
       </div>
     </div>

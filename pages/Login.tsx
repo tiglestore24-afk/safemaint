@@ -107,25 +107,25 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             
             <div className="text-center mb-6 flex flex-col items-center">
                 
-                {/* ANIMAÇÃO DA ENGRENAGEM (REDUZIDA) */}
-                <div className="relative w-20 h-20 mb-4 group">
+                {/* ANIMAÇÃO DA ENGRENAGEM (DUPLA COR VALE) */}
+                <div className="relative w-24 h-24 mb-4 group flex items-center justify-center">
+                    {/* Engrenagem Maior - Verde */}
+                    <Settings 
+                        className="text-[#007e7a] w-full h-full animate-[spin_6s_linear_infinite]" 
+                        strokeWidth={1.5} 
+                    />
+                    
+                    {/* Engrenagem Menor - Amarela (Sobreposta e girando ao contrário) */}
                     <div className="absolute inset-0 flex items-center justify-center">
-                        <Settings 
-                            className="text-gray-700 w-full h-full animate-[spin_10s_linear_infinite]" 
-                            strokeWidth={0.5} 
+                         <Settings 
+                            size={48}
+                            className="text-[#edb111] animate-[spin_4s_linear_infinite_reverse]" 
+                            strokeWidth={2} 
                         />
                     </div>
-                    <div className="absolute inset-3 flex items-center justify-center">
-                        <Settings 
-                            className="text-vale-green/30 w-full h-full animate-[spin_8s_linear_infinite_reverse]" 
-                            strokeWidth={1} 
-                        />
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-gray-900 p-2 rounded-full border border-vale-green/30 shadow-[0_0_15px_rgba(0,126,122,0.3)] z-10">
-                            <Wrench className="text-vale-green w-5 h-5 animate-pulse" strokeWidth={2.5} />
-                        </div>
-                    </div>
+                    
+                    {/* Centro Estático */}
+                    <div className="absolute w-4 h-4 bg-gray-900 rounded-full border-2 border-white z-10"></div>
                 </div>
 
                 <div className="flex flex-col items-center">

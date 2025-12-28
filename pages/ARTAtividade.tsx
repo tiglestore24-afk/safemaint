@@ -85,6 +85,9 @@ export const ARTAtividade: React.FC = () => {
     if(!isConfirmed) { alert("É NECESSÁRIO VISUALIZAR A ART ANTES."); return; }
     if(signatures.length === 0) { alert("ASSINATURA OBRIGATÓRIA."); return; }
 
+    // Obter ID da programação (se houver) para remover da lista
+    const scheduleId = searchParams.get('scheduleId');
+
     // Início do processo visual de salvamento
     setIsSaving(true);
     setSaveStep('VALIDANDO DADOS...');
@@ -109,8 +112,8 @@ export const ARTAtividade: React.FC = () => {
             
             setSaveStep('INICIANDO CRONÔMETRO DE ATIVIDADE...');
 
-            // Etapa 3: Iniciar Manutenção
-            setTimeout(() => {
+            // Etapa 3: Iniciar Manutenção e Limpar da Programação
+            setTimeout(async () => {
                 const nowIso = new Date().toISOString();
                 const activeTask: ActiveMaintenance = {
                     id: crypto.randomUUID(),
@@ -123,16 +126,26 @@ export const ARTAtividade: React.FC = () => {
                     status: 'ANDAMENTO',
                     currentSessionStart: nowIso // INICIA CONTADOR IMEDIATAMENTE
                 };
-                // ISSO IRÁ ATUALIZAR O STATUS DA OM PARA 'EM_ANDAMENTO' NO SUPABASE
-                StorageService.startMaintenance(activeTask);
+                
+                // CRUCIAL: Aguarda o registro ser confirmado
+                await StorageService.startMaintenance(activeTask);
+
+                // SE VEIO DA PROGRAMAÇÃO, REMOVE O ITEM DE LÁ
+                if (scheduleId) {
+                    await StorageService.deleteScheduleItem(scheduleId);
+                }
 
                 // Etapa 4: Feedback Visual (Toast) e Redirecionar
                 setIsSaving(false);
                 setShowToast({ message: 'ATIVIDADE INICIADA COM SUCESSO!', type: 'success' });
                 
+                // Força atualização no Dashboard
+                window.dispatchEvent(new Event('safemaint_storage_update'));
+
+                // Redireciona para o Painel Inicial (Dashboard) onde o tempo está contando
                 setTimeout(() => {
                     navigate('/dashboard');
-                }, 1500);
+                }, 1000);
 
             }, 800);
         }, 800);

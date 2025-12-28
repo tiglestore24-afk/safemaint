@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { StorageService } from '../services/storage';
-import { Employee, RegisteredART, ScheduleItem, User, OMRecord, ARTRiskItem, ARTStep } from '../types';
-import { Upload, Link as LinkIcon, FileText, Trash2, UserPlus, Lock, Edit2, XCircle, RotateCcw, Server, Wifi, Save, Globe, Plus, ClipboardList, Layers, Code, FileCode, Smartphone, Coffee, CheckCircle, Eye, X, ScanLine, Wand2, AlertTriangle, Calendar, FileInput, Settings as GearIcon, Loader2, Search, BookOpen, Database, CheckCircle2, Maximize2, UserCheck, Users, Shield, PlusCircle, MinusCircle } from 'lucide-react';
+import { Employee, RegisteredART, ScheduleItem, User, OMRecord, ARTRiskItem, ARTStep, MaintenanceLog, OMHistoryItem } from '../types';
+import { Upload, Link as LinkIcon, FileText, Trash2, UserPlus, Lock, Edit2, XCircle, RotateCcw, Server, Wifi, Save, Globe, Plus, ClipboardList, Layers, Code, FileCode, Smartphone, Coffee, CheckCircle, Eye, X, ScanLine, Wand2, AlertTriangle, Calendar, FileInput, Settings as GearIcon, Loader2, Search, BookOpen, Database, CheckCircle2, Maximize2, UserCheck, Users, Shield, PlusCircle, MinusCircle, Table, ArrowRight, CloudLightning, Zap, FileSearch, History, MapPin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BackButton } from '../components/BackButton';
 
@@ -32,6 +32,7 @@ export const Settings: React.FC = () => {
   // Schedule
   const [scheduleInput, setScheduleInput] = useState('');
   const [scheduleStatus, setScheduleStatus] = useState('');
+  const [schedulePreview, setSchedulePreview] = useState<ScheduleItem[]>([]);
 
   // Employee Form
   const [isEditingEmp, setIsEditingEmp] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export const Settings: React.FC = () => {
   const [artName, setArtName] = useState('');
   const [artPdfFile, setArtPdfFile] = useState<File | null>(null); 
   const [artSearch, setArtSearch] = useState('');
-  const [viewingArt, setViewingArt] = useState<RegisteredART | null>(null); // State para visualizar documento
+  const [viewingArt, setViewingArt] = useState<RegisteredART | null>(null); 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   
   // ART Review/Edit State
@@ -64,15 +65,15 @@ export const Settings: React.FC = () => {
   const [artControlMeasures, setArtControlMeasures] = useState('');
 
   // OM Management States
-  const [isAnalyzingOM, setIsAnalyzingOM] = useState(false);
   const [omFile, setOmFile] = useState<File | null>(null);
   const [omNumber, setOmNumber] = useState('');
   const [omDesc, setOmDesc] = useState('');
   const [omTag, setOmTag] = useState(''); 
   const [omType, setOmType] = useState<'CORRETIVA' | 'PREVENTIVA' | null>(null);
   const [linkedScheduleId, setLinkedScheduleId] = useState('');
-  const [showOmReview, setShowOmReview] = useState(false);
-
+  const [dragActive, setDragActive] = useState(false); 
+  const [assetHistory, setAssetHistory] = useState<MaintenanceLog[]>([]); 
+  
   // Toast
   const [showToast, setShowToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
@@ -85,6 +86,21 @@ export const Settings: React.FC = () => {
     }
     refreshData();
   }, [navigate, activeTab]);
+
+  // Efeito para carregar histórico quando o TAG muda
+  useEffect(() => {
+      if (omTag && omTag.length > 3) {
+          const history = StorageService.getHistory();
+          const related = history.filter(h => 
+              h.tag.toUpperCase().includes(omTag.toUpperCase()) || 
+              omTag.toUpperCase().includes(h.tag.toUpperCase())
+          ).sort((a,b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime());
+          
+          setAssetHistory(related.slice(0, 5));
+      } else {
+          setAssetHistory([]);
+      }
+  }, [omTag]);
 
   const refreshData = () => {
       setEmployees(StorageService.getEmployees());
@@ -188,10 +204,7 @@ export const Settings: React.FC = () => {
           alert("PREENCHA NÚMERO E NOME DA ART.");
           return;
       }
-      // Limpar estados para nova criação
       setIsEditingArtId(null);
-      
-      // Mock Data inicial
       setArtRisks([
             { situation: 'TRABALHO EM ALTURA', total: 1, riskLevel: 'ALTO' },
             { situation: 'RUÍDO EXCESSIVO', total: 1, riskLevel: 'MÉDIO' }
@@ -201,7 +214,6 @@ export const Settings: React.FC = () => {
           { item: 2, step: "BLOQUEIO LOTO", riskLevel: "ALTO" }
       ]);
       setArtControlMeasures('USO DE EPIs OBRIGATÓRIO.');
-      
       setShowArtReview(true);
   };
 
@@ -215,7 +227,6 @@ export const Settings: React.FC = () => {
       setShowArtReview(true);
   };
 
-  // -- ART INTERNAL EDITING --
   const addRisk = () => setArtRisks([...artRisks, { situation: 'NOVO RISCO', total: 1, riskLevel: 'BAIXO' }]);
   const removeRisk = (idx: number) => setArtRisks(artRisks.filter((_, i) => i !== idx));
   const updateRisk = (idx: number, field: keyof ARTRiskItem, val: any) => {
@@ -234,12 +245,10 @@ export const Settings: React.FC = () => {
 
   const handleConfirmSaveART = async () => {
       setIsSavingArt(true);
-      
       let pdfBase64: string | undefined = undefined;
       if (artPdfFile) {
           try { pdfBase64 = await fileToBase64(artPdfFile); } catch(e) {}
       } else if (isEditingArtId) {
-          // Manter PDF antigo se não houver novo e for edição
           const existing = arts.find(a => a.id === isEditingArtId);
           pdfBase64 = existing?.pdfUrl;
       }
@@ -258,10 +267,9 @@ export const Settings: React.FC = () => {
         pdfUrl: pdfBase64
       };
 
-      await StorageService.addART(newArt); // Lógica de Add lida com Upsert no StorageService
+      await StorageService.addART(newArt); 
       setArts(StorageService.getARTs()); 
       
-      // Reset
       setArtNum(''); 
       setArtName(''); 
       setArtPdfFile(null);
@@ -275,10 +283,8 @@ export const Settings: React.FC = () => {
 
   const handleDeleteART = async (id: string) => { if(window.confirm("Excluir ART padrão?")) { await StorageService.deleteART(id); setArts(StorageService.getARTs()); }};
 
-  // --- RENDER STANDARD DOCUMENT (NO SIGNATURES) ---
   const renderStandardDocument = (art: RegisteredART) => (
       <div className="bg-white p-8 md:p-12 shadow-2xl overflow-hidden text-gray-900 border border-gray-300 max-w-4xl mx-auto my-4">
-          {/* HEADER */}
           <div className="flex justify-between items-center border-b-4 border-vale-green pb-6 mb-8">
               <div>
                   <h1 className="text-2xl font-black text-vale-darkgray uppercase tracking-tight">ART PADRÃO</h1>
@@ -289,7 +295,6 @@ export const Settings: React.FC = () => {
                   <p className="text-3xl font-mono font-black text-gray-800">{art.code}</p>
               </div>
           </div>
-
           <div className="grid grid-cols-2 gap-4 mb-8 bg-gray-50 p-4 border border-gray-200 rounded">
               <div>
                   <span className="block text-[9px] font-black text-gray-400 uppercase">TAREFA</span>
@@ -300,8 +305,6 @@ export const Settings: React.FC = () => {
                   <span className="font-bold text-sm text-gray-800">{art.area}</span>
               </div>
           </div>
-
-          {/* RISK TABLE */}
           <div className="mb-8">
               <h4 className="font-black text-sm mb-2 bg-vale-dark text-white py-1 px-2 uppercase tracking-wide">1. ANÁLISE DE RISCOS E CLASSIFICAÇÃO</h4>
               <table className="w-full text-[10px] border border-gray-400">
@@ -318,22 +321,15 @@ export const Settings: React.FC = () => {
                               <td className="border border-gray-400 p-2 text-center font-bold uppercase">{r.riskLevel}</td>
                           </tr>
                       ))}
-                      {(!art.risks || art.risks.length === 0) && (
-                          <tr><td colSpan={2} className="p-2 text-center">SEM RISCOS CADASTRADOS</td></tr>
-                      )}
                   </tbody>
               </table>
           </div>
-
-          {/* CONTROL MEASURES */}
           <div className="mb-8">
                <h4 className="font-black text-sm mb-2 bg-vale-dark text-white py-1 px-2 uppercase tracking-wide">2. MEDIDAS DE CONTROLE OBRIGATÓRIAS</h4>
                <div className="p-4 border border-gray-400 bg-gray-50 text-xs font-bold text-justify whitespace-pre-line leading-relaxed uppercase">
                    {art.controlMeasures || 'NENHUMA MEDIDA REGISTRADA.'}
                </div>
           </div>
-
-          {/* STEPS TABLE */}
           <div className="mb-8">
               <h4 className="font-black text-sm mb-2 bg-vale-dark text-white py-1 px-2 uppercase tracking-wide">3. PASSO A PASSO DA TAREFA</h4>
               <table className="w-full text-[10px] border border-gray-400">
@@ -352,55 +348,72 @@ export const Settings: React.FC = () => {
                               <td className="border border-gray-400 p-2 text-center font-bold uppercase">{s.riskLevel}</td>
                           </tr>
                       ))}
-                      {(!art.steps || art.steps.length === 0) && (
-                          <tr><td colSpan={3} className="p-2 text-center">SEM PASSOS CADASTRADOS</td></tr>
-                      )}
                   </tbody>
               </table>
-          </div>
-          
-          <div className="text-center mt-10 p-4 border-t-2 border-dashed border-gray-300">
-              <p className="text-[10px] font-bold text-gray-400 uppercase">DOCUMENTO PADRÃO DO SISTEMA - NÃO REQUER ASSINATURA NESTA VISUALIZAÇÃO</p>
           </div>
       </div>
   );
 
-  // --- OM HANDLERS ---
+  // --- OM HANDLERS (MANUAL ONLY) ---
   const handleOmFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if(e.target.files && e.target.files[0]) {
-      setOmFile(e.target.files[0]);
-      setIsAnalyzingOM(true);
-      setTimeout(() => {
-          setOmNumber("202505732960");
-          setOmDesc("PERDA DE POTÊNCIA E FUMAÇA ANORMAL");
-          setOmTag("CCPX-MIN-TRP-C777G-CA5309"); 
-          setOmType('CORRETIVA'); 
-          setIsAnalyzingOM(false);
-      }, 2000);
+        setOmFile(e.target.files[0]);
     }
   };
 
-  const handleOpenOmReview = () => {
-      if(!omNumber && !omTag && !omDesc && !omFile) { alert("PREENCHA OS DADOS."); return; }
-      if(!omType) setOmType('PREVENTIVA'); 
-      setShowOmReview(true);
+  const handleDrag = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type === "dragenter" || e.type === "dragover") {
+          setDragActive(true);
+      } else if (e.type === "dragleave") {
+          setDragActive(false);
+      }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          setOmFile(e.dataTransfer.files[0]);
+      }
   };
 
   const handleSaveOM = async () => {
+      if(!omNumber || !omTag || !omDesc || !omType) {
+          alert('PREENCHA TODOS OS CAMPOS OBRIGATÓRIOS.');
+          return;
+      }
+
+      if (!omTag.trim().toUpperCase().startsWith('CA')) {
+          alert("ERRO: O TAG DO EQUIPAMENTO DEVE COMEÇAR COM 'CA'.");
+          return;
+      }
+
       setIsSavingOm(true);
       let pdfBase64: string | undefined = undefined;
       if (omFile) { try { pdfBase64 = await fileToBase64(omFile); } catch(e) {} }
 
       const newOM: OMRecord = {
-          id: crypto.randomUUID(), omNumber, description: omDesc, tag: omTag, type: omType!,
+          id: crypto.randomUUID(), omNumber, description: omDesc, tag: omTag.toUpperCase(), type: omType!,
           status: 'PENDENTE', createdAt: new Date().toISOString(), createdBy: localStorage.getItem('safemaint_user') || 'ADMIN',
           pdfUrl: pdfBase64, linkedScheduleId: linkedScheduleId || undefined
       };
-      await StorageService.saveOM(newOM);
-      showFeedback(`OM CRIADA!`, 'success');
       
-      setOmFile(null); setOmNumber(''); setOmDesc(''); setOmTag(''); setOmType(null); setShowOmReview(false);
-      setIsSavingOm(false);
+      await StorageService.saveOM(newOM);
+      
+      showFeedback(`OM CADASTRADA E ENVIADA PARA GESTÃO!`, 'success');
+      
+      // REDIRECT TO MANAGEMENT PAGE
+      setTimeout(() => {
+          // Reset fields before leaving (optional, but good for cleanup)
+          setOmFile(null); setOmNumber(''); setOmDesc(''); setOmTag(''); setOmType(null); 
+          setAssetHistory([]);
+          
+          setIsSavingOm(false);
+          navigate('/om-management');
+      }, 1000);
   };
 
   const handleLinkSchedule = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -413,8 +426,8 @@ export const Settings: React.FC = () => {
       }
   };
 
-  // --- SCHEDULE HANDLERS ---
-  const parseExcelData = async () => { 
+  // ... (Schedule Handlers) ...
+  const handlePreviewSchedule = async () => { 
       try { 
           setIsProcessingSchedule(true);
           const rows = scheduleInput.trim().split('\n'); 
@@ -429,16 +442,32 @@ export const Settings: React.FC = () => {
                   timeEnd: c[11]||'', resources: c[12]||'', resources2: c[13]||'', status: 'I' 
               };
           }); 
+          
           if(items.length > 0) {
-              await StorageService.archiveAndClearSchedule(); 
-              await StorageService.updateSchedule(items); 
-              setScheduleStatus('OK'); 
-              setScheduleInput('');
-              showFeedback(`${items.length} itens importados!`, 'success');
+              setSchedulePreview(items);
+              setScheduleStatus('PREVIEW');
           }
-      } catch(e) { setScheduleStatus('ERRO.'); }
+      } catch(e) { setScheduleStatus('ERRO AO PROCESSAR'); }
       finally { setIsProcessingSchedule(false); }
   };
+
+  const handleConfirmImport = async () => {
+      if(schedulePreview.length === 0) return;
+      if(window.confirm(`CONFIRMA A IMPORTAÇÃO DE ${schedulePreview.length} ITENS? A LISTA ATUAL SERÁ SUBSTITUÍDA.`)) {
+          await StorageService.archiveAndClearSchedule(); 
+          await StorageService.updateSchedule(schedulePreview); 
+          setScheduleStatus('IMPORTADO'); 
+          setScheduleInput('');
+          setSchedulePreview([]);
+          showFeedback(`${schedulePreview.length} itens importados com sucesso!`, 'success');
+      }
+  };
+
+  const handleCancelPreview = () => {
+      setSchedulePreview([]);
+      setScheduleStatus('');
+  };
+
   const handleClearSchedule = async () => { 
       if(window.confirm("Limpar programação?")) { 
           await StorageService.archiveAndClearSchedule(); 
@@ -450,6 +479,7 @@ export const Settings: React.FC = () => {
 
   return (
     <div className="max-w-[1400px] mx-auto pb-20 px-4">
+      {/* ... [Header and Tabs] ... */}
       <div className="flex items-center gap-3 mb-6">
           <BackButton />
           <h2 className="text-2xl font-black text-vale-darkgray flex items-center gap-2 uppercase">
@@ -458,7 +488,7 @@ export const Settings: React.FC = () => {
           </h2>
       </div>
       
-      <div className="flex border-b mb-6 overflow-x-auto bg-white rounded-t-lg shadow-sm">
+      <div className="flex justify-center border-b mb-6 overflow-x-auto bg-white rounded-t-lg shadow-sm">
         {['OMS', 'EMPLOYEES', 'ARTS', 'SCHEDULE', 'USERS'].map((tab) => (
             <button 
                 key={tab} 
@@ -473,8 +503,12 @@ export const Settings: React.FC = () => {
         ))}
       </div>
 
+      {/* [Tab Contents] */}
+      
+      {/* ... [EMPLOYEES Tab Content] ... */}
       {activeTab === 'EMPLOYEES' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
+              {/* ... Employee Form ... */}
               <div className="lg:col-span-1">
                   <div className="bg-white p-6 rounded shadow border border-gray-200 sticky top-4">
                       <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2">
@@ -482,57 +516,27 @@ export const Settings: React.FC = () => {
                           {isEditingEmp ? 'EDITAR FUNCIONÁRIO' : 'NOVO FUNCIONÁRIO'}
                       </h3>
                       <form onSubmit={handleSaveEmployee} className="space-y-4">
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">NOME COMPLETO</label>
-                              <input value={empName} onChange={e => setEmpName(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">MATRÍCULA</label>
-                              <input value={empMat} onChange={e => setEmpMat(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">FUNÇÃO / CARGO</label>
-                              <input value={empFunc} onChange={e => setEmpFunc(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required />
-                          </div>
-                          <div className="flex gap-2 pt-2">
-                              {isEditingEmp && (
-                                  <button type="button" onClick={resetEmpForm} className="px-4 py-2 bg-gray-200 text-gray-600 font-bold rounded hover:bg-gray-300">
-                                      CANCELAR
-                                  </button>
-                              )}
-                              <button type="submit" className="flex-1 bg-vale-green text-white font-black py-2 rounded hover:bg-[#00605d] shadow-lg">
-                                  {isEditingEmp ? 'ATUALIZAR' : 'CADASTRAR'}
-                              </button>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">NOME COMPLETO</label><input value={empName} onChange={e => setEmpName(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">MATRÍCULA</label><input value={empMat} onChange={e => setEmpMat(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">FUNÇÃO / CARGO</label><input value={empFunc} onChange={e => setEmpFunc(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
+                          <div className="flex gap-2 pt-2 justify-center">
+                              {isEditingEmp && <button type="button" onClick={resetEmpForm} className="px-4 py-2 bg-gray-200 text-gray-600 font-bold rounded hover:bg-gray-300">CANCELAR</button>}
+                              <button type="submit" className="flex-1 bg-gradient-to-r from-vale-green to-teal-600 text-white font-black py-2 rounded hover:brightness-110 shadow-lg">{isEditingEmp ? 'ATUALIZAR' : 'CADASTRAR'}</button>
                           </div>
                       </form>
                   </div>
               </div>
-
               <div className="lg:col-span-2">
                   <div className="bg-white p-6 rounded shadow border border-gray-200 min-h-[500px]">
                       <div className="flex justify-between items-center mb-6">
-                          <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2">
-                              <Users size={20} /> QUADRO DE FUNCIONÁRIOS
-                          </h3>
-                          <button 
-                              onClick={() => setShowEmpTrash(!showEmpTrash)}
-                              className={`text-xs font-bold px-3 py-1 rounded border flex items-center gap-1 ${showEmpTrash ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
-                          >
-                              {showEmpTrash ? <RotateCcw size={14}/> : <Trash2 size={14}/>}
-                              {showEmpTrash ? 'ATIVOS' : 'LIXEIRA'}
+                          <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><Users size={20} /> QUADRO DE FUNCIONÁRIOS</h3>
+                          <button onClick={() => setShowEmpTrash(!showEmpTrash)} className={`text-xs font-bold px-3 py-1 rounded border flex items-center gap-1 ${showEmpTrash ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                              {showEmpTrash ? <RotateCcw size={14}/> : <Trash2 size={14}/>} {showEmpTrash ? 'ATIVOS' : 'LIXEIRA'}
                           </button>
                       </div>
-
                       <div className="overflow-x-auto">
                           <table className="min-w-full text-sm">
-                              <thead className="bg-gray-50 border-b-2 border-gray-200">
-                                  <tr>
-                                      <th className="px-4 py-3 text-left font-black text-gray-500">MATRÍCULA</th>
-                                      <th className="px-4 py-3 text-left font-black text-gray-500">NOME</th>
-                                      <th className="px-4 py-3 text-left font-black text-gray-500">FUNÇÃO</th>
-                                      <th className="px-4 py-3 text-right font-black text-gray-500">AÇÕES</th>
-                                  </tr>
-                              </thead>
+                              <thead className="bg-gray-50 border-b-2 border-gray-200"><tr><th className="px-4 py-3 text-left font-black text-gray-500">MATRÍCULA</th><th className="px-4 py-3 text-left font-black text-gray-500">NOME</th><th className="px-4 py-3 text-left font-black text-gray-500">FUNÇÃO</th><th className="px-4 py-3 text-right font-black text-gray-500">AÇÕES</th></tr></thead>
                               <tbody className="divide-y divide-gray-100">
                                   {(showEmpTrash ? employees.filter(e => e.status === 'TRASH') : employees.filter(e => e.status !== 'TRASH')).map(emp => (
                                       <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
@@ -540,17 +544,7 @@ export const Settings: React.FC = () => {
                                           <td className="px-4 py-3 font-bold text-gray-800">{emp.name}</td>
                                           <td className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">{emp.function}</td>
                                           <td className="px-4 py-3 text-right flex justify-end gap-2">
-                                              {showEmpTrash ? (
-                                                  <>
-                                                      <button onClick={() => handleRestoreEmp(emp.id)} className="text-vale-green hover:bg-green-50 p-1.5 rounded"><RotateCcw size={16}/></button>
-                                                      <button onClick={() => handlePermDeleteEmp(emp.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded"><XCircle size={16}/></button>
-                                                  </>
-                                              ) : (
-                                                  <>
-                                                      <button onClick={() => handleEditEmpClick(emp)} className="text-vale-blue hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16}/></button>
-                                                      <button onClick={() => handleDeleteEmployee(emp.id)} className="text-red-400 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button>
-                                                  </>
-                                              )}
+                                              {showEmpTrash ? (<><button onClick={() => handleRestoreEmp(emp.id)} className="text-vale-green hover:bg-green-50 p-1.5 rounded"><RotateCcw size={16}/></button><button onClick={() => handlePermDeleteEmp(emp.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded"><XCircle size={16}/></button></>) : (<><button onClick={() => handleEditEmpClick(emp)} className="text-vale-blue hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16}/></button><button onClick={() => handleDeleteEmployee(emp.id)} className="text-red-400 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button></>)}
                                           </td>
                                       </tr>
                                   ))}
@@ -562,14 +556,12 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
+      {/* ... [ARTS Tab Content] ... */}
       {activeTab === 'ARTS' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
             <div className="lg:col-span-4 space-y-6">
                 <div className="bg-white p-6 rounded shadow border border-gray-200">
-                    <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2">
-                        <ScanLine size={20} className="text-vale-green" /> {isEditingArtId ? 'EDITAR ART' : 'NOVA ART PADRÃO'}
-                    </h3>
-                    
+                    <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2"><ScanLine size={20} className="text-vale-green" /> {isEditingArtId ? 'EDITAR ART' : 'NOVA ART PADRÃO'}</h3>
                     <form onSubmit={handleCreateNewART} className="bg-gray-50 p-4 rounded border border-gray-200 shadow-inner">
                         <div className="mb-4">
                             <label className="block text-xs font-black text-gray-500 uppercase mb-2">1. PDF (OPCIONAL)</label>
@@ -581,62 +573,30 @@ export const Settings: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-
-                        <div className="mb-4">
-                            <label className="block text-xs font-black text-gray-500 uppercase mb-1">2. CÓDIGO ART</label>
-                            <input id="artNumInput" placeholder="EX: 33777" value={artNum} onChange={e => setArtNum(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-sm focus:border-vale-green outline-none" />
-                        </div>
-                        <div className="mb-6">
-                            <label className="block text-xs font-black text-gray-500 uppercase mb-1">3. TAREFA / DESCRIÇÃO</label>
-                            <input placeholder="EX: TROCA DE PNEUS..." value={artName} onChange={e => setArtName(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-sm focus:border-vale-green outline-none" />
-                        </div>
-
-                        <button type="submit" disabled={!artNum || !artName} className={`w-full bg-vale-green text-white font-black py-3 rounded flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 ${(!artNum || !artName) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#00605d]'}`}>
-                            <Edit2 size={18} /> 
-                            {isEditingArtId ? 'EDITAR DETALHES' : 'DEFINIR RISCOS E PASSOS'}
-                        </button>
+                        <div className="mb-4"><label className="block text-xs font-black text-gray-500 uppercase mb-1">2. CÓDIGO ART</label><input id="artNumInput" placeholder="EX: 33777" value={artNum} onChange={e => setArtNum(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-sm focus:border-vale-green outline-none" /></div>
+                        <div className="mb-6"><label className="block text-xs font-black text-gray-500 uppercase mb-1">3. TAREFA / DESCRIÇÃO</label><input placeholder="EX: TROCA DE PNEUS..." value={artName} onChange={e => setArtName(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-sm focus:border-vale-green outline-none" /></div>
+                        <button type="submit" disabled={!artNum || !artName} className={`w-full bg-gradient-to-r from-vale-green to-teal-600 text-white font-black py-3 rounded flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 ${(!artNum || !artName) ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}`}><Edit2 size={18} /> {isEditingArtId ? 'EDITAR DETALHES' : 'DEFINIR RISCOS E PASSOS'}</button>
                     </form>
                 </div>
             </div>
-
             <div className="lg:col-span-8">
                 <div className="bg-white p-6 rounded shadow border border-gray-200 h-full flex flex-col">
                     <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
-                        <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2">
-                            <BookOpen size={20} className="text-vale-green" /> BIBLIOTECA DE ARTs
-                        </h3>
-                        <div className="relative w-64">
-                            <input type="text" placeholder="BUSCAR ART..." value={artSearch} onChange={(e) => setArtSearch(e.target.value.toUpperCase())} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs font-bold uppercase focus:ring-1 focus:ring-vale-green outline-none"/>
-                            <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
-                        </div>
+                        <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><BookOpen size={20} className="text-vale-green" /> BIBLIOTECA DE ARTs</h3>
+                        <div className="relative w-64"><input type="text" placeholder="BUSCAR ART..." value={artSearch} onChange={(e) => setArtSearch(e.target.value.toUpperCase())} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs font-bold uppercase focus:ring-1 focus:ring-vale-green outline-none"/><Search className="absolute left-3 top-2.5 text-gray-400" size={14} /></div>
                     </div>
-
                     <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 max-h-[600px]">
                         {filteredArts.length === 0 && <div className="text-center text-gray-400 py-10 font-bold text-sm">NENHUMA ART ENCONTRADA.</div>}
                         {filteredArts.map(a => (
                             <div key={a.id} className="group flex justify-between items-center bg-white border border-gray-200 p-4 rounded-lg hover:shadow-md hover:border-vale-green transition-all">
                                 <div className="flex items-start gap-4">
-                                    <div className="bg-gray-100 p-3 rounded-lg text-gray-500 group-hover:bg-green-100 group-hover:text-vale-green transition-colors">
-                                        <FileText size={24} />
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <p className="font-black text-gray-800 text-lg">ART {a.code}</p>
-                                            {a.pdfUrl && <span className="bg-blue-100 text-vale-blue text-[9px] px-2 py-0.5 rounded font-black">PDF</span>}
-                                        </div>
-                                        <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{a.taskName}</p>
-                                    </div>
+                                    <div className="bg-gray-100 p-3 rounded-lg text-gray-500 group-hover:bg-green-100 group-hover:text-vale-green transition-colors"><FileText size={24} /></div>
+                                    <div><div className="flex items-center gap-2"><p className="font-black text-gray-800 text-lg">ART {a.code}</p>{a.pdfUrl && <span className="bg-blue-100 text-vale-blue text-[9px] px-2 py-0.5 rounded font-black">PDF</span>}</div><p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{a.taskName}</p></div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={() => setViewingArt(a)} className="bg-gray-100 text-vale-darkgray hover:bg-gray-200 px-3 py-2 rounded text-xs font-black flex items-center gap-1 transition-colors border border-gray-200">
-                                        <Eye size={14} /> VISUALIZAR
-                                    </button>
-                                    <button onClick={() => handleEditArtClick(a)} className="bg-vale-blue text-white hover:bg-[#004a7c] px-3 py-2 rounded text-xs font-black flex items-center gap-1 transition-colors">
-                                        <Edit2 size={14} /> EDITAR
-                                    </button>
-                                    <button onClick={() => handleDeleteART(a.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded transition-colors">
-                                        <Trash2 size={18} />
-                                    </button>
+                                    <button onClick={() => setViewingArt(a)} className="bg-gray-100 text-vale-darkgray hover:bg-gray-200 px-3 py-2 rounded text-xs font-black flex items-center gap-1 transition-colors border border-gray-200"><Eye size={14} /> VISUALIZAR</button>
+                                    <button onClick={() => handleEditArtClick(a)} className="bg-vale-blue text-white hover:bg-[#004a7c] px-3 py-2 rounded text-xs font-black flex items-center gap-1 transition-colors"><Edit2 size={14} /> EDITAR</button>
+                                    <button onClick={() => handleDeleteART(a.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded transition-colors"><Trash2 size={18} /></button>
                                 </div>
                             </div>
                         ))}
@@ -645,307 +605,91 @@ export const Settings: React.FC = () => {
             </div>
         </div>
       )}
-      
-      {/* ART REVIEW/EDIT MODAL */}
-      {showArtReview && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] p-4 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden relative shadow-2xl">
-                <div className="bg-vale-dark p-4 flex justify-between items-center text-white shrink-0">
-                    <div className="flex items-center gap-3">
-                        <Edit2 size={20} className="text-vale-green"/> 
-                        <div>
-                            <h3 className="font-black text-lg leading-none uppercase">{isEditingArtId ? 'EDITAR ART' : 'NOVA ART'} - {artNum}</h3>
-                            <p className="text-[10px] font-bold text-gray-400">{artName}</p>
-                        </div>
-                    </div>
-                    <button onClick={() => setShowArtReview(false)} className="hover:bg-gray-700 p-2 rounded"><X size={24}/></button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-6 bg-gray-100 space-y-6 custom-scrollbar">
-                    {/* RISCOS */}
-                    <div className="bg-white p-4 rounded shadow">
-                        <div className="flex justify-between items-center mb-2 border-b pb-2">
-                            <h4 className="font-black text-vale-darkgray">1. ANÁLISE DE RISCOS</h4>
-                            <button onClick={addRisk} className="text-xs bg-green-100 text-vale-green px-2 py-1 rounded font-bold flex items-center gap-1 hover:bg-green-200"><PlusCircle size={14}/> ADICIONAR RISCO</button>
-                        </div>
-                        <div className="space-y-2">
-                            {artRisks.map((r, i) => (
-                                <div key={i} className="grid grid-cols-12 gap-2 items-center text-xs">
-                                    <input value={r.situation} onChange={e => updateRisk(i, 'situation', e.target.value)} className="col-span-8 border p-2 rounded font-bold uppercase" placeholder="SITUAÇÃO DE RISCO" />
-                                    <input value={r.riskLevel} onChange={e => updateRisk(i, 'riskLevel', e.target.value)} className="col-span-3 border p-2 rounded text-center font-bold uppercase" placeholder="NÍVEL" />
-                                    <button onClick={() => removeRisk(i)} className="col-span-1 text-red-500 hover:bg-red-50 p-2 rounded flex justify-center"><Trash2 size={16}/></button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
 
-                    {/* CONTROL MEASURES */}
-                    <div className="bg-white p-4 rounded shadow">
-                        <h4 className="font-black text-vale-darkgray mb-2 border-b pb-2">2. MEDIDAS DE CONTROLE (RESUMO)</h4>
-                        <textarea value={artControlMeasures} onChange={e => setArtControlMeasures(e.target.value)} className="w-full border p-2 rounded font-bold h-20 text-xs uppercase" placeholder="Descreva as medidas gerais..." />
-                    </div>
-
-                    {/* STEPS */}
-                    <div className="bg-white p-4 rounded shadow">
-                         <div className="flex justify-between items-center mb-2 border-b pb-2">
-                            <h4 className="font-black text-vale-darkgray">3. PASSO A PASSO DA TAREFA</h4>
-                            <button onClick={addStep} className="text-xs bg-green-100 text-vale-green px-2 py-1 rounded font-bold flex items-center gap-1 hover:bg-green-200"><PlusCircle size={14}/> ADICIONAR PASSO</button>
-                        </div>
-                        <div className="space-y-2">
-                            {artSteps.map((s, i) => (
-                                <div key={i} className="grid grid-cols-12 gap-2 items-center text-xs">
-                                    <div className="col-span-1 bg-gray-100 text-center py-2 font-black rounded">{i+1}</div>
-                                    <input value={s.step} onChange={e => updateStep(i, 'step', e.target.value)} className="col-span-8 border p-2 rounded font-bold uppercase" placeholder="DESCRIÇÃO DO PASSO" />
-                                    <input value={s.riskLevel} onChange={e => updateStep(i, 'riskLevel', e.target.value)} className="col-span-2 border p-2 rounded text-center font-bold uppercase" placeholder="RISCO" />
-                                    <button onClick={() => removeStep(i)} className="col-span-1 text-red-500 hover:bg-red-50 p-2 rounded flex justify-center"><Trash2 size={16}/></button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-4 bg-white border-t border-gray-200 flex justify-end gap-3 shrink-0">
-                    <button onClick={() => setShowArtReview(false)} className="px-6 py-3 rounded-lg font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors uppercase text-xs">CANCELAR</button>
-                    <button onClick={handleConfirmSaveART} disabled={isSavingArt} className="bg-vale-green hover:bg-[#00605d] text-white px-8 py-3 rounded-lg font-black shadow-lg flex items-center gap-2 transition-transform active:scale-95 uppercase text-xs">
-                        {isSavingArt ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />}
-                        {isSavingArt ? 'SALVANDO...' : 'SALVAR ART NA BIBLIOTECA'}
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* VIEW ART MODAL (READ ONLY - NO SIGNATURES) */}
-      {viewingArt && (
-          <div className="fixed inset-0 bg-vale-dark/95 flex items-center justify-center z-[80] p-4 backdrop-blur-md animate-fadeIn">
-              <div className="bg-white rounded-xl w-full max-w-5xl h-[95vh] flex flex-col overflow-hidden relative shadow-2xl">
-                  {/* Header Modal */}
-                  <div className="bg-vale-green text-white p-4 flex justify-between items-center shrink-0 shadow-md">
-                      <div className="flex items-center gap-3">
-                          <FileText size={24} />
-                          <div>
-                              <h3 className="font-black text-lg leading-none uppercase tracking-tight">VISUALIZAÇÃO DE ART PADRÃO</h3>
-                              <p className="text-[10px] font-bold text-white/70 uppercase mt-1">BIBLIOTECA TÉCNICA</p>
-                          </div>
-                      </div>
-                      <button onClick={() => setViewingArt(null)} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X size={28}/></button>
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 overflow-y-auto bg-gray-200 p-6 custom-scrollbar">
-                      {/* Se existir PDF real anexado, mostrar iframe */}
-                      {viewingArt.pdfUrl && (
-                          <div className="mb-8 border-b-4 border-gray-300 pb-8">
-                              <h4 className="font-black text-gray-700 mb-4 flex items-center gap-2"><FileText size={18}/> PDF ANEXADO (ORIGINAL)</h4>
-                              <div className="bg-white p-2 border border-gray-300 shadow-md h-[500px]">
-                                  <iframe src={viewingArt.pdfUrl} className="w-full h-full border-none" title="PDF Original" />
-                              </div>
-                          </div>
-                      )}
-
-                      {/* Renderização do Documento Digital (Sempre mostrar estrutura) */}
-                      {renderStandardDocument(viewingArt)}
-                  </div>
-
-                  <div className="p-4 bg-white border-t border-gray-200 flex justify-end shrink-0">
-                      <button onClick={() => setViewingArt(null)} className="px-8 py-3 bg-gray-100 text-gray-700 font-black rounded-lg hover:bg-gray-200 transition-colors uppercase text-xs">FECHAR</button>
-                  </div>
-              </div>
-          </div>
-      )}
-
+      {/* --- OMS Tab (PROFESSIONAL REDESIGN) --- */}
       {activeTab === 'OMS' && (
-          <div className="bg-white p-6 rounded shadow border border-gray-200 animate-fadeIn">
-              <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2">
-                  <FileInput size={20} /> CADASTRAR NOVA OM (MANUAL OU PDF)
-              </h3>
-              <div className="p-6 bg-gray-50 rounded border border-gray-200 shadow-inner max-w-2xl mx-auto">
-                  <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors relative mb-6 ${omFile ? 'border-vale-green bg-green-50' : 'border-gray-300 hover:bg-white'}`}>
-                      <input type="file" accept=".pdf" onChange={handleOmFileSelect} className="absolute inset-0 opacity-0 cursor-pointer" />
-                      {isAnalyzingOM ? (
-                            <div className="flex flex-col items-center text-vale-blue animate-pulse">
-                                <ScanLine size={40} className="mb-2" />
-                                <span className="font-bold text-sm">EXTRAINDO DADOS DA OM...</span>
-                            </div>
-                      ) : omFile ? (
-                          <div className="flex flex-col items-center text-green-700">
-                              <CheckCircle size={40} className="mb-2" />
-                              <span className="font-bold text-sm">{omFile.name}</span>
+          <div className="animate-fadeIn space-y-6">
+              <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                  <div className="bg-vale-dark p-6 border-b-4 border-vale-green flex justify-between items-center text-white">
+                      <div className="flex items-center gap-4">
+                          <div className="p-3 bg-white/10 rounded-lg"><FileSearch size={32} className="text-vale-green" /></div>
+                          <div><h3 className="font-black text-2xl uppercase tracking-tighter">Cadastro de OM</h3><p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Preencha os dados manualmente ou anexe um PDF para registro</p></div>
+                      </div>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2">
+                      <div className="p-8 bg-gray-50 border-r border-gray-200 flex flex-col justify-center relative">
+                          <div className={`relative border-4 border-dashed rounded-3xl h-full min-h-[400px] flex flex-col items-center justify-center text-center transition-all duration-300 ${dragActive ? 'border-vale-green bg-green-50 scale-[1.02]' : 'border-gray-300 bg-white hover:border-vale-blue'}`} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
+                              {omFile ? (
+                                  <div className="flex flex-col items-center relative z-10 w-full px-8"><div className="w-20 h-20 bg-green-100 rounded-2xl flex items-center justify-center mb-4 shadow-lg border-2 border-green-200"><FileText size={40} className="text-green-600" /></div><h4 className="text-lg font-black text-gray-800 uppercase mb-1 line-clamp-1 break-all">{omFile.name}</h4><p className="text-xs font-bold text-gray-400 uppercase mb-6">{(omFile.size / 1024).toFixed(1)} KB • PDF</p><div className="flex gap-3 w-full"><button onClick={() => document.getElementById('omUpload')?.click()} className="flex-1 py-3 px-4 bg-gray-100 text-gray-600 rounded-xl font-black text-xs hover:bg-gray-200 transition-colors uppercase">Trocar Arquivo</button></div></div>
+                              ) : (
+                                  <div className="flex flex-col items-center p-8 pointer-events-none"><div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 shadow-inner"><CloudLightning size={48} className="text-gray-400" /></div><h4 className="text-xl font-black text-gray-700 uppercase mb-2">Arraste sua OM aqui</h4><p className="text-xs font-bold text-gray-400 uppercase max-w-[200px] mb-6">Ou preencha manualmente os campos ao lado.</p><label htmlFor="omUpload" className="pointer-events-auto cursor-pointer bg-vale-dark text-white px-8 py-3 rounded-xl font-black text-xs hover:bg-black transition-transform active:scale-95 shadow-lg uppercase flex items-center gap-2"><Upload size={16} /> Selecionar Arquivo</label></div>
+                              )}
+                              <input id="omUpload" type="file" accept=".pdf" onChange={handleOmFileSelect} className="hidden" />
                           </div>
-                      ) : (
-                          <div className="flex flex-col items-center text-gray-400">
-                              <FileText size={40} className="mb-2" />
-                              <span className="font-bold text-sm">ANEXAR PDF DA OM (OBRIGATÓRIO)</span>
+                      </div>
+                      <div className="p-8 bg-white flex flex-col h-full overflow-y-auto">
+                          <h4 className="font-black text-gray-400 text-xs uppercase mb-6 flex items-center gap-2 border-b border-gray-100 pb-2"><Database size={14} /> Dados da Ordem</h4>
+                          <div className="space-y-6 flex-1">
+                              <div className="grid grid-cols-2 gap-6">
+                                  <div className="group"><label className="block text-[10px] font-black text-gray-400 uppercase mb-1.5 group-focus-within:text-vale-green transition-colors flex justify-between">Número da OM</label><div className="relative"><input value={omNumber} onChange={e => setOmNumber(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 text-gray-800 p-4 rounded-xl font-black text-lg focus:bg-white focus:border-vale-green focus:ring-4 focus:ring-green-50 outline-none transition-all uppercase" placeholder="0000..." />{omNumber && <CheckCircle2 size={18} className="absolute right-4 top-5 text-green-500" />}</div></div>
+                                  <div className="group"><label className="block text-[10px] font-black text-gray-400 uppercase mb-1.5 group-focus-within:text-vale-green transition-colors">Tag / Equipamento</label><div className="relative"><input value={omTag} onChange={e => setOmTag(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 text-gray-800 p-4 rounded-xl font-black text-lg focus:bg-white focus:border-vale-green focus:ring-4 focus:ring-green-50 outline-none transition-all uppercase" placeholder="TAG..." />{omTag && <CheckCircle2 size={18} className="absolute right-4 top-5 text-green-500" />}</div></div>
+                              </div>
+                              <div className="group"><label className="block text-[10px] font-black text-gray-400 uppercase mb-1.5 group-focus-within:text-vale-green transition-colors">Descrição Técnica</label><textarea value={omDesc} onChange={e => setOmDesc(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 text-gray-800 p-4 rounded-xl font-bold text-sm focus:bg-white focus:border-vale-green focus:ring-4 focus:ring-green-50 outline-none transition-all uppercase min-h-[100px] resize-none" placeholder="Descreva o serviço a ser executado..." /></div>
+                              
+                              <div>
+                                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-3">Classificação de Prioridade</label>
+                                  <div className="grid grid-cols-2 gap-4">
+                                      <button onClick={() => setOmType('CORRETIVA')} className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all relative overflow-hidden ${omType === 'CORRETIVA' ? 'bg-red-50 border-red-500 text-red-600 shadow-lg scale-[1.02]' : 'border-gray-200 text-gray-400 hover:border-red-200 hover:bg-red-50/50'}`}><AlertTriangle size={24} strokeWidth={3} /><span className="font-black text-xs uppercase tracking-widest">Corretiva</span>{omType === 'CORRETIVA' && <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}</button>
+                                      <button onClick={() => setOmType('PREVENTIVA')} className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all relative overflow-hidden ${omType === 'PREVENTIVA' ? 'bg-blue-50 border-vale-blue text-vale-blue shadow-lg scale-[1.02]' : 'border-gray-200 text-gray-400 hover:border-blue-200 hover:bg-blue-50/50'}`}><Calendar size={24} strokeWidth={3} /><span className="font-black text-xs uppercase tracking-widest">Preventiva</span>{omType === 'PREVENTIVA' && <div className="absolute top-2 right-2 w-2 h-2 bg-vale-blue rounded-full"></div>}</button>
+                                  </div>
+                              </div>
+                              {omType === 'PREVENTIVA' && (
+                                  <div className="animate-fadeIn p-4 bg-blue-50 rounded-xl border border-blue-100"><label className="block text-[10px] font-black text-blue-400 uppercase mb-2 flex items-center gap-1"><LinkIcon size={12}/> Vínculo com Programação (Opcional)</label><select value={linkedScheduleId} onChange={handleLinkSchedule} className="w-full bg-white border border-blue-200 p-2 rounded-lg font-bold text-xs uppercase text-blue-900 focus:outline-none"><option value="">-- SELECIONE ITEM --</option>{scheduleItems.map(s => (<option key={s.id} value={s.id}>{s.frotaOm} - {s.description.substring(0, 30)}...</option>))}</select></div>
+                              )}
                           </div>
-                      )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                          <label className="block text-[10px] font-black text-gray-500 mb-1 uppercase">NÚMERO DA OM</label>
-                          <input placeholder="EX: 202505..." value={omNumber} onChange={e => setOmNumber(e.target.value)} className="w-full border p-2 rounded font-bold uppercase" />
-                      </div>
-                      <div>
-                          <label className="block text-[10px] font-black text-gray-500 mb-1 uppercase">LOCAL DE INSTALAÇÃO (TAG)</label>
-                          <input placeholder="EX: CCPX-MIN..." value={omTag} onChange={e => setOmTag(e.target.value)} className="w-full border p-2 rounded font-bold uppercase" />
+                          <div className="mt-8 pt-6 border-t border-gray-100">
+                              <button onClick={handleSaveOM} disabled={isSavingOm || !omNumber || !omType} className={`w-full py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all ${(isSavingOm || !omNumber || !omType) ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-vale-green to-teal-600 text-white hover:brightness-110 active:scale-95'}`}>{isSavingOm ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}{isSavingOm ? 'Registrando...' : 'Confirmar Cadastro'}</button>
+                          </div>
                       </div>
                   </div>
-                  
-                  <div className="mb-4">
-                      <label className="block text-[10px] font-black text-gray-500 mb-1 uppercase">DESCRIÇÃO DA OM</label>
-                      <textarea placeholder="DESCRIÇÃO TÉCNICA..." value={omDesc} onChange={e => setOmDesc(e.target.value)} className="w-full border p-2 rounded font-bold uppercase h-20" />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                      <button onClick={() => setOmType('CORRETIVA')} className={`p-3 rounded border-2 font-black text-xs flex flex-col items-center gap-1 ${omType === 'CORRETIVA' ? 'bg-red-50 border-red-500 text-red-700' : 'border-gray-200'}`}><AlertTriangle size={16}/> CORRETIVA</button>
-                      <button onClick={() => setOmType('PREVENTIVA')} className={`p-3 rounded border-2 font-black text-xs flex flex-col items-center gap-1 ${omType === 'PREVENTIVA' ? 'bg-blue-50 border-vale-blue text-vale-blue' : 'border-gray-200'}`}><Calendar size={16}/> PREVENTIVA</button>
-                  </div>
-                  
-                  {omType === 'PREVENTIVA' && (
-                      <div className="mb-6 animate-fadeIn">
-                          <label className="block text-[10px] font-black text-gray-500 mb-1 uppercase">VINCULAR A ITEM DA PROGRAMAÇÃO (OPCIONAL)</label>
-                          <select 
-                              value={linkedScheduleId} 
-                              onChange={handleLinkSchedule}
-                              className="w-full border p-2 rounded font-bold uppercase text-xs"
-                          >
-                              <option value="">-- SELECIONE SE HOUVER --</option>
-                              {scheduleItems.map(s => (
-                                  <option key={s.id} value={s.id}>{s.frotaOm} - {s.description.substring(0, 30)}...</option>
-                              ))}
-                          </select>
-                      </div>
-                  )}
-
-                  <button onClick={handleOpenOmReview} disabled={isAnalyzingOM} className="w-full bg-vale-green text-white font-black py-3 rounded shadow-lg hover:bg-[#00605d] transition-colors flex items-center justify-center gap-2">
-                      <Eye size={20} />
-                      PRÉ-VISUALIZAR E CONFIRMAR
-                  </button>
               </div>
           </div>
       )}
 
+      {/* ... [SCHEDULE Tab Content] ... */}
       {activeTab === 'SCHEDULE' && (
           <div className="bg-white p-6 rounded shadow border border-gray-200 animate-fadeIn">
               <div className="flex justify-between items-start mb-6">
-                  <div>
-                      <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2">
-                          <Calendar size={20} className="text-vale-blue" /> IMPORTAR PROGRAMAÇÃO SEMANAL
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-1">Cole os dados do Excel/Project abaixo (Copiar tabela inteira).</p>
-                  </div>
-                  <button onClick={handleClearSchedule} className="bg-red-100 text-red-700 px-4 py-2 rounded text-xs font-black flex items-center gap-2 hover:bg-red-200 transition-colors">
-                      <Trash2 size={14}/> LIMPAR TUDO
-                  </button>
+                  <div><h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><Calendar size={20} className="text-vale-blue" /> IMPORTAR PROGRAMAÇÃO SEMANAL</h3><p className="text-xs text-gray-500 mt-1">Cole os dados do Excel/Project abaixo (Copiar tabela inteira).</p></div>
+                  <button onClick={handleClearSchedule} className="bg-red-100 text-red-700 px-4 py-2 rounded text-xs font-black flex items-center gap-2 hover:bg-red-200 transition-colors"><Trash2 size={14}/> LIMPAR TUDO</button>
               </div>
-              
-              <textarea 
-                  value={scheduleInput}
-                  onChange={e => setScheduleInput(e.target.value)}
-                  className="w-full h-64 border-2 border-gray-300 rounded p-4 font-mono text-xs mb-4 focus:border-vale-blue outline-none"
-                  placeholder="COLE AS LINHAS DO EXCEL AQUI..."
-              />
-              
-              <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-gray-500">{scheduleStatus}</span>
-                  <button onClick={parseExcelData} disabled={isProcessingSchedule || !scheduleInput} className="bg-vale-blue text-white px-8 py-3 rounded font-black shadow-lg hover:bg-[#004a7c] disabled:opacity-50 flex items-center gap-2">
-                      {isProcessingSchedule ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>}
-                      PROCESSAR DADOS
-                  </button>
-              </div>
+              {schedulePreview.length === 0 ? (<><textarea value={scheduleInput} onChange={e => setScheduleInput(e.target.value)} className="w-full h-64 border-2 border-gray-300 rounded p-4 font-mono text-xs mb-4 focus:border-vale-blue outline-none" placeholder="COLE AS LINHAS DO EXCEL AQUI..." /><div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">{scheduleStatus}</span><button onClick={handlePreviewSchedule} disabled={isProcessingSchedule || !scheduleInput} className="bg-gradient-to-r from-vale-blue to-blue-600 text-white px-8 py-3 rounded font-black shadow-lg hover:brightness-110 disabled:opacity-50 flex items-center gap-2">{isProcessingSchedule ? <Loader2 className="animate-spin" size={16}/> : <Table size={16}/>} PRÉ-VISUALIZAR DADOS</button></div></>) : (<div className="animate-fadeIn"><div className="flex justify-between items-center mb-4 bg-green-50 p-3 rounded border border-green-200"><span className="text-sm font-black text-green-800"><CheckCircle size={16} className="inline mr-2"/>{schedulePreview.length} ITENS IDENTIFICADOS</span><div className="flex gap-2 justify-center"><button onClick={handleCancelPreview} className="bg-gray-200 text-gray-700 px-4 py-2 rounded text-xs font-black hover:bg-gray-300">CANCELAR</button><button onClick={handleConfirmImport} className="bg-gradient-to-r from-vale-green to-teal-600 text-white px-4 py-2 rounded text-xs font-black hover:brightness-110 flex items-center gap-2 shadow-lg"><Save size={16}/> CONFIRMAR IMPORTAÇÃO</button></div></div><div className="max-h-[500px] overflow-auto border border-gray-300 rounded"><table className="min-w-full text-xs"><thead className="bg-gray-100 font-bold sticky top-0"><tr><th className="p-2 border">FROTA/OM</th><th className="p-2 border">DESCRIÇÃO</th><th className="p-2 border">DATA INI</th><th className="p-2 border">H. INI</th><th className="p-2 border">REC</th></tr></thead><tbody>{schedulePreview.map((item, idx) => (<tr key={idx} className="hover:bg-gray-50"><td className="p-2 border">{item.frotaOm}</td><td className="p-2 border truncate max-w-[200px]">{item.description}</td><td className="p-2 border text-center">{item.dateStart}</td><td className="p-2 border text-center">{item.timeStart}</td><td className="p-2 border">{item.resources}</td></tr>))}</tbody></table></div></div>)}
           </div>
       )}
 
+      {/* ... [USERS Tab Content] ... */}
       {activeTab === 'USERS' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
               <div className="lg:col-span-1">
                   <div className="bg-white p-6 rounded shadow border border-gray-200 sticky top-4">
-                      <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2">
-                          <UserCheck size={20} className="text-vale-green" />
-                          {isEditingUser ? 'EDITAR ACESSO' : 'NOVO USUÁRIO'}
-                      </h3>
+                      <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2"><UserCheck size={20} className="text-vale-green" /> {isEditingUser ? 'EDITAR ACESSO' : 'NOVO USUÁRIO'}</h3>
                       <form onSubmit={handleSaveUser} className="space-y-4">
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">LOGIN</label>
-                              <input value={userLogin} onChange={e => setUserLogin(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">SENHA</label>
-                              <div className="relative">
-                                  <input type="password" value={userPass} onChange={e => setUserPass(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold" required={!isEditingUser} placeholder={isEditingUser ? "Preencha para alterar" : ""} />
-                                  <Lock size={16} className="absolute right-3 top-3 text-gray-400"/>
-                              </div>
-                          </div>
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">NOME</label>
-                              <input value={userName} onChange={e => setUserName(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">MATRÍCULA</label>
-                              <input value={userMat} onChange={e => setUserMat(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-black text-gray-500 mb-1">NÍVEL</label>
-                              <select value={userRole} onChange={e => setUserRole(e.target.value as any)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase bg-white">
-                                  <option value="OPERADOR">OPERADOR (BÁSICO)</option>
-                                  <option value="ADMIN">ADMINISTRADOR (TOTAL)</option>
-                              </select>
-                          </div>
-
-                          <div className="flex gap-2 pt-2">
-                              {isEditingUser && (
-                                  <button type="button" onClick={resetUserForm} className="px-4 py-2 bg-gray-200 text-gray-600 font-bold rounded hover:bg-gray-300">
-                                      CANCELAR
-                                  </button>
-                              )}
-                              <button type="submit" disabled={isLoadingUsers} className="flex-1 bg-vale-green text-white font-black py-2 rounded hover:bg-[#00605d] shadow-lg flex items-center justify-center gap-2">
-                                  {isLoadingUsers ? <Loader2 className="animate-spin" size={16}/> : (isEditingUser ? 'SALVAR' : 'CRIAR')}
-                              </button>
-                          </div>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">LOGIN</label><input value={userLogin} onChange={e => setUserLogin(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">SENHA</label><div className="relative"><input type="password" value={userPass} onChange={e => setUserPass(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold" required={!isEditingUser} placeholder={isEditingUser ? "Preencha para alterar" : ""} /><Lock size={16} className="absolute right-3 top-3 text-gray-400"/></div></div>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">NOME</label><input value={userName} onChange={e => setUserName(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">MATRÍCULA</label><input value={userMat} onChange={e => setUserMat(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
+                          <div><label className="block text-xs font-black text-gray-500 mb-1">NÍVEL</label><select value={userRole} onChange={e => setUserRole(e.target.value as any)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase bg-white"><option value="OPERADOR">OPERADOR (BÁSICO)</option><option value="ADMIN">ADMINISTRADOR (TOTAL)</option></select></div>
+                          <div className="flex gap-2 pt-2 justify-center">{isEditingUser && <button type="button" onClick={resetUserForm} className="px-4 py-2 bg-gray-200 text-gray-600 font-bold rounded hover:bg-gray-300">CANCELAR</button>}<button type="submit" disabled={isLoadingUsers} className="flex-1 bg-gradient-to-r from-vale-green to-teal-600 text-white font-black py-2 rounded hover:brightness-110 shadow-lg flex items-center justify-center gap-2">{isLoadingUsers ? <Loader2 className="animate-spin" size={16}/> : (isEditingUser ? 'SALVAR' : 'CRIAR')}</button></div>
                       </form>
                   </div>
               </div>
-
               <div className="lg:col-span-2">
                   <div className="bg-white p-6 rounded shadow border border-gray-200">
-                      <div className="flex justify-between items-center mb-6">
-                          <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2">
-                              <Shield size={20} /> CONTROLE DE ACESSO
-                          </h3>
-                          {isLoadingUsers && <Loader2 className="animate-spin text-vale-green" />}
-                      </div>
-
+                      <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><Shield size={20} /> CONTROLE DE ACESSO</h3>{isLoadingUsers && <Loader2 className="animate-spin text-vale-green" />}</div>
                       <div className="overflow-x-auto">
                           <table className="min-w-full text-sm">
-                              <thead className="bg-gray-50 border-b-2 border-gray-200">
-                                  <tr>
-                                      <th className="px-4 py-3 text-left font-black text-gray-500">LOGIN</th>
-                                      <th className="px-4 py-3 text-left font-black text-gray-500">NOME</th>
-                                      <th className="px-4 py-3 text-left font-black text-gray-500">PERFIL</th>
-                                      <th className="px-4 py-3 text-right font-black text-gray-500">AÇÕES</th>
-                                  </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                  {users.map(u => (
-                                      <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                                          <td className="px-4 py-3 font-mono font-bold text-gray-600">{u.login}</td>
-                                          <td className="px-4 py-3 font-bold text-gray-800">{u.name}</td>
-                                          <td className="px-4 py-3">
-                                              <span className={`text-[10px] px-2 py-1 rounded font-black ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
-                                                  {u.role}
-                                              </span>
-                                          </td>
-                                          <td className="px-4 py-3 text-right flex justify-end gap-2">
-                                              {u.role !== 'ADMIN' || u.login !== 'ADMIN' ? (
-                                                  <>
-                                                      <button onClick={() => handleEditUserClick(u)} className="text-vale-blue hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16}/></button>
-                                                      <button onClick={() => handleDeleteUser(u.id)} className="text-red-400 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button>
-                                                  </>
-                                              ) : <span className="text-[10px] text-gray-400 font-bold italic">SISTEMA</span>}
-                                          </td>
-                                      </tr>
-                                  ))}
-                              </tbody>
+                              <thead className="bg-gray-50 border-b-2 border-gray-200"><tr><th className="px-4 py-3 text-left font-black text-gray-500">LOGIN</th><th className="px-4 py-3 text-left font-black text-gray-500">NOME</th><th className="px-4 py-3 text-left font-black text-gray-500">PERFIL</th><th className="px-4 py-3 text-right font-black text-gray-500">AÇÕES</th></tr></thead>
+                              <tbody className="divide-y divide-gray-100">{users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition-colors"><td className="px-4 py-3 font-mono font-bold text-gray-600">{u.login}</td><td className="px-4 py-3 font-bold text-gray-800">{u.name}</td><td className="px-4 py-3"><span className={`text-[10px] px-2 py-1 rounded font-black ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>{u.role}</span></td><td className="px-4 py-3 text-right flex justify-end gap-2">{u.role !== 'ADMIN' || u.login !== 'ADMIN' ? (<><button onClick={() => handleEditUserClick(u)} className="text-vale-blue hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16}/></button><button onClick={() => handleDeleteUser(u.id)} className="text-red-400 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button></>) : <span className="text-[10px] text-gray-400 font-bold italic">SISTEMA</span>}</td></tr>))}</tbody>
                           </table>
                       </div>
                   </div>
@@ -953,28 +697,30 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
-      {/* OM REVIEW MODAL (SIMPLIFIED FOR BREVITY, USING VALE COLORS) */}
-      {showOmReview && (
-          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white rounded-xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden relative shadow-2xl">
-                   <div className="bg-vale-dark p-4 flex justify-between items-center text-white shrink-0">
-                      <div className="flex items-center gap-3">
-                          <Edit2 size={20} className="text-vale-green"/> 
-                          <div><h3 className="font-black text-lg leading-none">REVISÃO DE CADASTRO</h3></div>
-                      </div>
-                      <button onClick={() => setShowOmReview(false)} className="hover:bg-gray-700 p-2 rounded"><X size={24}/></button>
+      {/* [MODALS - ART Review and View, kept as is] */}
+      {showArtReview && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] p-4 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden relative shadow-2xl">
+                <div className="bg-vale-dark p-4 flex justify-between items-center text-white shrink-0"><div className="flex items-center gap-3"><Edit2 size={20} className="text-vale-green"/> <div><h3 className="font-black text-lg leading-none uppercase">{isEditingArtId ? 'EDITAR ART' : 'NOVA ART'} - {artNum}</h3><p className="text-[10px] font-bold text-gray-400">{artName}</p></div></div><button onClick={() => setShowArtReview(false)} className="hover:bg-gray-700 p-2 rounded"><X size={24}/></button></div>
+                <div className="flex-1 overflow-y-auto p-6 bg-gray-100 space-y-6 custom-scrollbar">
+                    <div className="bg-white p-4 rounded shadow"><div className="flex justify-between items-center mb-2 border-b pb-2"><h4 className="font-black text-vale-darkgray">1. ANÁLISE DE RISCOS</h4><button onClick={addRisk} className="text-xs bg-green-100 text-vale-green px-2 py-1 rounded font-bold flex items-center gap-1 hover:bg-green-200"><PlusCircle size={14}/> ADICIONAR RISCO</button></div><div className="space-y-2">{artRisks.map((r, i) => (<div key={i} className="grid grid-cols-12 gap-2 items-center text-xs"><input value={r.situation} onChange={e => updateRisk(i, 'situation', e.target.value)} className="col-span-8 border p-2 rounded font-bold uppercase" placeholder="SITUAÇÃO DE RISCO" /><input value={r.riskLevel} onChange={e => updateRisk(i, 'riskLevel', e.target.value)} className="col-span-3 border p-2 rounded text-center font-bold uppercase" placeholder="NÍVEL" /><button onClick={() => removeRisk(i)} className="col-span-1 text-red-500 hover:bg-red-50 p-2 rounded flex justify-center"><Trash2 size={16}/></button></div>))}</div></div>
+                    <div className="bg-white p-4 rounded shadow"><h4 className="font-black text-vale-darkgray mb-2 border-b pb-2">2. MEDIDAS DE CONTROLE (RESUMO)</h4><textarea value={artControlMeasures} onChange={e => setArtControlMeasures(e.target.value)} className="w-full border p-2 rounded font-bold h-20 text-xs uppercase" placeholder="Descreva as medidas gerais..." /></div>
+                    <div className="bg-white p-4 rounded shadow"><div className="flex justify-between items-center mb-2 border-b pb-2"><h4 className="font-black text-vale-darkgray">3. PASSO A PASSO DA TAREFA</h4><button onClick={addStep} className="text-xs bg-green-100 text-vale-green px-2 py-1 rounded font-bold flex items-center gap-1 hover:bg-green-200"><PlusCircle size={14}/> ADICIONAR PASSO</button></div><div className="space-y-2">{artSteps.map((s, i) => (<div key={i} className="grid grid-cols-12 gap-2 items-center text-xs"><div className="col-span-1 bg-gray-100 text-center py-2 font-black rounded">{i+1}</div><input value={s.step} onChange={e => updateStep(i, 'step', e.target.value)} className="col-span-8 border p-2 rounded font-bold uppercase" placeholder="DESCRIÇÃO DO PASSO" /><input value={s.riskLevel} onChange={e => updateStep(i, 'riskLevel', e.target.value)} className="col-span-2 border p-2 rounded text-center font-bold uppercase" placeholder="RISCO" /><button onClick={() => removeStep(i)} className="col-span-1 text-red-500 hover:bg-red-50 p-2 rounded flex justify-center"><Trash2 size={16}/></button></div>))}</div></div>
+                </div>
+                <div className="p-4 bg-white border-t border-gray-200 flex justify-center gap-3 shrink-0"><button onClick={() => setShowArtReview(false)} className="px-6 py-3 rounded-lg font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors uppercase text-xs">CANCELAR</button><button onClick={handleConfirmSaveART} disabled={isSavingArt} className="bg-gradient-to-r from-vale-green to-teal-600 hover:brightness-110 text-white px-8 py-3 rounded-lg font-black shadow-lg flex items-center gap-2 transition-transform active:scale-95 uppercase text-xs">{isSavingArt ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />}{isSavingArt ? 'SALVANDO...' : 'SALVAR ART NA BIBLIOTECA'}</button></div>
+            </div>
+        </div>
+      )}
+
+      {viewingArt && (
+          <div className="fixed inset-0 bg-vale-dark/95 flex items-center justify-center z-[80] p-4 backdrop-blur-md animate-fadeIn">
+              <div className="bg-white rounded-xl w-full max-w-5xl h-[95vh] flex flex-col overflow-hidden relative shadow-2xl">
+                  <div className="bg-vale-green text-white p-4 flex justify-between items-center shrink-0 shadow-md"><div className="flex items-center gap-3"><FileText size={24} /><div><h3 className="font-black text-lg leading-none uppercase tracking-tight">VISUALIZAÇÃO DE ART PADRÃO</h3><p className="text-[10px] font-bold text-white/70 uppercase mt-1">BIBLIOTECA TÉCNICA</p></div></div><button onClick={() => setViewingArt(null)} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X size={28}/></button></div>
+                  <div className="flex-1 overflow-y-auto bg-gray-200 p-6 custom-scrollbar">
+                      {viewingArt.pdfUrl && (<div className="mb-8 border-b-4 border-gray-300 pb-8"><h4 className="font-black text-gray-700 mb-4 flex items-center gap-2"><FileText size={18}/> PDF ANEXADO (ORIGINAL)</h4><div className="bg-white p-2 border border-gray-300 shadow-md h-[500px]"><iframe src={viewingArt.pdfUrl} className="w-full h-full border-none" title="PDF Original" /></div></div>)}
+                      {renderStandardDocument(viewingArt)}
                   </div>
-                  <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-gray-100">
-                      <div className="w-full md:w-3/5 bg-gray-800 border-r border-gray-700 relative flex flex-col">
-                          {omFile ? <iframe src={URL.createObjectURL(omFile)} className="w-full h-full border-none bg-white"/> : <div className="p-10 text-white">SEM PDF</div>}
-                      </div>
-                      <div className="w-full md:w-2/5 flex flex-col bg-white overflow-y-auto custom-scrollbar p-6 space-y-4">
-                           <input value={omNumber} onChange={e => setOmNumber(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-lg focus:border-vale-green outline-none" placeholder="OM"/>
-                           <input value={omTag} onChange={e => setOmTag(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-lg focus:border-vale-green outline-none" placeholder="TAG"/>
-                           <textarea value={omDesc} onChange={e => setOmDesc(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase h-32 focus:border-vale-green outline-none" placeholder="DESCRIÇÃO"/>
-                           <button onClick={handleSaveOM} disabled={isSavingOm} className="bg-vale-green hover:bg-[#00605d] text-white px-8 py-3 rounded-lg font-black shadow-lg flex items-center gap-2 justify-center">{isSavingOm ? 'SALVANDO...' : 'CONFIRMAR'}</button>
-                      </div>
-                  </div>
+                  <div className="p-4 bg-white border-t border-gray-200 flex justify-end shrink-0"><button onClick={() => setViewingArt(null)} className="px-8 py-3 bg-gray-100 text-gray-700 font-black rounded-lg hover:bg-gray-200 transition-colors uppercase text-xs">FECHAR</button></div>
               </div>
           </div>
       )}
