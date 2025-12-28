@@ -18,13 +18,43 @@ interface CardItemProps {
 const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, onDownload, onDelete }) => {
     // Mapeamento de cores baseado no tipo para uniformidade
     const getTypeStyles = () => {
-        if (isArchived) return { border: 'border-vale-darkgray', text: 'text-vale-darkgray', bg: 'bg-vale-darkgray' };
+        if (isArchived) return { 
+            border: 'border-vale-gray', 
+            text: 'text-vale-gray', 
+            bg: 'bg-vale-gray', 
+            gradient: 'from-gray-500/10 to-transparent' 
+        };
         switch(doc.type) {
-            case 'ART_EMERGENCIAL': return { border: 'border-vale-cherry', text: 'text-vale-cherry', bg: 'bg-vale-cherry' };
-            case 'ART_ATIVIDADE': return { border: 'border-vale-aqua', text: 'text-vale-aqua', bg: 'bg-vale-aqua' };
-            case 'CHECKLIST': return { border: 'border-vale-green', text: 'text-vale-green', bg: 'bg-vale-green' };
-            case 'RELATORIO': return { border: 'border-vale-orange', text: 'text-vale-orange', bg: 'bg-vale-orange' };
-            default: return { border: 'border-vale-blue', text: 'text-vale-blue', bg: 'bg-vale-blue' };
+            case 'ART_EMERGENCIAL': return { 
+                border: 'border-vale-cherry', 
+                text: 'text-vale-cherry', 
+                bg: 'bg-vale-cherry', 
+                gradient: 'from-vale-cherry/5 to-transparent' 
+            };
+            case 'ART_ATIVIDADE': return { 
+                border: 'border-vale-blue', 
+                text: 'text-vale-blue', 
+                bg: 'bg-vale-blue', 
+                gradient: 'from-vale-blue/5 to-transparent' 
+            };
+            case 'CHECKLIST': return { 
+                border: 'border-vale-green', 
+                text: 'text-vale-green', 
+                bg: 'bg-vale-green', 
+                gradient: 'from-vale-green/5 to-transparent' 
+            };
+            case 'RELATORIO': return { 
+                border: 'border-vale-yellow', 
+                text: 'text-vale-yellow', 
+                bg: 'bg-vale-yellow', 
+                gradient: 'from-vale-yellow/5 to-transparent' 
+            };
+            default: return { 
+                border: 'border-vale-blue', 
+                text: 'text-vale-blue', 
+                bg: 'bg-vale-blue', 
+                gradient: 'from-vale-blue/5 to-transparent' 
+            };
         }
     };
 
@@ -34,93 +64,96 @@ const CardItem: React.FC<CardItemProps> = ({ doc, isArchived, onView, onShowQR, 
       <div 
           onClick={() => onView(doc)}
           className={`
-            group bg-gradient-to-b from-white to-gray-50 rounded-2xl 
-            shadow-[0_4px_10px_rgba(0,0,0,0.05),_inset_0_-2px_4px_rgba(0,0,0,0.02)] 
-            border-2 transition-all duration-300 flex flex-col relative cursor-pointer overflow-hidden
-            hover:shadow-[0_15px_30px_-10px_rgba(0,0,0,0.15)] hover:-translate-y-1
-            ${isArchived ? 'border-gray-200 opacity-80' : 'border-gray-100'}
+            group bg-white rounded-3xl
+            shadow-[0_8px_30px_rgba(0,0,0,0.04)]
+            border-2 transition-all duration-500 flex flex-col relative cursor-pointer overflow-hidden
+            hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] hover:-translate-y-2
+            ${isArchived ? 'border-gray-200 opacity-80' : 'border-white'}
           `}
       >
-          {/* Barra Superior Colorida por Tipo */}
-          <div className={`h-2 w-full ${styles.bg}`}></div>
+          {/* Fundo gradiente sutil no hover */}
+          <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 bg-gradient-to-br ${styles.gradient}`}></div>
+
+          {/* Barra Superior de Identificação */}
+          <div className={`h-1.5 w-full ${styles.bg}`}></div>
 
           {isArchived && (
-              <div className="absolute top-2 right-2 bg-vale-darkgray text-white text-[9px] font-black px-2 py-0.5 rounded-full z-10 shadow-sm flex items-center gap-1">
-                  <ArchiveIcon size={10} /> ARQUIVADO
+              <div className="absolute top-4 right-4 bg-gray-900/80 backdrop-blur-md text-white text-[9px] font-black px-3 py-1 rounded-full z-10 shadow-lg flex items-center gap-1.5">
+                  <ArchiveIcon size={12} className="text-vale-yellow" /> ARQUIVADO
               </div>
           )}
 
-          <div className="p-5 flex-1 flex flex-col">
-              <div className="flex justify-between items-start mb-4">
-                  <span className={`text-[10px] font-black uppercase tracking-widest ${styles.text}`}>
-                      {doc.type.replace('ART_', 'ART ').replace('_', ' ')}
-                  </span>
-                  <span className="text-[10px] text-vale-darkgray/40 font-mono font-bold">
+          <div className="p-6 flex-1 flex flex-col relative z-10">
+              <div className="flex justify-between items-start mb-6">
+                  <div className={`px-3 py-1 rounded-lg ${styles.bg} bg-opacity-10`}>
+                    <span className={`text-[10px] font-black uppercase tracking-[0.1em] ${styles.text}`}>
+                        {doc.type.replace('ART_', 'ART ').replace('_', ' ')}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-gray-400 font-mono font-bold">
                       {new Date(doc.createdAt).toLocaleDateString()}
                   </span>
               </div>
               
-              <div className="mb-4">
-                  <p className="text-[9px] text-vale-darkgray/50 uppercase font-black mb-0.5 tracking-tighter">ORDEM DE MANUTENÇÃO</p>
-                  {/* DESTAQUE OM EM COR FORTE */}
-                  <h3 className="font-black text-vale-blue text-2xl leading-none tracking-tight group-hover:text-vale-green transition-colors">
-                      {doc.header.om || 'SEM OM'}
+              <div className="mb-6">
+                  <p className="text-[9px] text-gray-400 uppercase font-black mb-1.5 tracking-wider">Ordem de Manutenção</p>
+                  <h3 className="font-black text-vale-blue text-3xl leading-none tracking-tight group-hover:text-vale-green transition-colors">
+                      {doc.header.om || '000000'}
                   </h3>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-2 gap-4 mb-6 bg-gray-50/50 p-4 rounded-2xl border border-gray-100">
                   <div>
-                      <p className="text-[9px] text-vale-darkgray/50 uppercase font-black tracking-tighter">TAG</p>
-                      {/* DESTAQUE TAG EM COR FORTE */}
-                      <p className="text-sm font-black text-vale-green truncate uppercase">{doc.header.tag || 'N/D'}</p>
+                      <p className="text-[9px] text-gray-400 uppercase font-black tracking-wider mb-1">Tag Equip.</p>
+                      <p className="text-base font-black text-vale-green truncate uppercase">{doc.header.tag || 'CA-N/D'}</p>
                   </div>
                   <div>
-                      <p className="text-[9px] text-vale-darkgray/50 uppercase font-black tracking-tighter">TIPO</p>
-                      <p className="text-xs font-bold text-vale-darkgray/80">{doc.header.type}</p>
+                      <p className="text-[9px] text-gray-400 uppercase font-black tracking-wider mb-1">Tipo</p>
+                      <p className="text-xs font-bold text-gray-700">{doc.header.type}</p>
                   </div>
               </div>
 
-              <div className="mt-auto">
-                  <p className="text-[9px] text-vale-darkgray/50 uppercase font-black tracking-tighter">DESCRIÇÃO</p>
-                  <p className="text-xs font-bold text-vale-darkgray/60 italic line-clamp-1">
-                      {doc.header.description || 'Sem descrição detalhada'}
+              <div className="mt-auto pt-4 border-t border-gray-50">
+                  <p className="text-[9px] text-gray-400 uppercase font-black tracking-wider mb-1">Atividade</p>
+                  <p className="text-xs font-bold text-gray-500 italic line-clamp-2">
+                      {doc.header.description || 'Sem descrição detalhada registrada no sistema'}
                   </p>
               </div>
           </div>
 
-          {/* Footer com Sombra Interna Sutil */}
-          <div className="p-3 bg-gray-50/50 border-t border-gray-100 flex justify-between gap-2 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
-              <div className="flex gap-1.5">
+          {/* Painel de Ações Estilizado */}
+          <div className="p-4 bg-white border-t border-gray-50 flex justify-between gap-2 relative z-10">
+              <div className="flex gap-2">
                   <button 
-                      title="Visualizar Completo" 
+                      title="Visualizar" 
                       onClick={(e) => { e.stopPropagation(); onView(doc); }} 
-                      className="p-2.5 bg-white text-vale-green hover:bg-vale-green hover:text-white border border-gray-200 rounded-xl transition-all shadow-sm active:scale-95"
+                      className="p-3 bg-gray-50 text-vale-green hover:bg-vale-green hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"
                   >
-                      <Eye size={18} />
+                      <Eye size={20} />
                   </button>
                   <button 
                       title="QR Code" 
                       onClick={(e) => onShowQR(e, doc)} 
-                      className="p-2.5 bg-white text-vale-darkgray hover:bg-vale-darkgray hover:text-white border border-gray-200 rounded-xl transition-all shadow-sm active:scale-95"
+                      className="p-3 bg-gray-50 text-gray-800 hover:bg-gray-800 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"
                   >
-                      <QrCode size={18} />
+                      <QrCode size={20} />
                   </button>
               </div>
               
-              <div className="flex gap-1.5">
+              <div className="flex gap-2">
                   <button 
-                      title="Baixar PDF" 
+                      title="PDF" 
                       onClick={(e) => onDownload(e, doc)} 
-                      className="p-2.5 bg-white text-vale-blue hover:bg-vale-blue hover:text-white border border-gray-200 rounded-xl transition-all shadow-sm active:scale-95"
+                      className="p-3 bg-gray-50 text-vale-blue hover:bg-vale-blue hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"
                   >
-                      <Download size={18} />
+                      <Download size={20} />
                   </button>
                   <button 
-                      title="Mover para Lixeira" 
+                      title="Remover" 
                       onClick={(e) => onDelete(e, doc.id)} 
-                      className="p-2.5 bg-white text-vale-cherry hover:bg-vale-cherry hover:text-white border border-gray-200 rounded-xl transition-all shadow-sm active:scale-95"
+                      className="p-3 bg-gray-50 text-vale-cherry hover:bg-vale-cherry hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"
                   >
-                      <Trash2 size={18} />
+                      <Trash2 size={20} />
                   </button>
               </div>
           </div>
@@ -414,7 +447,6 @@ export const Archive: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto pb-20 px-4">
-      {/* ... (Header e Tabs permanecem iguais) ... */}
       <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4 border-b border-gray-200 pb-6">
           <div className="flex items-center gap-4">
             <BackButton />
@@ -431,7 +463,7 @@ export const Archive: React.FC = () => {
               >
                   <Trash2 size={16} /> LIXEIRA {trashCount > 0 && <span className="bg-vale-cherry text-white px-2 py-0.5 rounded-full text-[9px]">{trashCount}</span>}
               </button>
-              <div className="hidden md:flex bg-vale-aqua/10 text-vale-aqua px-4 py-2 rounded-xl text-[10px] font-black items-center gap-2 border border-vale-aqua/20 shadow-sm">
+              <div className="hidden md:flex bg-vale-blue/10 text-vale-blue px-4 py-2 rounded-xl text-[10px] font-black items-center gap-2 border border-vale-blue/20 shadow-sm">
                   <Cloud size={14} className="animate-pulse" /> SISTEMA CONECTADO
               </div>
           </div>
@@ -476,7 +508,7 @@ export const Archive: React.FC = () => {
               <h3 className="font-black text-vale-darkgray text-xl uppercase tracking-tighter">Documentos Recentes</h3>
               <span className="bg-vale-green/10 text-vale-green text-[10px] px-3 py-1 rounded-full font-black border border-vale-green/20">{recentDocs.length} ITENS</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
               {recentDocs.length === 0 && (
                   <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center grayscale opacity-30">
                       <FileText size={64} className="mb-4" />
@@ -491,22 +523,22 @@ export const Archive: React.FC = () => {
       {archivedDocs.length > 0 && (
           <div className="mb-14">
               <div className="flex items-center gap-3 mb-6">
-                  <div className="w-1.5 h-8 bg-vale-darkgray rounded-full shadow-sm"></div>
-                  <h3 className="font-black text-vale-darkgray/60 text-xl uppercase tracking-tighter">Arquivo Morto (Histórico)</h3>
-                  <span className="bg-gray-100 text-vale-darkgray/60 text-[10px] px-3 py-1 rounded-full font-black border border-gray-200">{archivedDocs.length} ITENS</span>
+                  <div className="w-1.5 h-8 bg-gray-400 rounded-full shadow-sm"></div>
+                  <h3 className="font-black text-gray-500 text-xl uppercase tracking-tighter">Arquivo Morto (Histórico)</h3>
+                  <span className="bg-gray-100 text-gray-500 text-[10px] px-3 py-1 rounded-full font-black border border-gray-200">{archivedDocs.length} ITENS</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                   {archivedDocs.map(doc => <CardItem key={doc.id} doc={doc} isArchived={true} onView={setViewDoc} onShowQR={handleShowQR} onDownload={handleDownload} onDelete={handleDelete} />)}
               </div>
           </div>
       )}
 
-      {/* MODAL DE VISUALIZAÇÃO COM CORREÇÃO DO BOTÃO FECHAR */}
+      {/* MODAL DE VISUALIZAÇÃO */}
       {viewDoc && (
         <div className="fixed inset-0 bg-vale-dark/95 flex items-center justify-center z-[100] p-4 backdrop-blur-md animate-fadeIn">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden animate-fade-in-up border-b-8 border-vale-green relative">
                 
-                {/* Header do Modal com Botão Fechar Garantido */}
+                {/* Header do Modal */}
                 <div className="bg-vale-green text-white p-6 flex justify-between items-center shrink-0 shadow-lg relative z-50">
                     <div className="flex items-center gap-3">
                         <FileText size={24} className="text-vale-yellow" />
@@ -515,7 +547,6 @@ export const Archive: React.FC = () => {
                             <p className="text-[10px] font-bold text-white/70 uppercase mt-1 tracking-widest">{viewDoc.type}</p>
                         </div>
                     </div>
-                    {/* Botão Fechar com Contraste e Z-Index */}
                     <button 
                         onClick={() => setViewDoc(null)} 
                         className="bg-white/20 hover:bg-white text-white hover:text-vale-green p-2 rounded-full transition-all active:scale-90 shadow-inner"
@@ -526,7 +557,6 @@ export const Archive: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-200 custom-scrollbar">
-                     {/* Conteúdo Renderizado Estilo PDF */}
                      {renderFullDocument(viewDoc)}
                 </div>
 
@@ -548,23 +578,23 @@ export const Archive: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL QR CODE REAL */}
+      {/* MODAL QR CODE */}
       {showQr && (
-          <div className="fixed inset-0 bg-vale-darkgray/95 flex items-center justify-center z-[110] p-4 backdrop-blur-lg animate-fadeIn" onClick={() => setShowQr(null)}>
+          <div className="fixed inset-0 bg-gray-900/95 flex items-center justify-center z-[110] p-4 backdrop-blur-lg animate-fadeIn" onClick={() => setShowQr(null)}>
                <div className="bg-white rounded-[3rem] p-10 max-w-sm w-full text-center relative shadow-2xl animate-fade-in-up border-b-8 border-vale-yellow" onClick={e => e.stopPropagation()}>
-                   <div className="absolute top-4 right-4">
-                       <button onClick={() => setShowQr(null)} className="text-gray-400 hover:text-vale-cherry"><X size={24} /></button>
+                   <div className="absolute top-6 right-6">
+                       <button onClick={() => setShowQr(null)} className="text-gray-300 hover:text-vale-cherry transition-colors"><X size={24} /></button>
                    </div>
-                   <div className="bg-white p-2 inline-block">
+                   <div className="bg-white p-2 inline-block rounded-2xl border-2 border-gray-50 mb-6">
                        <img 
                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.origin + '/#/doc/' + showQr.id)}`} 
                            alt="QR Code do Documento" 
-                           className="mx-auto mb-6 w-48 h-48"
+                           className="mx-auto w-48 h-48"
                        />
                    </div>
                    <h3 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter mb-2">Acesso Rápido</h3>
-                   <p className="text-xs font-bold text-gray-500 uppercase">Use a câmera para abrir este documento digitalmente.</p>
-                   <p className="text-[10px] font-mono text-gray-400 mt-2">ID: {showQr.id.slice(0,8)}</p>
+                   <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Use a câmera para abrir este documento digitalmente.</p>
+                   <p className="text-[10px] font-mono text-gray-300 mt-4">ID: {showQr.id.slice(0,8).toUpperCase()}</p>
                </div>
           </div>
       )}

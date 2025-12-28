@@ -6,62 +6,10 @@ import { useNavigate } from 'react-router-dom';
 import { 
   FileInput, PlayCircle, Trash2, 
   Loader2, Search, CalendarDays, PlusCircle, User,
-  Wrench, AlertOctagon, CheckCircle2, Edit2, FileText, X,
-  Activity, Lock, Filter, Link as LinkIcon, MapPin, History, ChevronDown, ChevronUp,
-  Sparkles, ClipboardPaste, Clock
+  Wrench, AlertOctagon, Clock, CheckCircle2, Edit2, FileText, X,
+  Activity, Lock, Filter, Link as LinkIcon, MapPin, History, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
-
-// --- LOGIC FOR SMART EXTRACTION (AGRESSIVE CLEANUP) ---
-const extractSmartData = (input: string) => {
-    let text = input.toUpperCase().replace(/[\t\r\n]/g, ' ').trim();
-    
-    // 1. Detectar OM (Prioridade para padrões Vale: iniciados em 20... com 10-12 dígitos, ou genérico 8-12 dígitos)
-    const omRegex = /\b(20\d{8,10})\b|\b(\d{8,12})\b/;
-    const omMatch = text.match(omRegex);
-    const extractedOm = omMatch ? omMatch[0] : '';
-
-    // 2. Detectar TAG (Padrão: 2-3 Letras + 4-5 Números, ex: CA5309, TRP-1234)
-    // Ignora palavras comuns como "DATA", "HORA", "PARA", "NOTA" para não confundir
-    const tagRegex = /\b(?!DATA|HORA|PARA|ITEM|NOTA|DESC)([A-Z]{2,3}\s?-?\s?\d{4,5}[A-Z]?)\b/;
-    const tagMatch = text.match(tagRegex);
-    let extractedTag = tagMatch ? tagMatch[0].replace(/\s/g, '').replace(/-/g, '') : '';
-
-    // 3. Detectar Descrição (LIMPEZA TOTAL DE OM E TAG)
-    let description = text;
-
-    // Remove o número da OM encontrado
-    if (extractedOm) {
-        description = description.replace(extractedOm, '');
-    }
-
-    // Remove o TAG encontrado (usa o match original para garantir remoção correta com espaços/hífens)
-    if (tagMatch) {
-        description = description.replace(tagMatch[0], '');
-    }
-    
-    // Limpeza profunda de Labels e Caracteres soltos
-    description = description
-        .replace(/\bOM[:.]?\b/g, '')           // Remove "OM" ou "OM:"
-        .replace(/\bNOTA[:.]?\b/g, '')         // Remove "NOTA"
-        .replace(/\bTAG[:.]?\b/g, '')          // Remove "TAG"
-        .replace(/\bEQUIPAMENTO[:.]?\b/g, '')  // Remove "EQUIPAMENTO"
-        .replace(/\bDESCRIÇ[ÃA]O[:.]?\b/g, '') // Remove "DESCRIÇÃO"
-        .replace(/\bDESC[:.]?\b/g, '')         // Remove "DESC"
-        .replace(/[;|_]/g, ' ')                // Remove separadores pipe, ponto e virgula, underscore
-        .replace(/\s\s+/g, ' ')                // Remove espaços duplos
-        .trim();
-
-    // Remove caracteres especiais ou numéricos soltos no início da frase (ex: "- Troc...", ": Troc...", "1. Troc...")
-    description = description.replace(/^[^A-Z]+/, '');
-
-    // Se a descrição ficou muito curta ou vazia (ex: só tinha OM e TAG), tenta fallback
-    if (description.length < 3 && text.length > 20) {
-        description = "MANUTENÇÃO GERAL (DADOS INSUFICIENTES)";
-    }
-
-    return { om: extractedOm, tag: extractedTag, desc: description.trim() };
-};
 
 export const OMManagement: React.FC = () => {
   const navigate = useNavigate();
@@ -73,7 +21,7 @@ export const OMManagement: React.FC = () => {
   // Filtros
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'CORRETIVA' | 'PREVENTIVA'>('ALL');
-  const [dateFilter, setDateFilter] = useState(''); 
+  const [dateFilter, setDateFilter] = useState(''); // Novo filtro de data
   
   // States para Edição
   const [editingOM, setEditingOM] = useState<OMRecord | null>(null);
@@ -88,8 +36,6 @@ export const OMManagement: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newType, setNewType] = useState<'CORRETIVA' | 'PREVENTIVA'>('PREVENTIVA');
   const [linkedScheduleId, setLinkedScheduleId] = useState('');
-  const [omFile, setOmFile] = useState<File | null>(null);
-  const [smartInput, setSmartInput] = useState(''); // Campo para colar texto inteligente
   
   // Controle de Visualização do Histórico
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
@@ -142,12 +88,15 @@ export const OMManagement: React.FC = () => {
   const handleSaveEdit = async () => {
       if(!editingOM) return;
       
+      // VALIDAÇÃO TAG OBRIGATÓRIA
       if (!editTag.trim().toUpperCase().startsWith('CA')) {
           alert("ERRO: O TAG DO EQUIPAMENTO DEVE COMEÇAR COM 'CA'.");
           return;
       }
 
       const updatedOM = { ...editingOM, tag: editTag.toUpperCase(), description: editDesc, type: editType };
+      
+      // Salva e atualiza
       await StorageService.saveOM(updatedOM); 
       
       setEditingOM(null);
@@ -155,43 +104,7 @@ export const OMManagement: React.FC = () => {
       refreshData();
   };
 
-  // --- SMART EXTRACTION HANDLERS ---
-
-  const handleSmartPaste = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const text = e.target.value;
-      setSmartInput(text);
-      if (!text) return;
-
-      const extracted = extractSmartData(text);
-      
-      if (extracted.om) setNewOmNumber(extracted.om);
-      if (extracted.tag) setNewTag(extracted.tag);
-      if (extracted.desc) setNewDesc(extracted.desc);
-      
-      // Auto-detect type based on keywords
-      if (text.toUpperCase().includes('CORRETIVA') || text.toUpperCase().includes('QUEBRA') || text.toUpperCase().includes('PARADA')) {
-          setNewType('CORRETIVA');
-      }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files[0]) {
-          const file = e.target.files[0];
-          setOmFile(file);
-          
-          // Smart extract from Filename
-          const extracted = extractSmartData(file.name);
-          if (extracted.om) setNewOmNumber(extracted.om);
-          if (extracted.tag) setNewTag(extracted.tag);
-          // If filename doesn't have good desc, keep existing or filename without extension
-          // Removing .PDF extension
-          const cleanDesc = extracted.desc.replace('.PDF', '').trim();
-          if (cleanDesc.length > 3) setNewDesc(cleanDesc);
-          
-          showFeedback('Dados extraídos do nome do arquivo!', 'success');
-      }
-  };
-
+  // --- LOGICA DE CRIAÇÃO ---
   const handleLinkSchedule = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const id = e.target.value;
       setLinkedScheduleId(id);
@@ -200,14 +113,33 @@ export const OMManagement: React.FC = () => {
 
       const item = scheduleItems.find(s => s.id === id);
       if (item) {
-          // Use smart extraction on schedule text too
-          const extracted = extractSmartData(item.frotaOm + ' ' + item.description);
-          if (extracted.tag) setNewTag(extracted.tag);
-          if (extracted.om) setNewOmNumber(extracted.om);
-          // For schedule linking, we usually prefer the schedule's description as is, 
-          // or we can clean it. Let's clean it to be consistent.
-          if (extracted.desc) setNewDesc(extracted.desc);
-          else setNewDesc(item.description || '');
+          // Lógica de extração robusta (similar à tela Schedule)
+          const raw = (item.frotaOm || '')
+              .replace(/\//g, '\n')
+              .replace(/\s-\s/g, '\n');
+          
+          const lines = raw.split(/[\n\r]+/).map(l => l.trim()).filter(l => l !== '');
+          const caRegex = /^CA/i;
+          
+          let extractedTag = '';
+          let extractedOm = '';
+
+          const tagIndex = lines.findIndex(l => caRegex.test(l));
+
+          if (tagIndex !== -1) {
+              extractedTag = lines[tagIndex];
+              lines.splice(tagIndex, 1);
+          } else if (lines.length > 0) {
+              extractedTag = lines[0]; // Fallback
+              lines.shift();
+          }
+
+          // Restante pode ser a OM
+          extractedOm = lines.join(' ').replace(/^OM[:\s]*/i, '').trim();
+
+          setNewTag(extractedTag.toUpperCase());
+          setNewOmNumber(extractedOm.toUpperCase());
+          setNewDesc(item.description || '');
       }
   };
 
@@ -222,16 +154,6 @@ export const OMManagement: React.FC = () => {
           return;
       }
 
-      let pdfBase64: string | undefined = undefined;
-      if (omFile) {
-          try {
-              const reader = new FileReader();
-              reader.readAsDataURL(omFile);
-              await new Promise(resolve => reader.onload = resolve);
-              pdfBase64 = reader.result as string;
-          } catch(e) {}
-      }
-
       const newOM: OMRecord = {
           id: crypto.randomUUID(),
           omNumber: newOmNumber,
@@ -241,26 +163,20 @@ export const OMManagement: React.FC = () => {
           status: 'PENDENTE',
           createdAt: new Date().toISOString(),
           createdBy: localStorage.getItem('safemaint_user') || 'ADMIN',
-          linkedScheduleId: linkedScheduleId || undefined,
-          pdfUrl: pdfBase64
+          linkedScheduleId: linkedScheduleId || undefined
       };
 
       await StorageService.saveOM(newOM);
       
       setIsCreating(false);
-      resetCreateForm();
-      showFeedback('OM Criada com Sucesso!', 'success');
-      refreshData();
-  };
-
-  const resetCreateForm = () => {
       setNewOmNumber('');
       setNewTag('');
       setNewDesc('');
       setNewType('PREVENTIVA');
       setLinkedScheduleId('');
-      setOmFile(null);
-      setSmartInput('');
+      
+      showFeedback('OM Criada com Sucesso!', 'success');
+      refreshData();
   };
 
   const showFeedback = (msg: string, type: 'success' | 'error') => {
@@ -277,13 +193,20 @@ export const OMManagement: React.FC = () => {
   };
 
   const filteredOms = oms.filter(o => {
-      // Filtros existentes
+      // 1. Filtro de Tab (Status)
       let tabMatch = true;
       if (activeTab === 'PENDENTE') tabMatch = o.status !== 'CONCLUIDA';
       if (activeTab === 'CONCLUIDA') tabMatch = o.status === 'CONCLUIDA';
+      
+      // 2. Filtro de Texto (Busca)
       const searchMatch = searchQuery === '' || o.omNumber.includes(searchQuery) || o.tag.includes(searchQuery.toUpperCase());
+      
+      // 3. Filtro de Tipo
       const typeMatch = typeFilter === 'ALL' || o.type === typeFilter;
+      
+      // 4. Filtro de Data
       const dateMatch = dateFilter === '' || o.createdAt.startsWith(dateFilter);
+
       return tabMatch && searchMatch && typeMatch && dateMatch;
   });
 
@@ -393,6 +316,7 @@ export const OMManagement: React.FC = () => {
               const hasHistory = om.maintenanceHistory && om.maintenanceHistory.length > 0;
               const isHistoryOpen = expandedHistory === om.id;
 
+              // Definição de estilos baseados no status
               let cardBorderClass = isUrgent ? 'border-l-red-500' : 'border-l-vale-blue';
               let cardBgClass = 'bg-white';
               let badgeClass = isUrgent ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100';
@@ -427,6 +351,7 @@ export const OMManagement: React.FC = () => {
                 >
                     {statusBadge}
 
+                    {/* Header Card */}
                     <div className="flex justify-between items-start mb-4">
                         <div>
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border mb-3 ${badgeClass}`}>
@@ -434,6 +359,7 @@ export const OMManagement: React.FC = () => {
                                 {om.type}
                             </span>
                             <div className="flex items-center gap-2">
+                                {/* DESTAQUE OM EM COR FORTE */}
                                 <h3 className="text-3xl font-black text-vale-blue leading-none tracking-tight">
                                     {om.omNumber}
                                 </h3>
@@ -445,6 +371,7 @@ export const OMManagement: React.FC = () => {
                         <div className="flex flex-col items-end gap-2 mt-4">
                             <div className="bg-white/80 px-4 py-2 rounded-xl text-center min-w-[80px] shadow-sm border border-gray-100">
                                 <span className="block text-[9px] font-bold text-gray-400 uppercase">Tag</span>
+                                {/* DESTAQUE TAG EM COR FORTE */}
                                 <span className="block text-xl font-black text-vale-green uppercase">{om.tag}</span>
                             </div>
                             {om.pdfUrl && (
@@ -455,12 +382,14 @@ export const OMManagement: React.FC = () => {
                         </div>
                     </div>
 
+                    {/* Body Card */}
                     <div className="bg-white/60 rounded-2xl p-5 mb-4 min-h-[80px] border border-gray-100/50 shadow-inner">
                         <p className="text-xs font-bold text-gray-600 uppercase leading-relaxed line-clamp-3">
                             {om.description}
                         </p>
                     </div>
 
+                    {/* Local de Instalação (Página 2) - NOVO */}
                     {om.installationLocation && (
                         <div className="flex items-start gap-2 mb-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100 text-gray-600">
                             <MapPin size={16} className="mt-0.5 shrink-0 text-vale-blue" />
@@ -473,6 +402,7 @@ export const OMManagement: React.FC = () => {
                         </div>
                     )}
 
+                    {/* Tabela de Histórico (Página 3) - NOVO */}
                     {hasHistory && (
                         <div className="mb-4 bg-white/80 rounded-xl overflow-hidden border border-gray-200 shadow-sm">
                             <button 
@@ -508,28 +438,44 @@ export const OMManagement: React.FC = () => {
                         </div>
                     )}
 
+                    {/* Metadata */}
                     <div className="flex items-center gap-4 text-[10px] font-black text-gray-400 uppercase mb-6 pl-1">
                         <span className="flex items-center gap-1.5"><CalendarDays size={14}/> {new Date(om.createdAt).toLocaleDateString()}</span>
                         <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
                         <span className="flex items-center gap-1.5"><User size={14}/> {om.createdBy}</span>
                     </div>
 
+                    {/* Actions */}
                     <div className="flex gap-3">
                         {isFinished ? (
-                            <button disabled className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 bg-gray-300 text-gray-500 cursor-not-allowed border-2 border-gray-300">
+                            <button 
+                                disabled
+                                className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 bg-gray-300 text-gray-500 cursor-not-allowed border-2 border-gray-300"
+                            >
                                 <Lock size={18} /> ENCERRADA
                             </button>
                         ) : isRunning ? (
-                            <button onClick={() => handleExecute(om)} className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 bg-green-100 text-green-700 hover:bg-green-200 border-2 border-green-300 shadow-sm transition-all">
+                            <button 
+                                onClick={() => handleExecute(om)} 
+                                className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 bg-green-100 text-green-700 hover:bg-green-200 border-2 border-green-300 shadow-sm transition-all"
+                            >
                                 <Activity size={18} className="animate-pulse"/> VER NO PAINEL
                             </button>
                         ) : (
-                            <button onClick={() => handleExecute(om)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 border-b-4 ${isUrgent ? 'bg-red-600 text-white hover:bg-red-700 border-red-800' : 'bg-vale-green text-white hover:bg-vale-green/90 border-[#00605d]'}`}>
+                            <button 
+                                onClick={() => handleExecute(om)} 
+                                className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 border-b-4 ${isUrgent ? 'bg-red-600 text-white hover:bg-red-700 border-red-800' : 'bg-vale-green text-white hover:bg-vale-green/90 border-[#00605d]'}`}
+                            >
                                 <PlayCircle size={18} /> INICIAR
                             </button>
                         )}
+                        
                         {!isFinished && (
-                            <button onClick={() => { if(window.confirm('Excluir OM?')) { StorageService.deleteOM(om.id); refreshData(); } }} className="px-4 rounded-xl border-2 border-gray-200 text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-500 transition-all" title="Excluir">
+                            <button 
+                                onClick={() => { if(window.confirm('Excluir OM?')) { StorageService.deleteOM(om.id); refreshData(); } }}
+                                className="px-4 rounded-xl border-2 border-gray-200 text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-500 transition-all"
+                                title="Excluir"
+                            >
                                 <Trash2 size={20} />
                             </button>
                         )}
@@ -539,93 +485,78 @@ export const OMManagement: React.FC = () => {
           })}
       </div>
 
-      {/* MODAL DE CRIAÇÃO OTIMIZADO */}
+      {/* MODAL DE CRIAÇÃO */}
       {isCreating && (
           <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white rounded-2xl w-full max-w-2xl p-0 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                  <div className="bg-gray-100 p-4 flex justify-between items-center border-b border-gray-200">
+              <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+                  <div className="flex justify-between items-center mb-6">
                       <h3 className="font-black text-lg text-gray-800 flex items-center gap-2">
                           <PlusCircle size={20} className="text-vale-green"/> CADASTRAR NOVA OM
                       </h3>
-                      <button onClick={() => {setIsCreating(false); resetCreateForm();}}><X size={24} className="text-gray-400 hover:text-red-500"/></button>
+                      <button onClick={() => setIsCreating(false)}><X size={24} className="text-gray-400 hover:text-red-500"/></button>
                   </div>
-                  
-                  <div className="overflow-y-auto p-6 space-y-6">
+                  <div className="space-y-4">
                       
-                      {/* ÁREA DE EXTRAÇÃO INTELIGENTE */}
-                      <div className="bg-blue-50 border-2 border-blue-200 border-dashed rounded-xl p-6 relative group transition-all hover:bg-blue-100/50">
-                          <div className="flex flex-col items-center text-center gap-2 mb-4">
-                              <Sparkles size={32} className="text-blue-500 animate-pulse" />
-                              <h4 className="font-black text-blue-800 text-sm uppercase">Extração Inteligente</h4>
-                              <p className="text-[10px] font-bold text-blue-600 uppercase max-w-xs">
-                                  Arraste um PDF ou Cole (Ctrl+V) o texto do SAP/E-mail aqui para preencher automaticamente.
-                              </p>
-                          </div>
-                          
-                          <div className="relative">
-                              <textarea 
-                                  value={smartInput}
-                                  onChange={handleSmartPaste}
-                                  placeholder="COLE O TEXTO AQUI..."
-                                  className="w-full bg-white border-2 border-blue-200 rounded-lg p-3 text-xs font-bold text-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none h-20 resize-none uppercase"
-                              />
-                              <div className="absolute bottom-3 right-3 text-blue-300 pointer-events-none">
-                                  <ClipboardPaste size={16} />
-                              </div>
-                          </div>
-
-                          <div className="mt-4 flex items-center justify-center">
-                              <label className="cursor-pointer bg-white text-blue-600 border border-blue-200 px-4 py-2 rounded-lg font-black text-[10px] hover:bg-blue-50 flex items-center gap-2 shadow-sm transition-all uppercase">
-                                  <FileText size={14} /> 
-                                  {omFile ? 'ARQUIVO SELECIONADO!' : 'SELECIONAR PDF (LÊ NOME)'}
-                                  <input type="file" accept=".pdf" onChange={handleFileSelect} className="hidden" />
-                              </label>
-                          </div>
-                      </div>
-
-                      <div className="border-t border-gray-200 pt-4">
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                              <div>
-                                  <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">NÚMERO DA OM</label>
-                                  <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded-lg p-3 font-black text-lg uppercase focus:border-vale-green outline-none" placeholder="000000" />
-                              </div>
-                              <div>
-                                  <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">TAG / EQUIPAMENTO</label>
-                                  <input value={newTag} onChange={e => setNewTag(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded-lg p-3 font-black text-lg uppercase focus:border-vale-green outline-none" placeholder="CA..." />
-                              </div>
-                          </div>
-
-                          <div className="mb-4">
-                              <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">DESCRIÇÃO TÉCNICA</label>
-                              <textarea value={newDesc} onChange={e => setNewDesc(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded-lg p-3 font-bold text-sm uppercase h-24 focus:border-vale-green outline-none" placeholder="DESCREVA O SERVIÇO..."/>
-                          </div>
-
+                      {/* SELEÇÃO DE TIPO VISUAL */}
+                      <div>
+                          <label className="text-xs font-black text-gray-500 uppercase mb-2 block">TIPO DE MANUTENÇÃO</label>
                           <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                  <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">TIPO</label>
-                                  <select value={newType} onChange={e => setNewType(e.target.value as any)} className="w-full border-2 border-gray-300 rounded-lg p-3 font-bold text-xs uppercase">
-                                      <option value="PREVENTIVA">PREVENTIVA</option>
-                                      <option value="CORRETIVA">CORRETIVA</option>
-                                  </select>
-                              </div>
-                              
-                              {newType === 'PREVENTIVA' && (
-                                  <div>
-                                      <label className="text-[10px] font-black text-blue-400 uppercase mb-1 block flex items-center gap-1"><LinkIcon size={10}/> VINCULAR PROGRAMAÇÃO</label>
-                                      <select value={linkedScheduleId} onChange={handleLinkSchedule} className="w-full border-2 border-blue-200 rounded-lg p-3 font-bold text-xs uppercase bg-blue-50 text-blue-900 focus:outline-none">
-                                          <option value="">-- SELECIONAR --</option>
-                                          {scheduleItems.map(s => (
-                                              <option key={s.id} value={s.id}>{s.frotaOm.split('\n')[0]} - {s.description.substring(0, 20)}...</option>
-                                          ))}
-                                      </select>
-                                  </div>
-                              )}
+                              <button 
+                                  onClick={() => setNewType('PREVENTIVA')}
+                                  className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${newType === 'PREVENTIVA' ? 'border-vale-blue bg-blue-50 text-vale-blue shadow-lg scale-[1.02]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                              >
+                                  <CalendarDays size={24} />
+                                  <span className="font-black text-xs uppercase">PREVENTIVA</span>
+                                  <span className="text-[9px] font-bold opacity-60">PROGRAMADA</span>
+                              </button>
+
+                              <button 
+                                  onClick={() => setNewType('CORRETIVA')}
+                                  className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${newType === 'CORRETIVA' ? 'border-red-500 bg-red-50 text-red-600 shadow-lg scale-[1.02]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                              >
+                                  <AlertOctagon size={24} />
+                                  <span className="font-black text-xs uppercase">CORRETIVA</span>
+                                  <span className="text-[9px] font-bold opacity-60">EMERGÊNCIA</span>
+                              </button>
                           </div>
                       </div>
-                  </div>
 
-                  <div className="p-4 bg-gray-50 border-t border-gray-200">
-                      <button onClick={handleCreateOM} className="w-full bg-vale-green text-white font-black py-4 rounded-xl hover:bg-emerald-700 transition-colors shadow-lg flex items-center justify-center gap-2">
+                      {/* VÍNCULO COM PROGRAMAÇÃO (APENAS PREVENTIVA) */}
+                      {newType === 'PREVENTIVA' && (
+                          <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 animate-fadeIn">
+                              <label className="text-[10px] font-black text-blue-600 uppercase mb-2 flex items-center gap-1">
+                                  <LinkIcon size={12}/> VINCULAR COM PROGRAMAÇÃO (PREENCHE AUTOMÁTICO)
+                              </label>
+                              <select 
+                                  value={linkedScheduleId} 
+                                  onChange={handleLinkSchedule} 
+                                  className="w-full border border-blue-300 rounded-lg p-2 font-bold text-xs uppercase bg-white text-blue-900 focus:outline-none"
+                              >
+                                  <option value="">-- SELECIONAR ITEM DA LISTA --</option>
+                                  {scheduleItems.map(s => (
+                                      <option key={s.id} value={s.id}>{s.frotaOm.split('\n')[0]} - {s.description.substring(0, 30)}...</option>
+                                  ))}
+                              </select>
+                          </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="text-xs font-black text-gray-500 uppercase mb-1 block">TAG / EQUIPAMENTO</label>
+                              <input value={newTag} onChange={e => setNewTag(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded-lg p-3 font-bold uppercase" placeholder="CA..." />
+                          </div>
+                          <div>
+                              <label className="text-xs font-black text-gray-500 uppercase mb-1 block">NÚMERO DA OM</label>
+                              <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded-lg p-3 font-bold uppercase" placeholder="000000" />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="text-xs font-black text-gray-500 uppercase mb-1 block">DESCRIÇÃO TÉCNICA</label>
+                          <textarea value={newDesc} onChange={e => setNewDesc(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded-lg p-3 font-bold uppercase h-24" placeholder="DESCREVA O SERVIÇO..."/>
+                      </div>
+
+                      <button onClick={handleCreateOM} className="w-full bg-vale-green text-white font-black py-4 rounded-xl hover:bg-emerald-700 transition-colors shadow-lg mt-4 flex items-center justify-center gap-2">
                           <CheckCircle2 size={20}/> CONFIRMAR CADASTRO
                       </button>
                   </div>
@@ -642,21 +573,37 @@ export const OMManagement: React.FC = () => {
                       <button onClick={() => setEditingOM(null)}><X size={24} className="text-gray-400 hover:text-red-500"/></button>
                   </div>
                   <div className="space-y-4">
+                      {/* TIPO VISUAL NO EDIT */}
                       <div>
-                          <label className="text-xs font-black text-gray-500 uppercase">TAG / EQUIPAMENTO</label>
+                          <label className="text-xs font-black text-gray-500 uppercase mb-2 block">TIPO DE MANUTENÇÃO</label>
+                          <div className="grid grid-cols-2 gap-4">
+                              <button 
+                                  onClick={() => setEditType('PREVENTIVA')}
+                                  className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1 transition-all ${editType === 'PREVENTIVA' ? 'border-vale-blue bg-blue-50 text-vale-blue shadow' : 'border-gray-200 text-gray-400'}`}
+                              >
+                                  <CalendarDays size={20} />
+                                  <span className="font-black text-[10px] uppercase">PREVENTIVA</span>
+                              </button>
+
+                              <button 
+                                  onClick={() => setEditType('CORRETIVA')}
+                                  className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1 transition-all ${editType === 'CORRETIVA' ? 'border-red-500 bg-red-50 text-red-600 shadow' : 'border-gray-200 text-gray-400'}`}
+                              >
+                                  <AlertOctagon size={20} />
+                                  <span className="font-black text-[10px] uppercase">CORRETIVA</span>
+                              </button>
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="text-xs font-black text-gray-500 uppercase mb-1 block">TAG / EQUIPAMENTO</label>
                           <input value={editTag} onChange={e => setEditTag(e.target.value)} className="w-full border-2 border-gray-300 rounded p-3 font-bold uppercase"/>
                       </div>
                       <div>
-                          <label className="text-xs font-black text-gray-500 uppercase">DESCRIÇÃO</label>
+                          <label className="text-xs font-black text-gray-500 uppercase mb-1 block">DESCRIÇÃO</label>
                           <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} className="w-full border-2 border-gray-300 rounded p-3 font-bold uppercase h-24"/>
                       </div>
-                      <div>
-                          <label className="text-xs font-black text-gray-500 uppercase">TIPO</label>
-                          <select value={editType} onChange={e => setEditType(e.target.value as any)} className="w-full border-2 border-gray-300 rounded p-3 font-bold uppercase">
-                              <option value="PREVENTIVA">PREVENTIVA</option>
-                              <option value="CORRETIVA">CORRETIVA</option>
-                          </select>
-                      </div>
+                      
                       <button onClick={handleSaveEdit} className="w-full bg-vale-green text-white font-black py-4 rounded-xl hover:bg-emerald-700 transition-colors shadow-lg mt-4">
                           SALVAR ALTERAÇÕES
                       </button>
