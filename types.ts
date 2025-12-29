@@ -32,18 +32,14 @@ export interface ARTRiskItem {
 
 export interface RegisteredART {
   id: string;
-  code: string; // Código da ART (ex: 33777)
+  code: string;
   company: string;
-  taskName: string; // Tarefa a ser executada
-  area: string; // Gerência
-  omve?: string; 
-  emissionDate?: string;
-  pdfUrl?: string; // Original PDF URL
-  
-  // PDF Content Structures
-  risks: ARTRiskItem[];
-  controlMeasures: string; // Texto corrido ou HTML das medidas
-  steps: ARTStep[]; // Passo a passo da tarefa
+  taskName: string;
+  area: string;
+  controlMeasures: string;
+  pdfUrl?: string; // Para visualização em PDF
+  risks?: ARTRiskItem[];
+  steps?: ARTStep[];
 }
 
 export interface HeaderData {
@@ -96,7 +92,7 @@ export interface ScheduleItem {
 
 export interface ActiveMaintenance {
   id: string;
-  omId?: string; // Link para a OM no banco de dados
+  omId?: string;
   header: HeaderData;
   startTime: string;
   artId: string;
@@ -105,7 +101,7 @@ export interface ActiveMaintenance {
   status?: 'ANDAMENTO' | 'PAUSADA' | 'AGUARDANDO';
   currentSessionStart?: string;
   accumulatedTime?: number;
-  openedBy?: string; // LOGIN do usuário que abriu a tarefa
+  openedBy?: string;
 }
 
 export interface MaintenanceLog {
@@ -118,6 +114,7 @@ export interface MaintenanceLog {
   duration: string;
   responsible: string;
   status: string;
+  type?: 'PREVENTIVA' | 'CORRETIVA'; // Adicionado para automação do quadro
 }
 
 export interface ChatMessage {
@@ -129,13 +126,6 @@ export interface ChatMessage {
   isSystem?: boolean;
 }
 
-export interface OMHistoryItem {
-  date: string;
-  type: string;
-  om: string;
-  description: string;
-}
-
 export interface OMRecord {
   id: string;
   omNumber: string;
@@ -144,28 +134,33 @@ export interface OMRecord {
   type: 'CORRETIVA' | 'PREVENTIVA';
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'CONCLUIDA';
   createdAt: string;
-  pdfUrl?: string; // Simulação do arquivo
+  pdfUrl?: string;
   createdBy: string;
-  linkedScheduleId?: string; // ID do item da programação vinculado
-  
-  // Novos campos extraídos do PDF
-  installationLocation?: string; // Pagina 2
-  maintenanceHistory?: OMHistoryItem[]; // Pagina 3
+  installationLocation?: string;
 }
 
 export interface ChecklistTemplateItem {
-  id: string;       // UUID do banco
-  legacyId: number; // ID numérico (1, 2, 3...) para ordenação
+  id: string;
+  legacyId: number;
   section: string;
   description: string;
 }
 
-// --- NEW TYPES FOR AVAILABILITY BOARD ---
-export type AvailabilityStatus = 'OK' | 'CORRETIVA' | 'PREVENTIVA' | 'PR' | 'LS' | 'META' | 'INSPECAO' | 'EMPTY';
+// Novos status baseados na foto do quadro branco
+export type AvailabilityStatus = 
+  | 'SEM_FALHA' 
+  | 'CORRETIVA' 
+  | 'PREV' 
+  | 'META' 
+  | 'DEMANDA_EXTRA' 
+  | 'LS' 
+  | 'PR' 
+  | 'PNEUS' 
+  | 'INSPECAO' 
+  | 'EMPTY';
 
 export interface AvailabilityRecord {
   id: string;
   tag: string;
-  // Map of "YYYY-MM-DD" -> Array of Statuses (allows multiple per day)
   statusMap: Record<string, AvailabilityStatus[]>; 
 }

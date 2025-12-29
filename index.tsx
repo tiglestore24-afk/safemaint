@@ -14,3 +14,12 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Registro do Service Worker para funcionalidades PWA e Offline
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('SAFEMAINT: Service Worker registrado com sucesso.'))
+      .catch(err => console.log('SAFEMAINT: Falha ao registrar Service Worker.', err));
+  });
+}

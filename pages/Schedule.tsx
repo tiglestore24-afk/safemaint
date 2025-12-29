@@ -1,11 +1,12 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { StorageService } from '../services/storage';
 import { ScheduleItem } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { PlayCircle, Clock, Maximize2, Trash2, Cloud, X, ShieldAlert, Loader2, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { TVSchedule } from './TVSchedule';
 import { BackButton } from '../components/BackButton';
+import { LoadingSpinner } from '../components/LoadingSpinner';
 
 export const Schedule: React.FC = () => {
   const navigate = useNavigate();
@@ -16,6 +17,13 @@ export const Schedule: React.FC = () => {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
+
+  const loadSchedule = () => {
+      // Simula um pequeno delay para garantir que o Spinner seja visível e a UI não trave
+      const data = StorageService.getSchedule();
+      setScheduleItems(data);
+      setTimeout(() => setIsLoading(false), 300);
+  };
 
   useEffect(() => {
     loadSchedule();
@@ -33,13 +41,6 @@ export const Schedule: React.FC = () => {
     };
   }, []);
 
-  const loadSchedule = () => {
-      // Não seta loading true aqui para evitar flicker durante updates automáticos
-      const data = StorageService.getSchedule();
-      setScheduleItems(data);
-      setIsLoading(false);
-  };
-
   const isMaintenanceDay = (dateStr: string) => {
       if(!dateStr) return false;
       const today = new Date().toLocaleDateString('pt-BR');
@@ -50,7 +51,6 @@ export const Schedule: React.FC = () => {
       let om = item.frotaOm;
       let tag = item.frotaOm;
 
-      // Logic to split OM/TAG if combined
       if (item.frotaOm.includes('\n')) {
           const parts = item.frotaOm.split('\n');
           tag = parts[0].trim();
@@ -64,67 +64,22 @@ export const Schedule: React.FC = () => {
       const params = new URLSearchParams();
       params.append('om', om);
       params.append('tag', tag);
-      params.append('desc', item.description || 'Manutenção Programada'); // Fallback description
-      params.append('scheduleId', item.id); // IMPORTANT: Pass ID to remove from list later
+      params.append('desc', item.description || 'Manutenção Programada');
+      params.append('scheduleId', item.id);
       
       navigate(`/art-atividade?${params.toString()}`);
   };
 
   const handleClearAll = () => {
       if(scheduleItems.length === 0) return;
-      
-      if (window.confirm("ATENÇÃO: DESEJA LIMPAR TODA A PROGRAMAÇÃO?\n\nO SISTEMA IRÁ GERAR UM BACKUP AUTOMÁTICO ANTES DE MOVER PARA A LIXEIRA.")) {
+      if (window.confirm("ATENÇÃO: DESEJA LIMPAR TODA A PROGRAMAÇÃO?")) {
           setIsLoading(true);
-          setTimeout(() => {
+          StorageService.archiveAndClearSchedule().then(() => {
               setScheduleItems([]);
-              const success = StorageService.archiveAndClearSchedule();
-              if(success) alert("Backup realizado e programação movida para a Lixeira.");
               setIsLoading(false);
               setCurrentPage(1);
-          }, 500);
+          });
       }
-  };
-
-  const handleExportCSV = () => {
-      if (scheduleItems.length === 0) {
-          alert("Sem dados para exportar.");
-          return;
-      }
-
-      const headers = ["ID", "FROTA/OM", "DESCRIÇÃO", "DATA MIN", "DATA MAX", "PRIORIDADE", "PESSOAS", "HORAS", "DATA INI", "DATA FIM", "CENTRO TRAB", "HORA INI", "HORA FIM", "RECURSOS", "RECURSOS 2"];
-      
-      const rows = scheduleItems.map(i => [
-          i.id,
-          `"${(i.frotaOm || '').replace(/"/g, '""')}"`, // Escape quotes
-          `"${(i.description || '').replace(/"/g, '""')}"`,
-          i.dateMin || '',
-          i.dateMax || '',
-          i.priority || '',
-          i.peopleCount || 0,
-          i.hours || 0,
-          i.dateStart || '',
-          i.dateEnd || '',
-          i.workCenter || '',
-          i.timeStart || '',
-          i.timeEnd || '',
-          `"${(i.resources || '').replace(/"/g, '""')}"`,
-          `"${(i.resources2 || '').replace(/"/g, '""')}"`
-      ]);
-
-      // Adiciona BOM (\uFEFF) para forçar o Excel a ler como UTF-8
-      const csvContent = "\uFEFF" + [
-          headers.join(";"), 
-          ...rows.map(row => row.join(";"))
-      ].join("\n");
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `programacao_safemaint_${new Date().toLocaleDateString().replace(/\//g,'-')}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
   };
 
   const handleDeleteItem = (id: string) => {
@@ -134,151 +89,37 @@ export const Schedule: React.FC = () => {
       }
   };
 
-  // Pagination Logic
+  // Optimization: Memoize paginated items to prevent recalculation on every small state change
+  const paginatedItems = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return scheduleItems.slice(start, start + itemsPerPage);
+  }, [scheduleItems, currentPage]);
+
   const totalPages = Math.ceil(scheduleItems.length / itemsPerPage);
-  const paginatedItems = scheduleItems.slice(
-      (currentPage - 1) * itemsPerPage,
-      currentPage * itemsPerPage
-  );
 
   const goToNextPage = () => setCurrentPage(p => Math.min(p + 1, totalPages));
   const goToPrevPage = () => setCurrentPage(p => Math.max(p - 1, 1));
 
-  const TableContent = () => {
-      if (isLoading) {
-          return (
-              <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                  <Loader2 size={48} className="animate-spin mb-4 text-green-600" />
-                  <p className="font-bold text-sm uppercase tracking-wider">Carregando Programação...</p>
-              </div>
-          );
-      }
-
-      return (
-        <div className="flex flex-col h-full">
-            <div className="overflow-x-auto flex-1">
-                <table className="min-w-full divide-y divide-gray-300 text-[10px] md:text-xs">
-                    <thead className="bg-gray-900 text-white border-b-4 border-green-600 sticky top-0 z-10 shadow-md">
-                        <tr>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700 w-16">AÇÃO</th>
-                            <th className="px-1 py-2 text-left font-black uppercase tracking-wider border-r border-gray-700 min-w-[80px]">FROTA/OM</th>
-                            <th className="px-1 py-2 text-left font-black uppercase tracking-wider border-r border-gray-700 min-w-[150px]">DESCRIÇÃO</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700 bg-blue-900">DATA MIN</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">DATA MAX</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">PRIORIDADE</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">PESSOAS</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">H</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">DATA INI</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">DATA FIM</th>
-                            <th className="px-1 py-2 text-left font-black uppercase tracking-wider border-r border-gray-700">CENTRO TRAB.</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">H. INI</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider border-r border-gray-700">H. FIM</th>
-                            <th className="px-1 py-2 text-left font-black uppercase tracking-wider border-r border-gray-700">RECURSOS</th>
-                            <th className="px-1 py-2 text-left font-black uppercase tracking-wider border-r border-gray-700">RECURSOS 2</th>
-                            <th className="px-1 py-2 text-center font-black uppercase tracking-wider">EXCLUIR</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-300 font-bold">
-                        {scheduleItems.length === 0 && (
-                            <tr>
-                                <td colSpan={16} className="px-3 py-12 text-center text-gray-400 italic font-medium">
-                                    NENHUMA PROGRAMAÇÃO IMPORTADA.
-                                </td>
-                            </tr>
-                        )}
-                        {paginatedItems.map(item => {
-                            const isToday = isMaintenanceDay(item.dateStart);
-                            return (
-                                <tr key={item.id} className="hover:bg-green-50 transition-all duration-300 border-b border-gray-200 group h-8">
-                                    <td className="px-1 py-1 text-center border-r align-middle">
-                                        <button 
-                                            onClick={() => handleStartMaintenance(item)}
-                                            className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded shadow flex items-center gap-1 mx-auto text-[9px] font-black transform active:scale-95 transition-transform"
-                                        >
-                                            <PlayCircle size={10} /> INICIAR
-                                        </button>
-                                    </td>
-                                    <td className="px-1 py-1 whitespace-pre-wrap font-black text-blue-900 border-r align-middle">
-                                        {item.frotaOm}
-                                    </td>
-                                    <td className="px-1 py-1 text-gray-800 border-r font-bold align-middle truncate max-w-[200px]" title={item.description}>{item.description}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center text-white bg-blue-800 border-r font-bold align-middle">{item.dateMin}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center text-gray-600 border-r align-middle">{item.dateMax}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center border-r align-middle">
-                                        <span className={`px-1 inline-flex leading-none font-black rounded-sm uppercase text-[9px] ${item.priority === 'Alta' ? 'bg-red-200 text-red-900' : 'bg-green-200 text-green-900'}`}>
-                                            {item.priority}
-                                        </span>
-                                    </td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center text-gray-700 border-r align-middle">{item.peopleCount}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center text-gray-700 border-r align-middle">{item.hours}</td>
-                                    <td className={`px-1 py-1 whitespace-nowrap text-center border-r align-middle ${isToday ? 'font-black text-red-600' : 'text-gray-600'}`}>{item.dateStart}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center text-gray-600 border-r align-middle">{item.dateEnd}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-gray-600 border-r align-middle">{item.workCenter}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center text-gray-600 border-r align-middle">{item.timeStart}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-center text-gray-600 border-r align-middle">{item.timeEnd}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-gray-700 border-r align-middle truncate max-w-[100px]" title={item.resources}>{item.resources}</td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-gray-700 align-middle border-r truncate max-w-[100px]" title={item.resources2}>{item.resources2}</td>
-                                    <td className="px-1 py-1 text-center align-middle">
-                                        <button 
-                                            onClick={() => handleDeleteItem(item.id)}
-                                            className="text-gray-400 hover:text-red-600 transition-colors"
-                                            title="Excluir item"
-                                        >
-                                            <X size={14} strokeWidth={3} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
-            
-            {/* Pagination Controls */}
-            {scheduleItems.length > 0 && (
-                <div className="bg-gray-100 border-t border-gray-300 p-2 flex justify-between items-center text-xs font-bold text-gray-600">
-                    <div>
-                        Exibindo {Math.min((currentPage - 1) * itemsPerPage + 1, scheduleItems.length)} - {Math.min(currentPage * itemsPerPage, scheduleItems.length)} de {scheduleItems.length} itens
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button 
-                            onClick={goToPrevPage}
-                            disabled={currentPage === 1}
-                            className={`p-1.5 rounded-lg border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-200'}`}
-                        >
-                            <ChevronLeft size={16} />
-                        </button>
-                        <span className="px-2">Página {currentPage} de {totalPages}</span>
-                        <button 
-                            onClick={goToNextPage}
-                            disabled={currentPage === totalPages}
-                            className={`p-1.5 rounded-lg border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-200'}`}
-                        >
-                            <ChevronRight size={16} />
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-      );
-  };
+  if (isLoading) {
+    return <LoadingSpinner text="Processando Programação..." fullScreen />;
+  }
 
   return (
     <>
-        <div className="max-w-[99%] mx-auto pb-10">
-            <div className="flex justify-between items-end mb-6 border-b-4 border-green-600 pb-4">
+        <div className="max-w-[99%] mx-auto pb-10 animate-fadeIn">
+            <div className="flex justify-between items-end mb-6 border-b-4 border-vale-green pb-4">
                 <div className="flex items-center gap-3">
-                    <BackButton className="mr-2" />
-                    <div className="bg-green-700 p-3 rounded-lg text-white shadow-lg">
+                    <BackButton />
+                    <div className="bg-vale-dark p-3 rounded-xl text-white shadow-lg">
                         <Clock size={32} />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-black text-gray-800 uppercase tracking-tight">
+                        <h2 className="text-3xl font-black text-vale-darkgray uppercase tracking-tight">
                         Programação Semanal
                         </h2>
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-0.5 rounded flex items-center gap-1">
-                                <Cloud size={12} />
+                            <span className="text-[10px] font-black text-gray-400 bg-gray-100 px-3 py-1 rounded-full flex items-center gap-1.5 border border-gray-200">
+                                <Cloud size={12} className="text-blue-500" />
                                 ARMAZENAMENTO LOCAL ATIVO
                             </span>
                         </div>
@@ -286,47 +127,98 @@ export const Schedule: React.FC = () => {
                 </div>
                 
                 <div className="flex gap-2">
-                    <button 
-                        onClick={handleExportCSV}
-                        disabled={scheduleItems.length === 0}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-black shadow-lg flex items-center gap-2 transition-transform active:scale-95 border-2 border-blue-800 disabled:opacity-50"
-                        title="Baixar lista em Excel/CSV"
-                    >
-                        <Download size={20} />
-                        <span className="hidden md:inline">EXPORTAR CSV</span>
-                    </button>
-
-                    <button 
-                        onClick={handleClearAll}
-                        disabled={isLoading}
-                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-black shadow-lg flex items-center gap-2 transition-transform active:scale-95 border-2 border-red-800 disabled:opacity-50"
-                        title="Limpar e Gerar Backup"
-                    >
+                    <button onClick={handleClearAll} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-black shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest border-b-4 border-red-800">
                         <ShieldAlert size={20} />
                         <span className="hidden md:inline">LIMPAR + BACKUP</span>
                     </button>
-                    
-                    <button 
-                        onClick={() => setIsFullscreen(true)}
-                        className="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-black shadow-lg flex items-center gap-2 transition-transform active:scale-95 border-2 border-gray-600"
-                        title="Modo Tela Cheia"
-                    >
+                    <button onClick={() => setIsFullscreen(true)} className="bg-vale-dark text-white px-4 py-2 rounded-xl font-black shadow-lg flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest border-b-4 border-black">
                         <Maximize2 size={20} />
                         <span className="hidden md:inline">TELA CHEIA</span>
                     </button>
                 </div>
             </div>
 
-            <div className="bg-white shadow-2xl rounded-lg overflow-hidden border-2 border-gray-300 min-h-[400px] flex flex-col">
-                <TableContent />
+            <div className="bg-white shadow-2xl rounded-[2rem] overflow-hidden border-2 border-gray-100 min-h-[500px] flex flex-col">
+                <div className="overflow-x-auto flex-1 custom-scrollbar">
+                    <table className="min-w-full divide-y divide-gray-300 text-[10px] md:text-xs">
+                        <thead className="bg-gray-900 text-white border-b-4 border-vale-green sticky top-0 z-10 shadow-md">
+                            <tr>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider border-r border-gray-700 w-24">AÇÃO</th>
+                                <th className="px-2 py-4 text-left font-black uppercase tracking-wider border-r border-gray-700 min-w-[100px]">FROTA/OM</th>
+                                <th className="px-2 py-4 text-left font-black uppercase tracking-wider border-r border-gray-700 min-w-[200px]">DESCRIÇÃO</th>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider border-r border-gray-700 bg-vale-blue">DATA MIN</th>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider border-r border-gray-700">DATA MAX</th>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider border-r border-gray-700">PRIORIDADE</th>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider border-r border-gray-700">PESSOAS</th>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider border-r border-gray-700">DATA INI</th>
+                                <th className="px-2 py-4 text-left font-black uppercase tracking-wider border-r border-gray-700">CENTRO TRAB.</th>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider border-r border-gray-700">H. INI</th>
+                                <th className="px-2 py-4 text-left font-black uppercase tracking-wider border-r border-gray-700">RECURSOS</th>
+                                <th className="px-2 py-4 text-center font-black uppercase tracking-wider w-12">REMOVER</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-100 font-bold">
+                            {scheduleItems.length === 0 ? (
+                                <tr>
+                                    <td colSpan={12} className="px-3 py-24 text-center text-gray-300 font-black uppercase tracking-[0.2em]">
+                                        NENHUMA PROGRAMAÇÃO IMPORTADA NO SISTEMA.
+                                    </td>
+                                </tr>
+                            ) : (
+                                paginatedItems.map(item => {
+                                    const isToday = isMaintenanceDay(item.dateStart);
+                                    return (
+                                        <tr key={item.id} className="hover:bg-green-50 transition-colors border-b border-gray-50 group">
+                                            <td className="px-2 py-2 text-center border-r align-middle">
+                                                <button onClick={() => handleStartMaintenance(item)} className="bg-vale-green hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1 mx-auto text-[9px] font-black transform active:scale-95 transition-all">
+                                                    <PlayCircle size={14} /> INICIAR
+                                                </button>
+                                            </td>
+                                            <td className="px-2 py-2 whitespace-pre-wrap font-black text-vale-blue border-r align-middle">{item.frotaOm}</td>
+                                            <td className="px-2 py-2 text-gray-700 border-r font-bold align-middle truncate max-w-[250px]" title={item.description}>{item.description}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-center text-white bg-vale-blue/80 border-r font-black align-middle">{item.dateMin}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-center text-gray-600 border-r align-middle">{item.dateMax}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-center border-r align-middle">
+                                                <span className={`px-2 py-1 inline-flex leading-none font-black rounded-md uppercase text-[9px] ${item.priority === 'Alta' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                                    {item.priority}
+                                                </span>
+                                            </td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-center text-gray-700 border-r align-middle">{item.peopleCount}</td>
+                                            <td className={`px-2 py-2 whitespace-nowrap text-center border-r align-middle ${isToday ? 'font-black text-vale-cherry' : 'text-gray-600'}`}>{item.dateStart}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-gray-600 border-r align-middle font-mono">{item.workCenter}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-center text-gray-800 font-black border-r align-middle">{item.timeStart}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-gray-500 border-r align-middle truncate max-w-[150px]" title={item.resources}>{item.resources}</td>
+                                            <td className="px-2 py-2 text-center align-middle">
+                                                <button onClick={() => handleDeleteItem(item.id)} className="text-gray-300 hover:text-vale-cherry transition-colors p-1" title="Excluir item">
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                
+                {scheduleItems.length > 0 && (
+                    <div className="bg-gray-50 border-t border-gray-100 p-4 flex justify-between items-center text-xs font-black text-gray-500 uppercase tracking-widest">
+                        <div>Exibindo {Math.min((currentPage - 1) * itemsPerPage + 1, scheduleItems.length)} - {Math.min(currentPage * itemsPerPage, scheduleItems.length)} de {scheduleItems.length} registros</div>
+                        <div className="flex items-center gap-4">
+                            <button onClick={goToPrevPage} disabled={currentPage === 1} className={`p-2 rounded-xl border-2 transition-all ${currentPage === 1 ? 'text-gray-200 border-gray-100 cursor-not-allowed' : 'bg-white text-vale-green border-gray-200 hover:border-vale-green hover:shadow-md active:scale-95'}`}><ChevronLeft size={20} /></button>
+                            <span className="text-vale-darkgray">Página {currentPage} de {totalPages}</span>
+                            <button onClick={goToNextPage} disabled={currentPage === totalPages} className={`p-2 rounded-xl border-2 transition-all ${currentPage === totalPages ? 'text-gray-200 border-gray-100 cursor-not-allowed' : 'bg-white text-vale-green border-gray-200 hover:border-vale-green hover:shadow-md active:scale-95'}`}><ChevronRight size={20} /></button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
 
         {isFullscreen && (
-            <div className="fixed inset-0 z-[100] bg-gray-900 flex flex-col animate-fadeIn">
-                <div className="absolute top-4 right-4 z-50">
-                     <button onClick={() => setIsFullscreen(false)} className="bg-white text-red-600 hover:bg-gray-200 px-6 py-2 rounded-full font-black text-sm shadow-xl border-2 border-red-600">
-                        X FECHAR
+            <div className="fixed inset-0 z-[100] bg-gray-950 flex flex-col animate-fadeIn">
+                <div className="absolute top-4 right-8 z-50">
+                     <button onClick={() => setIsFullscreen(false)} className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white px-8 py-3 rounded-full font-black text-xs shadow-2xl border-2 border-white/20 uppercase tracking-[0.2em] transition-all active:scale-95">
+                        X Fechar Monitor
                     </button>
                 </div>
                 <TVSchedule />

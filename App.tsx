@@ -7,6 +7,7 @@ import { ARTEmergencial } from './pages/ARTEmergencial';
 import { ARTAtividade } from './pages/ARTAtividade';
 import { Checklist } from './pages/Checklist';
 import { Schedule } from './pages/Schedule';
+import { AvailabilityBoard } from './pages/AvailabilityBoard';
 import { TVSchedule } from './pages/TVSchedule';
 import { Archive } from './pages/Archive';
 import { Trash } from './pages/Trash';
@@ -15,7 +16,6 @@ import { Settings } from './pages/Settings';
 import { Chat } from './pages/Chat';
 import { Login } from './pages/Login';
 import { OMManagement } from './pages/OMManagement';
-import { AvailabilityBoard } from './pages/AvailabilityBoard'; // NEW
 import { StorageService } from './services/storage';
 
 const App: React.FC = () => {
@@ -35,12 +35,10 @@ const App: React.FC = () => {
     if (!isAuthenticated) return;
 
     const intervalId = setInterval(() => {
-        // Sincroniza apenas se estiver online para evitar erros de rede
         if (navigator.onLine) {
-            // console.log('[AUTO-SYNC] Sincronizando dados a cada 10s...');
             StorageService.initialSync();
         }
-    }, 10000); // 10 Segundos conforme solicitado
+    }, 10000); 
 
     return () => clearInterval(intervalId);
   }, [isAuthenticated]);

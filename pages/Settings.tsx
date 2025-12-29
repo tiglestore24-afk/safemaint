@@ -1,550 +1,574 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
-import { Employee, RegisteredART, ScheduleItem, User, OMRecord, ARTRiskItem, ARTStep, MaintenanceLog, OMHistoryItem } from '../types';
-import { Upload, Link as LinkIcon, FileText, Trash2, UserPlus, Lock, Edit2, XCircle, RotateCcw, Server, Wifi, Save, Globe, Plus, ClipboardList, Layers, Code, FileCode, Smartphone, Coffee, CheckCircle, Eye, X, ScanLine, Wand2, AlertTriangle, Calendar, FileInput, Settings as GearIcon, Loader2, Search, BookOpen, Database, CheckCircle2, Maximize2, UserCheck, Users, Shield, PlusCircle, MinusCircle, Table, ArrowRight, CloudLightning, Zap, FileSearch, History, MapPin } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Employee, User, OMRecord, ScheduleItem, RegisteredART } from '../types';
+import { 
+  Save, Loader2, Database, Users, Shield, 
+  BrainCircuit, Trash2, Plus, FileText,
+  UserPlus, UserCheck, ShieldCheck, FileInput, FileSearch, Eye, Download, X, Info, FileSpreadsheet, Upload, CheckCircle,
+  Sparkles, Bot, FileUp, Edit, Search, AlertTriangle, Briefcase, Key
+} from 'lucide-react';
 import { BackButton } from '../components/BackButton';
-
-const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = error => reject(error);
-    });
-};
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const Settings: React.FC = () => {
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'EMPLOYEES' | 'ARTS' | 'SCHEDULE' | 'USERS' | 'OMS'>('EMPLOYEES');
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [arts, setArts] = useState<RegisteredART[]>([]);
+  const [activeTab, setActiveTab] = useState<'OMS' | 'SCHEDULE' | 'EMPLOYEES' | 'USERS' | 'PROCEDURES'>('OMS');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [viewingART, setViewingART] = useState<RegisteredART | null>(null);
+  const [viewingOM, setViewingOM] = useState<OMRecord | null>(null);
+  const [omBlobUrl, setOmBlobUrl] = useState<string | null>(null);
+  const [artBlobUrl, setArtBlobUrl] = useState<string | null>(null);
+
   const [users, setUsers] = useState<User[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [oms, setOms] = useState<OMRecord[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [arts, setArts] = useState<RegisteredART[]>([]);
+
+  // --- STATES DE FORMULÁRIOS ---
+
+  // OM
+  const [newOmNumber, setNewOmNumber] = useState('');
+  const [newOmTag, setNewOmTag] = useState('');
+  const [newOmDesc, setNewOmDesc] = useState('');
+  const [newOmPdf, setNewOmPdf] = useState<string>('');
   
-  // Loading States for Async Operations
-  const [isSavingArt, setIsSavingArt] = useState(false);
-  const [isSavingOm, setIsSavingOm] = useState(false);
-  const [isProcessingSchedule, setIsProcessingSchedule] = useState(false);
+  // ART
+  const [artCode, setArtCode] = useState('');
+  const [artTask, setArtTask] = useState('');
+  const [artRisks, setArtRisks] = useState('');
+  const [artPdfBase64, setArtPdfBase64] = useState<string>('');
 
-  // Schedule
-  const [scheduleInput, setScheduleInput] = useState('');
-  const [scheduleStatus, setScheduleStatus] = useState('');
-  const [schedulePreview, setSchedulePreview] = useState<ScheduleItem[]>([]);
-
-  // Employee Form
-  const [isEditingEmp, setIsEditingEmp] = useState<string | null>(null);
+  // EMPLOYEES
   const [empName, setEmpName] = useState('');
-  const [empMat, setEmpMat] = useState('');
-  const [empFunc, setEmpFunc] = useState('');
-  const [showEmpTrash, setShowEmpTrash] = useState(false);
+  const [empMatricula, setEmpMatricula] = useState('');
+  const [empFunction, setEmpFunction] = useState('');
 
-  // User Form
-  const [isEditingUser, setIsEditingUser] = useState<string | null>(null);
+  // USERS
   const [userName, setUserName] = useState('');
-  const [userMat, setUserMat] = useState('');
   const [userLogin, setUserLogin] = useState('');
   const [userPass, setUserPass] = useState('');
   const [userRole, setUserRole] = useState<'ADMIN' | 'OPERADOR'>('OPERADOR');
 
-  // ART Form & Library
-  const [isEditingArtId, setIsEditingArtId] = useState<string | null>(null);
-  const [artNum, setArtNum] = useState('');
-  const [artName, setArtName] = useState('');
-  const [artPdfFile, setArtPdfFile] = useState<File | null>(null); 
-  const [artSearch, setArtSearch] = useState('');
-  const [viewingArt, setViewingArt] = useState<RegisteredART | null>(null); 
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  
-  // ART Review/Edit State
-  const [showArtReview, setShowArtReview] = useState(false);
-  const [artRisks, setArtRisks] = useState<ARTRiskItem[]>([]);
-  const [artSteps, setArtSteps] = useState<ARTStep[]>([]);
-  const [artControlMeasures, setArtControlMeasures] = useState('');
-
-  // OM Management States
-  const [omFile, setOmFile] = useState<File | null>(null);
-  const [omNumber, setOmNumber] = useState('');
-  const [omDesc, setOmDesc] = useState('');
-  const [omTag, setOmTag] = useState(''); 
-  const [omType, setOmType] = useState<'CORRETIVA' | 'PREVENTIVA' | null>(null);
-  const [linkedScheduleId, setLinkedScheduleId] = useState('');
-  const [dragActive, setDragActive] = useState(false); 
-  const [assetHistory, setAssetHistory] = useState<MaintenanceLog[]>([]); 
-  
-  // Toast
-  const [showToast, setShowToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  // AI & UTIL
+  const [isProcessingAI, setIsProcessingAI] = useState(false);
+  const [aiStatusText, setAiStatusText] = useState('');
+  const [excelText, setExcelText] = useState('');
+  const [searchLibrary, setSearchLibrary] = useState('');
 
   useEffect(() => {
-    const role = localStorage.getItem('safemaint_role');
-    if (role !== 'ADMIN') {
-        alert("ACESSO NEGADO: ÁREA RESTRITA AO ADMINISTRADOR.");
-        navigate('/dashboard');
+    refresh();
+    window.addEventListener('safemaint_storage_update', refresh);
+    return () => window.removeEventListener('safemaint_storage_update', refresh);
+  }, []);
+
+  // Conversor genérico Base64 -> Blob URL
+  const convertToBlob = (base64Data: string) => {
+      try {
+          if (!base64Data) return null;
+          if (base64Data.startsWith('data:application/pdf;base64,')) {
+              const byteCharacters = atob(base64Data.split(',')[1]);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], { type: 'application/pdf' });
+              return URL.createObjectURL(blob);
+          }
+          return base64Data;
+      } catch (e) {
+          return base64Data;
+      }
+  };
+
+  useEffect(() => {
+      if (viewingOM?.pdfUrl) {
+          const url = convertToBlob(viewingOM.pdfUrl);
+          setOmBlobUrl(url);
+          return () => { if (url && url.startsWith('blob:')) URL.revokeObjectURL(url); };
+      }
+      setOmBlobUrl(null);
+  }, [viewingOM]);
+
+  useEffect(() => {
+      if (viewingART?.pdfUrl) {
+          const url = convertToBlob(viewingART.pdfUrl);
+          setArtBlobUrl(url);
+          return () => { if (url && url.startsWith('blob:')) URL.revokeObjectURL(url); };
+      }
+      setArtBlobUrl(null);
+  }, [viewingART]);
+
+  const refresh = () => {
+      setUsers(StorageService.getUsers());
+      setEmployees(StorageService.getEmployees());
+      setOms(StorageService.getOMs());
+      setSchedule(StorageService.getSchedule());
+      setArts(StorageService.getARTs());
+  };
+
+  // ... (código existente da IA e Handlers de Upload) ...
+  const extractArtDataWithAI = async (base64Data: string) => {
+    setIsProcessingAI(true);
+    setAiStatusText("Analisando Documento ART...");
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const base64Content = base64Data.split(',')[1] || base64Data;
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [{
+                parts: [
+                    { inlineData: { mimeType: "application/pdf", data: base64Content } },
+                    { text: "Analise este documento de Análise de Risco (ART). Extraia o código da ART (um número), o nome da tarefa e um breve resumo dos riscos ou medidas de controle. Retorne um objeto JSON com as chaves 'artCode', 'taskName', e 'controlMeasures'." }
+                ]
+            }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        artCode: { type: Type.STRING },
+                        taskName: { type: Type.STRING },
+                        controlMeasures: { type: Type.STRING }
+                    },
+                    required: ["artCode", "taskName"]
+                }
+            }
+        });
+        const result = JSON.parse(response.text || "{}");
+        if (result.artCode) setArtCode(result.artCode.replace(/\D/g, ''));
+        if (result.taskName) setArtTask(result.taskName.toUpperCase());
+        if (result.controlMeasures) setArtRisks(result.controlMeasures.toUpperCase());
+    } catch (error) {
+        console.error("Erro na extração IA da ART:", error);
+    } finally {
+        setIsProcessingAI(false);
+        setAiStatusText('');
+    }
+  };
+
+  const handlePdfUploadForOM = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+        alert("POR FAVOR, SELECIONE APENAS ARQUIVOS PDF.");
         return;
     }
-    refreshData();
-  }, [navigate, activeTab]);
 
-  // Efeito para carregar histórico quando o TAG muda
-  useEffect(() => {
-      if (omTag && omTag.length > 3) {
-          const history = StorageService.getHistory();
-          const related = history.filter(h => 
-              h.tag.toUpperCase().includes(omTag.toUpperCase()) || 
-              omTag.toUpperCase().includes(h.tag.toUpperCase())
-          ).sort((a,b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime());
-          
-          setAssetHistory(related.slice(0, 5));
-      } else {
-          setAssetHistory([]);
-      }
-  }, [omTag]);
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result as string;
+        setNewOmPdf(base64);
 
-  const refreshData = () => {
-      setEmployees(StorageService.getEmployees());
-      setArts(StorageService.getARTs());
-      setScheduleItems(StorageService.getSchedule());
-      
-      if (activeTab === 'USERS') {
-          setIsLoadingUsers(true);
-          StorageService.getUsers().then(u => {
-              setUsers(u);
-              setIsLoadingUsers(false);
-          });
-      }
+        setIsProcessingAI(true);
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const base64Content = base64.split(',')[1] || base64;
+            
+            setAiStatusText("Extraindo Número da OM...");
+            const omResponse = await ai.models.generateContent({
+                model: "gemini-3-flash-preview",
+                contents: [
+                    { parts: [{ text: "Extraia o número da Ordem de Manutenção (OM) deste PDF. É um número de 8 a 10 dígitos. Retorne APENAS o número." }] },
+                    { parts: [{ inlineData: { mimeType: "application/pdf", data: base64Content } }] }
+                ],
+            });
+
+            const extractedOM = omResponse.text?.trim().replace(/\D/g, '');
+            if (extractedOM) setNewOmNumber(extractedOM);
+
+            setAiStatusText("Identificando TAG e Atividade...");
+            const detailsResponse = await ai.models.generateContent({
+                model: "gemini-3-flash-preview",
+                contents: [
+                    { parts: [{ inlineData: { mimeType: "application/pdf", data: base64Content } }] },
+                    { parts: [{ text: "Agora, extraia o TAG do equipamento (ex: CA5302) e um resumo da atividade. Retorne JSON com chaves 'tag' e 'summary'." }] }
+                ],
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            tag: { type: Type.STRING },
+                            summary: { type: Type.STRING }
+                        },
+                    }
+                }
+            });
+
+            const result = JSON.parse(detailsResponse.text || "{}");
+            if (result.tag) setNewOmTag(result.tag.toUpperCase());
+            if (result.summary) setNewOmDesc(result.summary.toUpperCase());
+
+        } catch (error) {
+            console.error("Erro na extração IA:", error);
+        } finally {
+            setIsProcessingAI(false);
+            setAiStatusText('');
+        }
+    };
+    reader.readAsDataURL(file);
+  };
+  
+  const handlePdfUploadForART = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result as string;
+        setArtPdfBase64(base64);
+        await extractArtDataWithAI(base64);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const showFeedback = (msg: string, type: 'success' | 'error') => {
-      setShowToast({message: msg, type});
-      setTimeout(() => setShowToast(null), 3000);
-  };
+  // --- SAVE HANDLERS ---
 
-  // --- EMPLOYEE HANDLERS ---
-  const handleSaveEmployee = async (e: React.FormEvent) => { 
-      e.preventDefault(); 
-      if(empName && empMat && empFunc) { 
-          if(isEditingEmp) { 
-              await StorageService.updateEmployee({ id: isEditingEmp, name: empName, matricula: empMat, function: empFunc, status: 'ACTIVE' }); 
-              showFeedback("Funcionário Atualizado!", 'success');
-          } else { 
-              await StorageService.addEmployee({ id: crypto.randomUUID(), name: empName, matricula: empMat, function: empFunc, status: 'ACTIVE' }); 
-              showFeedback("Funcionário Cadastrado!", 'success');
-          } 
-          refreshData(); 
-          resetEmpForm(); 
-      }
-  };
-  const handleEditEmpClick = (emp: Employee) => { 
-      setIsEditingEmp(emp.id); 
-      setEmpName(emp.name); 
-      setEmpMat(emp.matricula); 
-      setEmpFunc(emp.function); 
-      window.scrollTo({top:0, behavior:'smooth'}); 
-  };
-  const resetEmpForm = () => { setIsEditingEmp(null); setEmpName(''); setEmpMat(''); setEmpFunc(''); };
-  const handleDeleteEmployee = async (id: string) => { if(window.confirm("Mover para lixeira?")) { await StorageService.deleteEmployee(id); refreshData(); }};
-  const handleRestoreEmp = async (id: string) => { await StorageService.restoreEmployee(id); refreshData(); };
-  const handlePermDeleteEmp = async (id: string) => { if(window.confirm("Excluir permanentemente?")) { await StorageService.deleteEmployeePermanently(id); refreshData(); }};
-
-  // --- USER HANDLERS ---
-  const handleSaveUser = async (e: React.FormEvent) => { 
-      e.preventDefault(); 
-      if(userName && userMat && userLogin && userPass) { 
-          setIsLoadingUsers(true);
-          if(isEditingUser) { 
-              await StorageService.updateUser({ id: isEditingUser, name: userName, matricula: userMat, login: userLogin.toUpperCase(), password: userPass, role: userRole }); 
-              showFeedback("Usuário atualizado!", 'success');
-          } else { 
-              const success = await StorageService.addUser({ id: crypto.randomUUID(), name: userName, matricula: userMat, login: userLogin.toUpperCase(), password: userPass, role: userRole });
-              if (!success) {
-                  showFeedback("Erro: Login já existe ou erro de conexão.", 'error');
-              } else {
-                  showFeedback("Usuário criado!", 'success');
-              }
-          }
-          resetUserForm(); 
-          const updatedUsers = await StorageService.getUsers();
-          setUsers(updatedUsers);
-          setIsLoadingUsers(false);
-      }
-  };
-  const handleEditUserClick = (u: User) => { 
-      setIsEditingUser(u.id); 
-      setUserName(u.name); 
-      setUserMat(u.matricula); 
-      setUserLogin(u.login); 
-      setUserPass(u.password||''); 
-      setUserRole(u.role); 
-      window.scrollTo({top:0, behavior:'smooth'}); 
-  };
-  const resetUserForm = () => { setIsEditingUser(null); setUserName(''); setUserMat(''); setUserLogin(''); setUserPass(''); setUserRole('OPERADOR'); };
-  const handleDeleteUser = async (id: string) => { 
-      if(window.confirm("Remover usuário?")) { 
-          setIsLoadingUsers(true);
-          await StorageService.deleteUser(id); 
-          const u = await StorageService.getUsers();
-          setUsers(u); 
-          setIsLoadingUsers(false);
-      }
-  };
-
-  // --- ART HANDLERS ---
-  const handlePdfSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if(!file) return;
-      setArtPdfFile(file);
-      document.getElementById('artNumInput')?.focus();
-  };
-
-  const handleCreateNewART = (e: React.FormEvent) => { 
-      e.preventDefault(); 
-      if(!artNum || !artName) {
-          alert("PREENCHA NÚMERO E NOME DA ART.");
-          return;
-      }
-      setIsEditingArtId(null);
-      setArtRisks([
-            { situation: 'TRABALHO EM ALTURA', total: 1, riskLevel: 'ALTO' },
-            { situation: 'RUÍDO EXCESSIVO', total: 1, riskLevel: 'MÉDIO' }
-      ]);
-      setArtSteps([
-          { item: 1, step: "ISOLAR A ÁREA", riskLevel: "BAIXO" },
-          { item: 2, step: "BLOQUEIO LOTO", riskLevel: "ALTO" }
-      ]);
-      setArtControlMeasures('USO DE EPIs OBRIGATÓRIO.');
-      setShowArtReview(true);
-  };
-
-  const handleEditArtClick = (art: RegisteredART) => {
-      setArtNum(art.code);
-      setArtName(art.taskName);
-      setArtRisks(art.risks || []);
-      setArtSteps(art.steps || []);
-      setArtControlMeasures(art.controlMeasures || '');
-      setIsEditingArtId(art.id);
-      setShowArtReview(true);
-  };
-
-  const addRisk = () => setArtRisks([...artRisks, { situation: 'NOVO RISCO', total: 1, riskLevel: 'BAIXO' }]);
-  const removeRisk = (idx: number) => setArtRisks(artRisks.filter((_, i) => i !== idx));
-  const updateRisk = (idx: number, field: keyof ARTRiskItem, val: any) => {
-      const updated = [...artRisks];
-      updated[idx] = { ...updated[idx], [field]: val };
-      setArtRisks(updated);
-  };
-
-  const addStep = () => setArtSteps([...artSteps, { item: artSteps.length + 1, step: 'NOVO PASSO', riskLevel: 'BAIXO' }]);
-  const removeStep = (idx: number) => setArtSteps(artSteps.filter((_, i) => i !== idx));
-  const updateStep = (idx: number, field: keyof ARTStep, val: any) => {
-      const updated = [...artSteps];
-      updated[idx] = { ...updated[idx], [field]: val };
-      setArtSteps(updated);
-  };
-
-  const handleConfirmSaveART = async () => {
-      setIsSavingArt(true);
-      let pdfBase64: string | undefined = undefined;
-      if (artPdfFile) {
-          try { pdfBase64 = await fileToBase64(artPdfFile); } catch(e) {}
-      } else if (isEditingArtId) {
-          const existing = arts.find(a => a.id === isEditingArtId);
-          pdfBase64 = existing?.pdfUrl;
-      }
-
-      const newArt: RegisteredART = {
-        id: isEditingArtId || crypto.randomUUID(),
-        code: artNum,
-        company: 'Vale S.A.',
-        taskName: artName,
-        area: 'MANUTENÇÃO',
-        omve: 'SIM',
-        emissionDate: new Date().toLocaleDateString(),
-        risks: artRisks,
-        controlMeasures: artControlMeasures,
-        steps: artSteps,
-        pdfUrl: pdfBase64
-      };
-
-      await StorageService.addART(newArt); 
-      setArts(StorageService.getARTs()); 
-      
-      setArtNum(''); 
-      setArtName(''); 
-      setArtPdfFile(null);
-      setIsEditingArtId(null);
-      setShowArtReview(false);
-      
-      if(fileInputRef.current) fileInputRef.current.value = "";
-      setIsSavingArt(false);
-      showFeedback(isEditingArtId ? "ART ATUALIZADA!" : "NOVA ART CRIADA!", 'success');
-  };
-
-  const handleDeleteART = async (id: string) => { if(window.confirm("Excluir ART padrão?")) { await StorageService.deleteART(id); setArts(StorageService.getARTs()); }};
-
-  const renderStandardDocument = (art: RegisteredART) => (
-      <div className="bg-white p-8 md:p-12 shadow-2xl overflow-hidden text-gray-900 border border-gray-300 max-w-4xl mx-auto my-4">
-          <div className="flex justify-between items-center border-b-4 border-vale-green pb-6 mb-8">
-              <div>
-                  <h1 className="text-2xl font-black text-vale-darkgray uppercase tracking-tight">ART PADRÃO</h1>
-                  <p className="text-xs font-bold text-vale-green tracking-[0.3em] uppercase">PROCEDIMENTO OPERACIONAL PADRÃO</p>
-              </div>
-              <div className="text-right">
-                  <p className="text-[10px] font-black text-gray-400 uppercase">CÓDIGO ART</p>
-                  <p className="text-3xl font-mono font-black text-gray-800">{art.code}</p>
-              </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 mb-8 bg-gray-50 p-4 border border-gray-200 rounded">
-              <div>
-                  <span className="block text-[9px] font-black text-gray-400 uppercase">TAREFA</span>
-                  <span className="font-bold text-sm text-gray-800">{art.taskName}</span>
-              </div>
-              <div>
-                  <span className="block text-[9px] font-black text-gray-400 uppercase">ÁREA</span>
-                  <span className="font-bold text-sm text-gray-800">{art.area}</span>
-              </div>
-          </div>
-          <div className="mb-8">
-              <h4 className="font-black text-sm mb-2 bg-vale-dark text-white py-1 px-2 uppercase tracking-wide">1. ANÁLISE DE RISCOS E CLASSIFICAÇÃO</h4>
-              <table className="w-full text-[10px] border border-gray-400">
-                  <thead className="bg-gray-200">
-                      <tr>
-                          <th className="border border-gray-400 p-2 text-left w-3/4">SITUAÇÃO DE RISCO</th>
-                          <th className="border border-gray-400 p-2 text-center w-1/4">NÍVEL DE RISCO</th>
-                      </tr>
-                  </thead>
-                  <tbody>
-                      {art.risks && art.risks.map((r, i) => (
-                          <tr key={i}>
-                              <td className="border border-gray-400 p-2 font-bold uppercase">{r.situation}</td>
-                              <td className="border border-gray-400 p-2 text-center font-bold uppercase">{r.riskLevel}</td>
-                          </tr>
-                      ))}
-                  </tbody>
-              </table>
-          </div>
-          <div className="mb-8">
-               <h4 className="font-black text-sm mb-2 bg-vale-dark text-white py-1 px-2 uppercase tracking-wide">2. MEDIDAS DE CONTROLE OBRIGATÓRIAS</h4>
-               <div className="p-4 border border-gray-400 bg-gray-50 text-xs font-bold text-justify whitespace-pre-line leading-relaxed uppercase">
-                   {art.controlMeasures || 'NENHUMA MEDIDA REGISTRADA.'}
-               </div>
-          </div>
-          <div className="mb-8">
-              <h4 className="font-black text-sm mb-2 bg-vale-dark text-white py-1 px-2 uppercase tracking-wide">3. PASSO A PASSO DA TAREFA</h4>
-              <table className="w-full text-[10px] border border-gray-400">
-                  <thead className="bg-gray-200">
-                      <tr>
-                          <th className="border border-gray-400 p-2 text-center w-12">ITEM</th>
-                          <th className="border border-gray-400 p-2 text-left">DESCRIÇÃO DO PASSO</th>
-                          <th className="border border-gray-400 p-2 text-center w-20">RISCO</th>
-                      </tr>
-                  </thead>
-                  <tbody>
-                      {art.steps && art.steps.map((s, i) => (
-                          <tr key={i}>
-                              <td className="border border-gray-400 p-2 text-center font-bold">{s.item}</td>
-                              <td className="border border-gray-400 p-2 font-bold uppercase">{s.step}</td>
-                              <td className="border border-gray-400 p-2 text-center font-bold uppercase">{s.riskLevel}</td>
-                          </tr>
-                      ))}
-                  </tbody>
-              </table>
-          </div>
-      </div>
-  );
-
-  // --- OM HANDLERS (MANUAL ONLY) ---
-  const handleOmFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if(e.target.files && e.target.files[0]) {
-        setOmFile(e.target.files[0]);
+  const handleAddOM = async () => {
+    if(!newOmNumber || !newOmTag) {
+        alert("PREENCHA NÚMERO DA OM E TAG.");
+        return;
     }
+    if (!newOmPdf) {
+        alert("ERRO: O PDF DA ORDEM É OBRIGATÓRIO. POR FAVOR, FAÇA O UPLOAD.");
+        return;
+    }
+
+    const om: OMRecord = {
+        id: crypto.randomUUID(),
+        omNumber: newOmNumber,
+        tag: newOmTag.toUpperCase(),
+        description: newOmDesc.toUpperCase() || 'MANUTENÇÃO INDUSTRIAL',
+        type: 'PREVENTIVA',
+        status: 'PENDENTE',
+        createdAt: new Date().toISOString(),
+        pdfUrl: newOmPdf,
+        createdBy: localStorage.getItem('safemaint_user') || 'ADMIN'
+    };
+    await StorageService.saveOM(om);
+    setNewOmNumber(''); setNewOmTag(''); setNewOmDesc(''); setNewOmPdf('');
+    alert("ORDEM DE MANUTENÇÃO CADASTRADA COM PDF!");
   };
 
-  const handleDrag = (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.type === "dragenter" || e.type === "dragover") {
-          setDragActive(true);
-      } else if (e.type === "dragleave") {
-          setDragActive(false);
-      }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragActive(false);
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          setOmFile(e.dataTransfer.files[0]);
-      }
-  };
-
-  const handleSaveOM = async () => {
-      if(!omNumber || !omTag || !omDesc || !omType) {
-          alert('PREENCHA TODOS OS CAMPOS OBRIGATÓRIOS.');
+  const handleAddART = async () => {
+      if(!artCode || !artTask || !artPdfBase64) {
+          alert("PREENCHA O CÓDIGO, NOME E ANEXE O PDF DA ART.");
           return;
       }
-
-      if (!omTag.trim().toUpperCase().startsWith('CA')) {
-          alert("ERRO: O TAG DO EQUIPAMENTO DEVE COMEÇAR COM 'CA'.");
-          return;
-      }
-
-      setIsSavingOm(true);
-      let pdfBase64: string | undefined = undefined;
-      if (omFile) { try { pdfBase64 = await fileToBase64(omFile); } catch(e) {} }
-
-      const newOM: OMRecord = {
-          id: crypto.randomUUID(), omNumber, description: omDesc, tag: omTag.toUpperCase(), type: omType!,
-          status: 'PENDENTE', createdAt: new Date().toISOString(), createdBy: localStorage.getItem('safemaint_user') || 'ADMIN',
-          pdfUrl: pdfBase64, linkedScheduleId: linkedScheduleId || undefined
+      const newART: RegisteredART = { 
+          id: crypto.randomUUID(), 
+          code: artCode, 
+          company: 'VALE', 
+          taskName: artTask, 
+          area: 'INDUSTRIAL', 
+          controlMeasures: artRisks, 
+          pdfUrl: artPdfBase64 
       };
-      
-      await StorageService.saveOM(newOM);
-      
-      showFeedback(`OM CADASTRADA E ENVIADA PARA GESTÃO!`, 'success');
-      
-      // REDIRECT TO MANAGEMENT PAGE
-      setTimeout(() => {
-          // Reset fields before leaving (optional, but good for cleanup)
-          setOmFile(null); setOmNumber(''); setOmDesc(''); setOmTag(''); setOmType(null); 
-          setAssetHistory([]);
-          
-          setIsSavingOm(false);
-          navigate('/om-management');
-      }, 1000);
+      await StorageService.saveART(newART);
+      setArtCode(''); setArtTask(''); setArtRisks(''); setArtPdfBase64('');
+      alert("ART CADASTRADA NO MANUAL COM SUCESSO!");
   };
 
-  const handleLinkSchedule = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const id = e.target.value;
-      setLinkedScheduleId(id);
-      const item = scheduleItems.find(s => s.id === id);
-      if(item) {
-          setOmDesc(item.description);
-          setOmTag(item.frotaOm.split(/[\n/]/)[0].trim());
+  const handleAddEmployee = async () => {
+      if(!empName || !empMatricula || !empFunction) {
+          alert("PREENCHA TODOS OS CAMPOS DO FUNCIONÁRIO.");
+          return;
       }
+      await StorageService.saveEmployee({
+          id: crypto.randomUUID(),
+          name: empName.toUpperCase(),
+          matricula: empMatricula.toUpperCase(),
+          function: empFunction.toUpperCase(),
+          status: 'ACTIVE'
+      });
+      setEmpName(''); setEmpMatricula(''); setEmpFunction('');
+      alert("FUNCIONÁRIO CADASTRADO!");
   };
 
-  // ... (Schedule Handlers) ...
-  const handlePreviewSchedule = async () => { 
-      try { 
-          setIsProcessingSchedule(true);
-          const rows = scheduleInput.trim().split('\n'); 
-          if(rows.length===0) throw new Error(); 
-          const items: ScheduleItem[] = rows.map(r => { 
-              const c = r.split('\t'); 
-              return { 
-                  id: crypto.randomUUID(), 
-                  frotaOm: c[0]||'', description: c[1]||'', dateMin: c[2]||'', dateMax: c[3]||'', 
-                  priority: c[4]||'M', peopleCount: parseInt(c[5])||1, hours: parseFloat(c[6])||0, 
-                  dateStart: c[7]||'', dateEnd: c[8]||'', workCenter: c[9]||'', timeStart: c[10]||'', 
-                  timeEnd: c[11]||'', resources: c[12]||'', resources2: c[13]||'', status: 'I' 
-              };
-          }); 
-          
-          if(items.length > 0) {
-              setSchedulePreview(items);
-              setScheduleStatus('PREVIEW');
-          }
-      } catch(e) { setScheduleStatus('ERRO AO PROCESSAR'); }
-      finally { setIsProcessingSchedule(false); }
-  };
-
-  const handleConfirmImport = async () => {
-      if(schedulePreview.length === 0) return;
-      if(window.confirm(`CONFIRMA A IMPORTAÇÃO DE ${schedulePreview.length} ITENS? A LISTA ATUAL SERÁ SUBSTITUÍDA.`)) {
-          await StorageService.archiveAndClearSchedule(); 
-          await StorageService.updateSchedule(schedulePreview); 
-          setScheduleStatus('IMPORTADO'); 
-          setScheduleInput('');
-          setSchedulePreview([]);
-          showFeedback(`${schedulePreview.length} itens importados com sucesso!`, 'success');
+  const handleAddUser = async () => {
+      if(!userName || !userLogin || !userPass) {
+          alert("PREENCHA TODOS OS DADOS DE ACESSO.");
+          return;
       }
+      await StorageService.saveUser({
+          id: crypto.randomUUID(),
+          name: userName.toUpperCase(),
+          matricula: '',
+          login: userLogin.toUpperCase(),
+          password: userPass,
+          role: userRole
+      });
+      setUserName(''); setUserLogin(''); setUserPass('');
+      alert("USUÁRIO CADASTRADO!");
   };
 
-  const handleCancelPreview = () => {
-      setSchedulePreview([]);
-      setScheduleStatus('');
-  };
-
-  const handleClearSchedule = async () => { 
-      if(window.confirm("Limpar programação?")) { 
-          await StorageService.archiveAndClearSchedule(); 
-          setScheduleStatus('LIMPA'); 
+  const handleImportExcel = async () => {
+      if(!excelText.trim()) return;
+      setIsSyncing(true);
+      const lines = excelText.split('\n');
+      let count = 0;
+      for (const line of lines) {
+          if (!line.trim()) continue;
+          const parts = line.split('\t'); 
+          const item: ScheduleItem = {
+              id: crypto.randomUUID(),
+              frotaOm: (parts[0] || 'N/D').toUpperCase(),
+              description: (parts[1] || 'IMPORTADO VIA EXCEL').toUpperCase(),
+              resources: (parts[2] || 'EQUIPE MANUTENÇÃO').toUpperCase(),
+              resources2: 'INDUSTRIAL',
+              dateMin: parts[3] || new Date().toLocaleDateString('pt-BR'),
+              dateMax: parts[3] || '',
+              priority: 'MÉDIA',
+              peopleCount: 1,
+              hours: 8,
+              dateStart: parts[3] || new Date().toLocaleDateString('pt-BR'),
+              dateEnd: '',
+              workCenter: 'OFICINA',
+              timeStart: '07:30',
+              timeEnd: '16:30',
+              status: 'PROGRAMADO'
+          };
+          await StorageService.saveScheduleItem(item);
+          count++;
       }
+      setExcelText('');
+      setIsSyncing(false);
+      alert(`${count} ITENS EXPORTADOS PARA A AGENDA COM SUCESSO!`);
   };
-
-  const filteredArts = arts.filter(a => a.code.toLowerCase().includes(artSearch.toLowerCase()) || a.taskName.toLowerCase().includes(artSearch.toLowerCase()));
 
   return (
-    <div className="max-w-[1400px] mx-auto pb-20 px-4">
-      {/* ... [Header and Tabs] ... */}
-      <div className="flex items-center gap-3 mb-6">
-          <BackButton />
-          <h2 className="text-2xl font-black text-vale-darkgray flex items-center gap-2 uppercase">
-              <GearIcon size={28} className="text-vale-green" />
-              CONFIGURAÇÕES DO SISTEMA
-          </h2>
-      </div>
+    <div className="max-w-[1600px] mx-auto pb-20 px-4">
+      {/* ... Header e Nav ... */}
+      <header className="flex items-center justify-between py-4 border-b-2 border-gray-200 mb-4 bg-white p-4 rounded-xl shadow-sm">
+          <div className="flex items-center gap-3">
+              <BackButton />
+              <div>
+                  <h2 className="text-xl font-black uppercase tracking-tighter text-vale-dark flex items-center gap-2">
+                    <Database size={24} className="text-[#007e7a]"/> Central de Dados
+                  </h2>
+                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.3em]">Gestão de Segurança e Ativos</p>
+              </div>
+          </div>
+      </header>
       
-      <div className="flex justify-center border-b mb-6 overflow-x-auto bg-white rounded-t-lg shadow-sm">
-        {['OMS', 'EMPLOYEES', 'ARTS', 'SCHEDULE', 'USERS'].map((tab) => (
+      <nav className="flex bg-gray-100 p-1 rounded-xl mb-6 shadow-inner overflow-x-auto gap-2">
+        {[
+          {id: 'OMS', label: 'Cadastro OM', icon: <BrainCircuit size={16}/>},
+          {id: 'PROCEDURES', label: 'Manual de ARTs', icon: <FileSearch size={16}/>},
+          {id: 'SCHEDULE', label: 'Exportar Excel', icon: <FileSpreadsheet size={16}/>},
+          {id: 'EMPLOYEES', label: 'Equipe', icon: <Users size={16}/>},
+          {id: 'USERS', label: 'Acessos', icon: <Shield size={16}/>},
+        ].map((tab) => (
             <button 
-                key={tab} 
-                className={`px-6 py-4 font-black text-sm whitespace-nowrap border-b-4 transition-colors ${activeTab === tab ? 'text-vale-green border-vale-green bg-green-50' : 'text-gray-500 border-transparent hover:bg-gray-50'}`} 
-                onClick={() => setActiveTab(tab as any)}
+                key={tab.id} 
+                className={`flex-1 px-4 py-2 font-black text-[10px] rounded-lg transition-all flex items-center justify-center gap-2 uppercase whitespace-nowrap ${activeTab === tab.id ? 'bg-[#007e7a] text-white shadow-md' : 'text-gray-500 hover:bg-white hover:text-gray-600'}`} 
+                onClick={() => setActiveTab(tab.id as any)}
             >
-                {tab === 'OMS' ? 'GESTÃO DE OMs' :
-                 tab === 'EMPLOYEES' ? 'FUNCIONÁRIOS' : 
-                 tab === 'ARTS' ? 'ARTs PADRÃO' : 
-                 tab === 'SCHEDULE' ? 'PROGRAMAÇÃO' : 'USUÁRIOS'}
+                {tab.icon} {tab.label}
             </button>
         ))}
-      </div>
+      </nav>
 
-      {/* [Tab Contents] */}
-      
-      {/* ... [EMPLOYEES Tab Content] ... */}
-      {activeTab === 'EMPLOYEES' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
-              {/* ... Employee Form ... */}
-              <div className="lg:col-span-1">
-                  <div className="bg-white p-6 rounded shadow border border-gray-200 sticky top-4">
-                      <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2">
-                          <UserPlus size={20} className="text-vale-green" />
-                          {isEditingEmp ? 'EDITAR FUNCIONÁRIO' : 'NOVO FUNCIONÁRIO'}
-                      </h3>
-                      <form onSubmit={handleSaveEmployee} className="space-y-4">
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">NOME COMPLETO</label><input value={empName} onChange={e => setEmpName(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">MATRÍCULA</label><input value={empMat} onChange={e => setEmpMat(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">FUNÇÃO / CARGO</label><input value={empFunc} onChange={e => setEmpFunc(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
-                          <div className="flex gap-2 pt-2 justify-center">
-                              {isEditingEmp && <button type="button" onClick={resetEmpForm} className="px-4 py-2 bg-gray-200 text-gray-600 font-bold rounded hover:bg-gray-300">CANCELAR</button>}
-                              <button type="submit" className="flex-1 bg-gradient-to-r from-vale-green to-teal-600 text-white font-black py-2 rounded hover:brightness-110 shadow-lg">{isEditingEmp ? 'ATUALIZAR' : 'CADASTRAR'}</button>
-                          </div>
-                      </form>
-                  </div>
-              </div>
-              <div className="lg:col-span-2">
-                  <div className="bg-white p-6 rounded shadow border border-gray-200 min-h-[500px]">
-                      <div className="flex justify-between items-center mb-6">
-                          <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><Users size={20} /> QUADRO DE FUNCIONÁRIOS</h3>
-                          <button onClick={() => setShowEmpTrash(!showEmpTrash)} className={`text-xs font-bold px-3 py-1 rounded border flex items-center gap-1 ${showEmpTrash ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
-                              {showEmpTrash ? <RotateCcw size={14}/> : <Trash2 size={14}/>} {showEmpTrash ? 'ATIVOS' : 'LIXEIRA'}
-                          </button>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
+          
+          {/* --- COLUNA ESQUERDA: FORMULÁRIOS (CARD MENOR COMPACTO) --- */}
+          <div className="lg:col-span-4 space-y-4">
+              
+              {/* FORMULÁRIO OM */}
+              {activeTab === 'OMS' && (
+                  <div className="bg-white rounded-xl p-5 border shadow-lg space-y-4 border-l-[6px] border-[#007e7a] relative">
+                      {isProcessingAI && (
+                        <div className="absolute inset-0 bg-white/90 z-50 flex flex-col items-center justify-center rounded-xl">
+                           <Bot size={40} className="text-[#007e7a] animate-bounce mb-2" />
+                           <p className="font-black text-[10px] uppercase tracking-widest animate-pulse">{aiStatusText || 'Processando...'}</p>
+                        </div>
+                      )}
+                      <h3 className="font-black text-vale-dark uppercase text-sm flex items-center gap-2 border-b border-gray-100 pb-2"><Plus size={16} className="text-[#007e7a]" /> Nova Ordem</h3>
+                      
+                      <div className="bg-teal-50 p-4 rounded-lg border border-teal-100 flex flex-col items-center justify-center relative group cursor-pointer hover:bg-teal-100 transition-colors">
+                          <input type="file" accept=".pdf" onChange={handlePdfUploadForOM} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                          {newOmPdf ? (
+                              <div className="flex items-center gap-2 text-teal-700">
+                                  <CheckCircle size={20} /> <span className="text-[10px] font-black">PDF CARREGADO</span>
+                              </div>
+                          ) : (
+                              <>
+                                <Upload size={20} className="text-teal-600 mb-1" />
+                                <span className="text-[9px] font-black text-teal-700 uppercase">1. Upload PDF (Obrigatório)</span>
+                              </>
+                          )}
                       </div>
-                      <div className="overflow-x-auto">
-                          <table className="min-w-full text-sm">
-                              <thead className="bg-gray-50 border-b-2 border-gray-200"><tr><th className="px-4 py-3 text-left font-black text-gray-500">MATRÍCULA</th><th className="px-4 py-3 text-left font-black text-gray-500">NOME</th><th className="px-4 py-3 text-left font-black text-gray-500">FUNÇÃO</th><th className="px-4 py-3 text-right font-black text-gray-500">AÇÕES</th></tr></thead>
+
+                      <div className="space-y-3">
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Número da OM</label>
+                              <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value)} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-black text-sm text-blue-900 outline-none uppercase focus:border-[#007e7a]" placeholder="Ex: 123456" />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Tag / Equipamento</label>
+                              <input value={newOmTag} onChange={e => setNewOmTag(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-black text-sm text-[#007e7a] outline-none uppercase focus:border-[#007e7a]" placeholder="Ex: CA5302" />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Resumo</label>
+                              <textarea value={newOmDesc} onChange={e => setNewOmDesc(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-xs outline-none uppercase focus:border-[#007e7a] h-16 resize-none" placeholder="Descrição breve..." />
+                          </div>
+                      </div>
+
+                      <button onClick={handleAddOM} className="w-full bg-[#007e7a] text-white py-2.5 rounded-lg font-black text-xs uppercase shadow hover:bg-[#00605d] transition-all flex items-center justify-center gap-2 active:scale-95">
+                          <Save size={16}/> Salvar Ordem
+                      </button>
+                  </div>
+              )}
+
+              {/* FORMULÁRIO ART */}
+              {activeTab === 'PROCEDURES' && (
+                  <div className="bg-white rounded-xl p-5 border shadow-lg space-y-4 border-l-[6px] border-orange-500 relative">
+                      {isProcessingAI && (
+                        <div className="absolute inset-0 bg-white/90 z-50 flex flex-col items-center justify-center rounded-xl">
+                           <Bot size={40} className="text-orange-500 animate-bounce mb-2" />
+                           <p className="font-black text-[10px] uppercase tracking-widest animate-pulse">{aiStatusText || 'Processando...'}</p>
+                        </div>
+                      )}
+                      <h3 className="font-black text-vale-dark uppercase text-sm flex items-center gap-2 border-b border-gray-100 pb-2"><FileText size={16} className="text-orange-500" /> Nova ART</h3>
+                      
+                      <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex flex-col items-center justify-center relative group cursor-pointer hover:bg-orange-100 transition-colors">
+                          <input type="file" accept=".pdf" onChange={handlePdfUploadForART} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                          {artPdfBase64 ? (
+                              <div className="flex items-center gap-2 text-green-600">
+                                  <CheckCircle size={20} /> <span className="text-[10px] font-black">PDF VINCULADO</span>
+                              </div>
+                          ) : (
+                              <>
+                                <Upload size={20} className="text-orange-600 mb-1" />
+                                <span className="text-[9px] font-black text-orange-700 uppercase">1. Upload PDF (Obrigatório)</span>
+                              </>
+                          )}
+                      </div>
+
+                      <div className="space-y-3">
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Código ART</label>
+                              <input value={artCode} onChange={e => setArtCode(e.target.value)} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-black text-sm outline-none uppercase focus:border-orange-500" placeholder="Número..." />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Atividade</label>
+                              <input value={artTask} onChange={e => setArtTask(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-black text-sm outline-none uppercase focus:border-orange-500" placeholder="Nome da tarefa..." />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Riscos (Resumo)</label>
+                              <textarea value={artRisks} onChange={e => setArtRisks(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-xs outline-none uppercase focus:border-orange-500 h-16 resize-none" placeholder="Riscos principais..." />
+                          </div>
+                      </div>
+
+                      <button onClick={handleAddART} className="w-full bg-orange-600 text-white py-2.5 rounded-lg font-black text-xs uppercase shadow hover:bg-orange-700 transition-all flex items-center justify-center gap-2 active:scale-95">
+                          <Save size={16}/> Salvar Procedimento
+                      </button>
+                  </div>
+              )}
+
+              {/* FORMULÁRIO FUNCIONÁRIOS */}
+              {activeTab === 'EMPLOYEES' && (
+                  <div className="bg-white rounded-xl p-5 border shadow-lg space-y-4 border-l-[6px] border-blue-600">
+                      <h3 className="font-black text-vale-dark uppercase text-sm flex items-center gap-2 border-b border-gray-100 pb-2"><UserPlus size={16} className="text-blue-600" /> Novo Colaborador</h3>
+                      <div className="space-y-3">
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Nome Completo</label>
+                              <input value={empName} onChange={e => setEmpName(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-sm outline-none uppercase focus:border-blue-600" placeholder="NOME..." />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Matrícula</label>
+                              <input value={empMatricula} onChange={e => setEmpMatricula(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-sm outline-none uppercase focus:border-blue-600" placeholder="000000" />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Função</label>
+                              <input value={empFunction} onChange={e => setEmpFunction(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-sm outline-none uppercase focus:border-blue-600" placeholder="MECÂNICO..." />
+                          </div>
+                      </div>
+                      <button onClick={handleAddEmployee} className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-black text-xs uppercase shadow hover:bg-blue-700 transition-all flex items-center justify-center gap-2 active:scale-95">
+                          <Save size={16}/> Salvar Cadastro
+                      </button>
+                  </div>
+              )}
+
+              {/* FORMULÁRIO USUÁRIOS */}
+              {activeTab === 'USERS' && (
+                  <div className="bg-white rounded-xl p-5 border shadow-lg space-y-4 border-l-[6px] border-purple-600">
+                      <h3 className="font-black text-vale-dark uppercase text-sm flex items-center gap-2 border-b border-gray-100 pb-2"><ShieldCheck size={16} className="text-purple-600" /> Novo Acesso</h3>
+                      <div className="space-y-3">
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Nome do Usuário</label>
+                              <input value={userName} onChange={e => setUserName(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-sm outline-none uppercase focus:border-purple-600" placeholder="NOME..." />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Login</label>
+                              <input value={userLogin} onChange={e => setUserLogin(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-sm outline-none uppercase focus:border-purple-600" placeholder="LOGIN..." />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Senha</label>
+                              <input type="password" value={userPass} onChange={e => setUserPass(e.target.value)} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-bold text-sm outline-none focus:border-purple-600" placeholder="******" />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-gray-400 ml-1 uppercase">Permissão</label>
+                              <div className="flex bg-gray-100 p-1 rounded-lg">
+                                  <button onClick={() => setUserRole('OPERADOR')} className={`flex-1 py-1.5 text-[10px] font-black rounded-md ${userRole === 'OPERADOR' ? 'bg-white shadow text-purple-600' : 'text-gray-400'}`}>OPERADOR</button>
+                                  <button onClick={() => setUserRole('ADMIN')} className={`flex-1 py-1.5 text-[10px] font-black rounded-md ${userRole === 'ADMIN' ? 'bg-white shadow text-purple-600' : 'text-gray-400'}`}>ADMIN</button>
+                              </div>
+                          </div>
+                      </div>
+                      <button onClick={handleAddUser} className="w-full bg-purple-600 text-white py-2.5 rounded-lg font-black text-xs uppercase shadow hover:bg-purple-700 transition-all flex items-center justify-center gap-2 active:scale-95">
+                          <Save size={16}/> Criar Acesso
+                      </button>
+                  </div>
+              )}
+
+              {/* FORMULÁRIO EXCEL */}
+              {activeTab === 'SCHEDULE' && (
+                  <div className="bg-white rounded-xl p-5 border shadow-lg space-y-4 border-l-[6px] border-blue-500">
+                      <h3 className="font-black text-vale-dark uppercase text-sm flex items-center gap-2 border-b border-gray-100 pb-2"><FileSpreadsheet size={16} className="text-blue-500" /> Importar Dados</h3>
+                      <textarea 
+                        value={excelText} 
+                        onChange={e => setExcelText(e.target.value)} 
+                        className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg font-mono text-[10px] h-40 resize-none outline-none focus:border-blue-500" 
+                        placeholder="Cole aqui as colunas do Excel..."
+                      />
+                      <button onClick={handleImportExcel} disabled={isSyncing || !excelText} className="w-full bg-blue-500 text-white py-2.5 rounded-lg font-black text-xs uppercase shadow hover:bg-blue-600 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
+                          {isSyncing ? <Loader2 className="animate-spin" size={16}/> : <Plus size={16}/>} Processar Importação
+                      </button>
+                  </div>
+              )}
+          </div>
+
+          {/* ... (código existente da coluna direita) ... */}
+          <div className="lg:col-span-8">
+              {/* ... */}
+              {/* LISTA DE OMs */}
+              {activeTab === 'OMS' && (
+                  <div className="bg-white rounded-xl border shadow-lg overflow-hidden flex flex-col h-full min-h-[600px] border-gray-100">
+                      {/* ... (tabela OMs existente) ... */}
+                      <div className="flex-1 overflow-y-auto p-0 custom-scrollbar bg-white">
+                          <table className="w-full text-left border-collapse">
+                              <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                                  <tr>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">OM</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Tag</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Status PDF</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider text-right">Ações</th>
+                                  </tr>
+                              </thead>
                               <tbody className="divide-y divide-gray-100">
-                                  {(showEmpTrash ? employees.filter(e => e.status === 'TRASH') : employees.filter(e => e.status !== 'TRASH')).map(emp => (
-                                      <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
-                                          <td className="px-4 py-3 font-mono font-bold text-gray-600">{emp.matricula}</td>
-                                          <td className="px-4 py-3 font-bold text-gray-800">{emp.name}</td>
-                                          <td className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">{emp.function}</td>
-                                          <td className="px-4 py-3 text-right flex justify-end gap-2">
-                                              {showEmpTrash ? (<><button onClick={() => handleRestoreEmp(emp.id)} className="text-vale-green hover:bg-green-50 p-1.5 rounded"><RotateCcw size={16}/></button><button onClick={() => handlePermDeleteEmp(emp.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded"><XCircle size={16}/></button></>) : (<><button onClick={() => handleEditEmpClick(emp)} className="text-vale-blue hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16}/></button><button onClick={() => handleDeleteEmployee(emp.id)} className="text-red-400 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button></>)}
+                                  {oms.filter(o => o.omNumber.includes(searchLibrary) || o.tag.includes(searchLibrary)).map(om => (
+                                      <tr key={om.id} className="hover:bg-gray-50 transition-colors">
+                                          <td className="p-3 text-xs font-black text-blue-900">{om.omNumber}</td>
+                                          <td className="p-3 text-xs font-bold text-gray-700">{om.tag}</td>
+                                          <td className="p-3">
+                                              {om.pdfUrl ? (
+                                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100"><FileText size={12}/> VÁLIDO</span>
+                                              ) : (
+                                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100"><AlertTriangle size={12}/> PENDENTE</span>
+                                              )}
+                                          </td>
+                                          <td className="p-3 text-right flex justify-end gap-2">
+                                              <button onClick={() => setViewingOM(om)} className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-600 hover:text-white transition-all"><Eye size={16}/></button>
+                                              <button onClick={() => StorageService.deleteOM(om.id)} className="p-1.5 bg-red-50 text-red-400 rounded hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16}/></button>
                                           </td>
                                       </tr>
                                   ))}
@@ -552,183 +576,246 @@ export const Settings: React.FC = () => {
                           </table>
                       </div>
                   </div>
-              </div>
-          </div>
-      )}
-
-      {/* ... [ARTS Tab Content] ... */}
-      {activeTab === 'ARTS' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
-            <div className="lg:col-span-4 space-y-6">
-                <div className="bg-white p-6 rounded shadow border border-gray-200">
-                    <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2"><ScanLine size={20} className="text-vale-green" /> {isEditingArtId ? 'EDITAR ART' : 'NOVA ART PADRÃO'}</h3>
-                    <form onSubmit={handleCreateNewART} className="bg-gray-50 p-4 rounded border border-gray-200 shadow-inner">
-                        <div className="mb-4">
-                            <label className="block text-xs font-black text-gray-500 uppercase mb-2">1. PDF (OPCIONAL)</label>
-                            <div className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-all ${artPdfFile ? 'border-vale-green bg-green-50' : 'border-gray-300 hover:border-vale-blue bg-white'}`}>
-                                <input type="file" accept=".pdf" ref={fileInputRef} onChange={handlePdfSelection} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                <div className="flex flex-col items-center justify-center">
-                                    {artPdfFile ? <CheckCircle size={32} className="text-vale-green mb-2"/> : <Upload size={32} className="text-gray-400 mb-2"/>}
-                                    <span className="text-xs font-black text-gray-600 uppercase">{artPdfFile ? 'ANEXADO' : 'ANEXAR PDF'}</span>
-                                </div>
+              )}
+              {/* ... (outras tabelas) ... */}
+              {/* LISTA DE FUNCIONÁRIOS */}
+              {activeTab === 'EMPLOYEES' && (
+                  <div className="bg-white rounded-xl border shadow-lg overflow-hidden flex flex-col h-full min-h-[600px] border-gray-100">
+                        {/* Header da lista */}
+                        <div className="p-4 border-b bg-gray-50 flex flex-col md:flex-row justify-between items-center gap-3 shrink-0">
+                            <div>
+                                <span className="text-[9px] font-black uppercase text-gray-400 tracking-[0.2em]">Base de Dados</span>
+                                <h4 className="text-sm font-black text-gray-800 uppercase tracking-tighter mt-0.5">Biblioteca de Registros</h4>
+                            </div>
+                            <div className="relative w-full md:w-64">
+                                <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
+                                <input 
+                                    type="text" 
+                                    placeholder="Buscar..." 
+                                    value={searchLibrary} 
+                                    onChange={e => setSearchLibrary(e.target.value.toUpperCase())}
+                                    className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold uppercase outline-none focus:border-[#007e7a]"
+                                />
                             </div>
                         </div>
-                        <div className="mb-4"><label className="block text-xs font-black text-gray-500 uppercase mb-1">2. CÓDIGO ART</label><input id="artNumInput" placeholder="EX: 33777" value={artNum} onChange={e => setArtNum(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-sm focus:border-vale-green outline-none" /></div>
-                        <div className="mb-6"><label className="block text-xs font-black text-gray-500 uppercase mb-1">3. TAREFA / DESCRIÇÃO</label><input placeholder="EX: TROCA DE PNEUS..." value={artName} onChange={e => setArtName(e.target.value)} className="w-full border-2 border-gray-300 p-3 rounded font-bold uppercase text-sm focus:border-vale-green outline-none" /></div>
-                        <button type="submit" disabled={!artNum || !artName} className={`w-full bg-gradient-to-r from-vale-green to-teal-600 text-white font-black py-3 rounded flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 ${(!artNum || !artName) ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}`}><Edit2 size={18} /> {isEditingArtId ? 'EDITAR DETALHES' : 'DEFINIR RISCOS E PASSOS'}</button>
-                    </form>
-                </div>
-            </div>
-            <div className="lg:col-span-8">
-                <div className="bg-white p-6 rounded shadow border border-gray-200 h-full flex flex-col">
-                    <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
-                        <h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><BookOpen size={20} className="text-vale-green" /> BIBLIOTECA DE ARTs</h3>
-                        <div className="relative w-64"><input type="text" placeholder="BUSCAR ART..." value={artSearch} onChange={(e) => setArtSearch(e.target.value.toUpperCase())} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs font-bold uppercase focus:ring-1 focus:ring-vale-green outline-none"/><Search className="absolute left-3 top-2.5 text-gray-400" size={14} /></div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 max-h-[600px]">
-                        {filteredArts.length === 0 && <div className="text-center text-gray-400 py-10 font-bold text-sm">NENHUMA ART ENCONTRADA.</div>}
-                        {filteredArts.map(a => (
-                            <div key={a.id} className="group flex justify-between items-center bg-white border border-gray-200 p-4 rounded-lg hover:shadow-md hover:border-vale-green transition-all">
-                                <div className="flex items-start gap-4">
-                                    <div className="bg-gray-100 p-3 rounded-lg text-gray-500 group-hover:bg-green-100 group-hover:text-vale-green transition-colors"><FileText size={24} /></div>
-                                    <div><div className="flex items-center gap-2"><p className="font-black text-gray-800 text-lg">ART {a.code}</p>{a.pdfUrl && <span className="bg-blue-100 text-vale-blue text-[9px] px-2 py-0.5 rounded font-black">PDF</span>}</div><p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{a.taskName}</p></div>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => setViewingArt(a)} className="bg-gray-100 text-vale-darkgray hover:bg-gray-200 px-3 py-2 rounded text-xs font-black flex items-center gap-1 transition-colors border border-gray-200"><Eye size={14} /> VISUALIZAR</button>
-                                    <button onClick={() => handleEditArtClick(a)} className="bg-vale-blue text-white hover:bg-[#004a7c] px-3 py-2 rounded text-xs font-black flex items-center gap-1 transition-colors"><Edit2 size={14} /> EDITAR</button>
-                                    <button onClick={() => handleDeleteART(a.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded transition-colors"><Trash2 size={18} /></button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* --- OMS Tab (PROFESSIONAL REDESIGN) --- */}
-      {activeTab === 'OMS' && (
-          <div className="animate-fadeIn space-y-6">
-              <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                  <div className="bg-vale-dark p-6 border-b-4 border-vale-green flex justify-between items-center text-white">
-                      <div className="flex items-center gap-4">
-                          <div className="p-3 bg-white/10 rounded-lg"><FileSearch size={32} className="text-vale-green" /></div>
-                          <div><h3 className="font-black text-2xl uppercase tracking-tighter">Cadastro de OM</h3><p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Preencha os dados manualmente ou anexe um PDF para registro</p></div>
-                      </div>
-                  </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2">
-                      <div className="p-8 bg-gray-50 border-r border-gray-200 flex flex-col justify-center relative">
-                          <div className={`relative border-4 border-dashed rounded-3xl h-full min-h-[400px] flex flex-col items-center justify-center text-center transition-all duration-300 ${dragActive ? 'border-vale-green bg-green-50 scale-[1.02]' : 'border-gray-300 bg-white hover:border-vale-blue'}`} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
-                              {omFile ? (
-                                  <div className="flex flex-col items-center relative z-10 w-full px-8"><div className="w-20 h-20 bg-green-100 rounded-2xl flex items-center justify-center mb-4 shadow-lg border-2 border-green-200"><FileText size={40} className="text-green-600" /></div><h4 className="text-lg font-black text-gray-800 uppercase mb-1 line-clamp-1 break-all">{omFile.name}</h4><p className="text-xs font-bold text-gray-400 uppercase mb-6">{(omFile.size / 1024).toFixed(1)} KB • PDF</p><div className="flex gap-3 w-full"><button onClick={() => document.getElementById('omUpload')?.click()} className="flex-1 py-3 px-4 bg-gray-100 text-gray-600 rounded-xl font-black text-xs hover:bg-gray-200 transition-colors uppercase">Trocar Arquivo</button></div></div>
-                              ) : (
-                                  <div className="flex flex-col items-center p-8 pointer-events-none"><div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 shadow-inner"><CloudLightning size={48} className="text-gray-400" /></div><h4 className="text-xl font-black text-gray-700 uppercase mb-2">Arraste sua OM aqui</h4><p className="text-xs font-bold text-gray-400 uppercase max-w-[200px] mb-6">Ou preencha manualmente os campos ao lado.</p><label htmlFor="omUpload" className="pointer-events-auto cursor-pointer bg-vale-dark text-white px-8 py-3 rounded-xl font-black text-xs hover:bg-black transition-transform active:scale-95 shadow-lg uppercase flex items-center gap-2"><Upload size={16} /> Selecionar Arquivo</label></div>
-                              )}
-                              <input id="omUpload" type="file" accept=".pdf" onChange={handleOmFileSelect} className="hidden" />
-                          </div>
-                      </div>
-                      <div className="p-8 bg-white flex flex-col h-full overflow-y-auto">
-                          <h4 className="font-black text-gray-400 text-xs uppercase mb-6 flex items-center gap-2 border-b border-gray-100 pb-2"><Database size={14} /> Dados da Ordem</h4>
-                          <div className="space-y-6 flex-1">
-                              <div className="grid grid-cols-2 gap-6">
-                                  <div className="group"><label className="block text-[10px] font-black text-gray-400 uppercase mb-1.5 group-focus-within:text-vale-green transition-colors flex justify-between">Número da OM</label><div className="relative"><input value={omNumber} onChange={e => setOmNumber(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 text-gray-800 p-4 rounded-xl font-black text-lg focus:bg-white focus:border-vale-green focus:ring-4 focus:ring-green-50 outline-none transition-all uppercase" placeholder="0000..." />{omNumber && <CheckCircle2 size={18} className="absolute right-4 top-5 text-green-500" />}</div></div>
-                                  <div className="group"><label className="block text-[10px] font-black text-gray-400 uppercase mb-1.5 group-focus-within:text-vale-green transition-colors">Tag / Equipamento</label><div className="relative"><input value={omTag} onChange={e => setOmTag(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 text-gray-800 p-4 rounded-xl font-black text-lg focus:bg-white focus:border-vale-green focus:ring-4 focus:ring-green-50 outline-none transition-all uppercase" placeholder="TAG..." />{omTag && <CheckCircle2 size={18} className="absolute right-4 top-5 text-green-500" />}</div></div>
-                              </div>
-                              <div className="group"><label className="block text-[10px] font-black text-gray-400 uppercase mb-1.5 group-focus-within:text-vale-green transition-colors">Descrição Técnica</label><textarea value={omDesc} onChange={e => setOmDesc(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 text-gray-800 p-4 rounded-xl font-bold text-sm focus:bg-white focus:border-vale-green focus:ring-4 focus:ring-green-50 outline-none transition-all uppercase min-h-[100px] resize-none" placeholder="Descreva o serviço a ser executado..." /></div>
-                              
-                              <div>
-                                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-3">Classificação de Prioridade</label>
-                                  <div className="grid grid-cols-2 gap-4">
-                                      <button onClick={() => setOmType('CORRETIVA')} className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all relative overflow-hidden ${omType === 'CORRETIVA' ? 'bg-red-50 border-red-500 text-red-600 shadow-lg scale-[1.02]' : 'border-gray-200 text-gray-400 hover:border-red-200 hover:bg-red-50/50'}`}><AlertTriangle size={24} strokeWidth={3} /><span className="font-black text-xs uppercase tracking-widest">Corretiva</span>{omType === 'CORRETIVA' && <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}</button>
-                                      <button onClick={() => setOmType('PREVENTIVA')} className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all relative overflow-hidden ${omType === 'PREVENTIVA' ? 'bg-blue-50 border-vale-blue text-vale-blue shadow-lg scale-[1.02]' : 'border-gray-200 text-gray-400 hover:border-blue-200 hover:bg-blue-50/50'}`}><Calendar size={24} strokeWidth={3} /><span className="font-black text-xs uppercase tracking-widest">Preventiva</span>{omType === 'PREVENTIVA' && <div className="absolute top-2 right-2 w-2 h-2 bg-vale-blue rounded-full"></div>}</button>
-                                  </div>
-                              </div>
-                              {omType === 'PREVENTIVA' && (
-                                  <div className="animate-fadeIn p-4 bg-blue-50 rounded-xl border border-blue-100"><label className="block text-[10px] font-black text-blue-400 uppercase mb-2 flex items-center gap-1"><LinkIcon size={12}/> Vínculo com Programação (Opcional)</label><select value={linkedScheduleId} onChange={handleLinkSchedule} className="w-full bg-white border border-blue-200 p-2 rounded-lg font-bold text-xs uppercase text-blue-900 focus:outline-none"><option value="">-- SELECIONE ITEM --</option>{scheduleItems.map(s => (<option key={s.id} value={s.id}>{s.frotaOm} - {s.description.substring(0, 30)}...</option>))}</select></div>
-                              )}
-                          </div>
-                          <div className="mt-8 pt-6 border-t border-gray-100">
-                              <button onClick={handleSaveOM} disabled={isSavingOm || !omNumber || !omType} className={`w-full py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all ${(isSavingOm || !omNumber || !omType) ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-vale-green to-teal-600 text-white hover:brightness-110 active:scale-95'}`}>{isSavingOm ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}{isSavingOm ? 'Registrando...' : 'Confirmar Cadastro'}</button>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* ... [SCHEDULE Tab Content] ... */}
-      {activeTab === 'SCHEDULE' && (
-          <div className="bg-white p-6 rounded shadow border border-gray-200 animate-fadeIn">
-              <div className="flex justify-between items-start mb-6">
-                  <div><h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><Calendar size={20} className="text-vale-blue" /> IMPORTAR PROGRAMAÇÃO SEMANAL</h3><p className="text-xs text-gray-500 mt-1">Cole os dados do Excel/Project abaixo (Copiar tabela inteira).</p></div>
-                  <button onClick={handleClearSchedule} className="bg-red-100 text-red-700 px-4 py-2 rounded text-xs font-black flex items-center gap-2 hover:bg-red-200 transition-colors"><Trash2 size={14}/> LIMPAR TUDO</button>
-              </div>
-              {schedulePreview.length === 0 ? (<><textarea value={scheduleInput} onChange={e => setScheduleInput(e.target.value)} className="w-full h-64 border-2 border-gray-300 rounded p-4 font-mono text-xs mb-4 focus:border-vale-blue outline-none" placeholder="COLE AS LINHAS DO EXCEL AQUI..." /><div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">{scheduleStatus}</span><button onClick={handlePreviewSchedule} disabled={isProcessingSchedule || !scheduleInput} className="bg-gradient-to-r from-vale-blue to-blue-600 text-white px-8 py-3 rounded font-black shadow-lg hover:brightness-110 disabled:opacity-50 flex items-center gap-2">{isProcessingSchedule ? <Loader2 className="animate-spin" size={16}/> : <Table size={16}/>} PRÉ-VISUALIZAR DADOS</button></div></>) : (<div className="animate-fadeIn"><div className="flex justify-between items-center mb-4 bg-green-50 p-3 rounded border border-green-200"><span className="text-sm font-black text-green-800"><CheckCircle size={16} className="inline mr-2"/>{schedulePreview.length} ITENS IDENTIFICADOS</span><div className="flex gap-2 justify-center"><button onClick={handleCancelPreview} className="bg-gray-200 text-gray-700 px-4 py-2 rounded text-xs font-black hover:bg-gray-300">CANCELAR</button><button onClick={handleConfirmImport} className="bg-gradient-to-r from-vale-green to-teal-600 text-white px-4 py-2 rounded text-xs font-black hover:brightness-110 flex items-center gap-2 shadow-lg"><Save size={16}/> CONFIRMAR IMPORTAÇÃO</button></div></div><div className="max-h-[500px] overflow-auto border border-gray-300 rounded"><table className="min-w-full text-xs"><thead className="bg-gray-100 font-bold sticky top-0"><tr><th className="p-2 border">FROTA/OM</th><th className="p-2 border">DESCRIÇÃO</th><th className="p-2 border">DATA INI</th><th className="p-2 border">H. INI</th><th className="p-2 border">REC</th></tr></thead><tbody>{schedulePreview.map((item, idx) => (<tr key={idx} className="hover:bg-gray-50"><td className="p-2 border">{item.frotaOm}</td><td className="p-2 border truncate max-w-[200px]">{item.description}</td><td className="p-2 border text-center">{item.dateStart}</td><td className="p-2 border text-center">{item.timeStart}</td><td className="p-2 border">{item.resources}</td></tr>))}</tbody></table></div></div>)}
-          </div>
-      )}
-
-      {/* ... [USERS Tab Content] ... */}
-      {activeTab === 'USERS' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
-              <div className="lg:col-span-1">
-                  <div className="bg-white p-6 rounded shadow border border-gray-200 sticky top-4">
-                      <h3 className="font-bold text-lg mb-4 text-vale-darkgray flex items-center gap-2"><UserCheck size={20} className="text-vale-green" /> {isEditingUser ? 'EDITAR ACESSO' : 'NOVO USUÁRIO'}</h3>
-                      <form onSubmit={handleSaveUser} className="space-y-4">
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">LOGIN</label><input value={userLogin} onChange={e => setUserLogin(e.target.value.toUpperCase())} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">SENHA</label><div className="relative"><input type="password" value={userPass} onChange={e => setUserPass(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold" required={!isEditingUser} placeholder={isEditingUser ? "Preencha para alterar" : ""} /><Lock size={16} className="absolute right-3 top-3 text-gray-400"/></div></div>
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">NOME</label><input value={userName} onChange={e => setUserName(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">MATRÍCULA</label><input value={userMat} onChange={e => setUserMat(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase" required /></div>
-                          <div><label className="block text-xs font-black text-gray-500 mb-1">NÍVEL</label><select value={userRole} onChange={e => setUserRole(e.target.value as any)} className="w-full border-2 border-gray-300 rounded p-2 font-bold uppercase bg-white"><option value="OPERADOR">OPERADOR (BÁSICO)</option><option value="ADMIN">ADMINISTRADOR (TOTAL)</option></select></div>
-                          <div className="flex gap-2 pt-2 justify-center">{isEditingUser && <button type="button" onClick={resetUserForm} className="px-4 py-2 bg-gray-200 text-gray-600 font-bold rounded hover:bg-gray-300">CANCELAR</button>}<button type="submit" disabled={isLoadingUsers} className="flex-1 bg-gradient-to-r from-vale-green to-teal-600 text-white font-black py-2 rounded hover:brightness-110 shadow-lg flex items-center justify-center gap-2">{isLoadingUsers ? <Loader2 className="animate-spin" size={16}/> : (isEditingUser ? 'SALVAR' : 'CRIAR')}</button></div>
-                      </form>
-                  </div>
-              </div>
-              <div className="lg:col-span-2">
-                  <div className="bg-white p-6 rounded shadow border border-gray-200">
-                      <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-vale-darkgray flex items-center gap-2"><Shield size={20} /> CONTROLE DE ACESSO</h3>{isLoadingUsers && <Loader2 className="animate-spin text-vale-green" />}</div>
-                      <div className="overflow-x-auto">
-                          <table className="min-w-full text-sm">
-                              <thead className="bg-gray-50 border-b-2 border-gray-200"><tr><th className="px-4 py-3 text-left font-black text-gray-500">LOGIN</th><th className="px-4 py-3 text-left font-black text-gray-500">NOME</th><th className="px-4 py-3 text-left font-black text-gray-500">PERFIL</th><th className="px-4 py-3 text-right font-black text-gray-500">AÇÕES</th></tr></thead>
-                              <tbody className="divide-y divide-gray-100">{users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition-colors"><td className="px-4 py-3 font-mono font-bold text-gray-600">{u.login}</td><td className="px-4 py-3 font-bold text-gray-800">{u.name}</td><td className="px-4 py-3"><span className={`text-[10px] px-2 py-1 rounded font-black ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>{u.role}</span></td><td className="px-4 py-3 text-right flex justify-end gap-2">{u.role !== 'ADMIN' || u.login !== 'ADMIN' ? (<><button onClick={() => handleEditUserClick(u)} className="text-vale-blue hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16}/></button><button onClick={() => handleDeleteUser(u.id)} className="text-red-400 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button></>) : <span className="text-[10px] text-gray-400 font-bold italic">SISTEMA</span>}</td></tr>))}</tbody>
+                      <div className="flex-1 overflow-y-auto p-0 custom-scrollbar bg-white">
+                          <table className="w-full text-left border-collapse">
+                              <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                                  <tr>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Matrícula</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Nome</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Função</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider text-right">Ações</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                  {employees.filter(e => e.name.includes(searchLibrary)).map(emp => (
+                                      <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                                          <td className="p-3 text-xs font-mono font-bold text-gray-500">{emp.matricula}</td>
+                                          <td className="p-3 text-xs font-black text-gray-800">{emp.name}</td>
+                                          <td className="p-3 text-xs font-bold text-blue-600 bg-blue-50 rounded inline-block my-1 px-2 mx-4">{emp.function}</td>
+                                          <td className="p-3 text-right">
+                                              <button onClick={() => StorageService.deleteEmployee(emp.id)} className="p-1.5 bg-red-50 text-red-400 rounded hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16}/></button>
+                                          </td>
+                                      </tr>
+                                  ))}
+                              </tbody>
                           </table>
                       </div>
                   </div>
-              </div>
+              )}
+              {/* ... (Resto das tabelas) ... */}
+              {/* LISTA DE ARTs */}
+              {activeTab === 'PROCEDURES' && (
+                  <div className="bg-white rounded-xl border shadow-lg overflow-hidden flex flex-col h-full min-h-[600px] border-gray-100">
+                      {/* ... header ... */}
+                      <div className="flex-1 overflow-y-auto p-0 custom-scrollbar bg-white">
+                          <table className="w-full text-left border-collapse">
+                              <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                                  <tr>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Código</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Tarefa</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">PDF</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider text-right">Ações</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                  {arts.filter(a => a.code.includes(searchLibrary) || a.taskName.includes(searchLibrary)).map(art => (
+                                      <tr key={art.id} className="hover:bg-gray-50 transition-colors">
+                                          <td className="p-3 text-xs font-black text-orange-600">{art.code}</td>
+                                          <td className="p-3 text-xs font-bold text-gray-700">{art.taskName}</td>
+                                          <td className="p-3">
+                                              {art.pdfUrl ? (
+                                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100"><FileText size={12}/> VÁLIDO</span>
+                                              ) : (
+                                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-gray-400 bg-gray-100 px-2 py-0.5 rounded">--</span>
+                                              )}
+                                          </td>
+                                          <td className="p-3 text-right flex justify-end gap-2">
+                                              <button onClick={() => setViewingART(art)} className="p-1.5 bg-orange-50 text-orange-600 rounded hover:bg-orange-500 hover:text-white transition-all"><Eye size={16}/></button>
+                                              <button onClick={() => StorageService.deleteART(art.id)} className="p-1.5 bg-red-50 text-red-400 rounded hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16}/></button>
+                                          </td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              )}
+              {/* LISTA DE USUÁRIOS */}
+              {activeTab === 'USERS' && (
+                  <div className="bg-white rounded-xl border shadow-lg overflow-hidden flex flex-col h-full min-h-[600px] border-gray-100">
+                      {/* ... header ... */}
+                      <div className="flex-1 overflow-y-auto p-0 custom-scrollbar bg-white">
+                          <table className="w-full text-left border-collapse">
+                              <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                                  <tr>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Login</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Nome</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Permissão</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider text-right">Ações</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                  {users.filter(u => u.name.includes(searchLibrary)).map(user => (
+                                      <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                                          <td className="p-3 text-xs font-mono font-bold text-gray-500 flex items-center gap-2"><Key size={12}/> {user.login}</td>
+                                          <td className="p-3 text-xs font-black text-gray-800">{user.name}</td>
+                                          <td className="p-3">
+                                              <span className={`text-[9px] font-black px-2 py-0.5 rounded ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>{user.role}</span>
+                                          </td>
+                                          <td className="p-3 text-right">
+                                              <button onClick={() => StorageService.deleteUser(user.id)} className="p-1.5 bg-red-50 text-red-400 rounded hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16}/></button>
+                                          </td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              )}
+              {/* LISTA DE AGENDAMENTO (SIMPLES) */}
+              {activeTab === 'SCHEDULE' && (
+                  <div className="bg-white rounded-xl border shadow-lg overflow-hidden flex flex-col h-full min-h-[600px] border-gray-100">
+                      {/* ... header ... */}
+                      <div className="flex-1 overflow-y-auto p-0 custom-scrollbar bg-white">
+                          <table className="w-full text-left border-collapse">
+                              <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                                  <tr>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Frota/OM</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider">Data</th>
+                                      <th className="p-3 text-[10px] font-black text-gray-500 uppercase tracking-wider text-right">Ações</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                  {schedule.slice(0, 50).map(s => (
+                                      <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                                          <td className="p-3 text-xs font-black text-gray-800 whitespace-pre-wrap">{s.frotaOm}</td>
+                                          <td className="p-3 text-xs font-bold text-gray-500">{s.dateMin}</td>
+                                          <td className="p-3 text-right">
+                                              <button onClick={() => StorageService.deleteScheduleItem(s.id)} className="p-1.5 bg-red-50 text-red-400 rounded hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16}/></button>
+                                          </td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              )}
           </div>
-      )}
+      </div>
 
-      {/* [MODALS - ART Review and View, kept as is] */}
-      {showArtReview && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] p-4 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden relative shadow-2xl">
-                <div className="bg-vale-dark p-4 flex justify-between items-center text-white shrink-0"><div className="flex items-center gap-3"><Edit2 size={20} className="text-vale-green"/> <div><h3 className="font-black text-lg leading-none uppercase">{isEditingArtId ? 'EDITAR ART' : 'NOVA ART'} - {artNum}</h3><p className="text-[10px] font-bold text-gray-400">{artName}</p></div></div><button onClick={() => setShowArtReview(false)} className="hover:bg-gray-700 p-2 rounded"><X size={24}/></button></div>
-                <div className="flex-1 overflow-y-auto p-6 bg-gray-100 space-y-6 custom-scrollbar">
-                    <div className="bg-white p-4 rounded shadow"><div className="flex justify-between items-center mb-2 border-b pb-2"><h4 className="font-black text-vale-darkgray">1. ANÁLISE DE RISCOS</h4><button onClick={addRisk} className="text-xs bg-green-100 text-vale-green px-2 py-1 rounded font-bold flex items-center gap-1 hover:bg-green-200"><PlusCircle size={14}/> ADICIONAR RISCO</button></div><div className="space-y-2">{artRisks.map((r, i) => (<div key={i} className="grid grid-cols-12 gap-2 items-center text-xs"><input value={r.situation} onChange={e => updateRisk(i, 'situation', e.target.value)} className="col-span-8 border p-2 rounded font-bold uppercase" placeholder="SITUAÇÃO DE RISCO" /><input value={r.riskLevel} onChange={e => updateRisk(i, 'riskLevel', e.target.value)} className="col-span-3 border p-2 rounded text-center font-bold uppercase" placeholder="NÍVEL" /><button onClick={() => removeRisk(i)} className="col-span-1 text-red-500 hover:bg-red-50 p-2 rounded flex justify-center"><Trash2 size={16}/></button></div>))}</div></div>
-                    <div className="bg-white p-4 rounded shadow"><h4 className="font-black text-vale-darkgray mb-2 border-b pb-2">2. MEDIDAS DE CONTROLE (RESUMO)</h4><textarea value={artControlMeasures} onChange={e => setArtControlMeasures(e.target.value)} className="w-full border p-2 rounded font-bold h-20 text-xs uppercase" placeholder="Descreva as medidas gerais..." /></div>
-                    <div className="bg-white p-4 rounded shadow"><div className="flex justify-between items-center mb-2 border-b pb-2"><h4 className="font-black text-vale-darkgray">3. PASSO A PASSO DA TAREFA</h4><button onClick={addStep} className="text-xs bg-green-100 text-vale-green px-2 py-1 rounded font-bold flex items-center gap-1 hover:bg-green-200"><PlusCircle size={14}/> ADICIONAR PASSO</button></div><div className="space-y-2">{artSteps.map((s, i) => (<div key={i} className="grid grid-cols-12 gap-2 items-center text-xs"><div className="col-span-1 bg-gray-100 text-center py-2 font-black rounded">{i+1}</div><input value={s.step} onChange={e => updateStep(i, 'step', e.target.value)} className="col-span-8 border p-2 rounded font-bold uppercase" placeholder="DESCRIÇÃO DO PASSO" /><input value={s.riskLevel} onChange={e => updateStep(i, 'riskLevel', e.target.value)} className="col-span-2 border p-2 rounded text-center font-bold uppercase" placeholder="RISCO" /><button onClick={() => removeStep(i)} className="col-span-1 text-red-500 hover:bg-red-50 p-2 rounded flex justify-center"><Trash2 size={16}/></button></div>))}</div></div>
+       {/* VISUALIZADOR DE OM (MODO CINEMA) */}
+      {viewingOM && (
+        <div className="fixed inset-0 z-[100] bg-[#000000]/95 flex items-center justify-center p-0 backdrop-blur-xl animate-fadeIn">
+            <div className="w-full h-full flex flex-col relative">
+                {/* Header */}
+                <div className="bg-gray-900 text-white p-3 flex justify-between items-center shadow-2xl border-b border-gray-800 shrink-0 z-50">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-vale-green p-1.5 rounded"><BrainCircuit size={18}/></div>
+                        <div>
+                            <h3 className="font-black text-sm tracking-tight uppercase text-gray-100">Visualização de OM</h3>
+                            <p className="text-[9px] font-bold text-vale-green tracking-widest uppercase">OM: {viewingOM.omNumber} | TAG: {viewingOM.tag}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {omBlobUrl && (
+                            <a href={omBlobUrl} download className="hidden md:flex px-3 py-1.5 bg-gray-700 text-white font-bold rounded-lg text-[9px] uppercase hover:bg-gray-600 transition-all items-center gap-1">
+                                <Download size={12}/> Baixar
+                            </a>
+                        )}
+                        <button onClick={() => setViewingOM(null)} className="p-2 bg-gray-800 hover:bg-red-600 text-white rounded-full transition-all shadow-inner"><X size={18}/></button>
+                    </div>
                 </div>
-                <div className="p-4 bg-white border-t border-gray-200 flex justify-center gap-3 shrink-0"><button onClick={() => setShowArtReview(false)} className="px-6 py-3 rounded-lg font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors uppercase text-xs">CANCELAR</button><button onClick={handleConfirmSaveART} disabled={isSavingArt} className="bg-gradient-to-r from-vale-green to-teal-600 hover:brightness-110 text-white px-8 py-3 rounded-lg font-black shadow-lg flex items-center gap-2 transition-transform active:scale-95 uppercase text-xs">{isSavingArt ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />}{isSavingArt ? 'SALVANDO...' : 'SALVAR ART NA BIBLIOTECA'}</button></div>
+
+                {/* PDF */}
+                <div className="flex-1 bg-[#1a1a1a] relative overflow-hidden flex items-center justify-center p-0">
+                    {omBlobUrl ? (
+                        <div className="w-full h-full bg-white relative">
+                             <iframe
+                                src={omBlobUrl}
+                                className="w-full h-full border-none"
+                                title="Visualizador"
+                            />
+                        </div>
+                    ) : (
+                        <div className="text-center p-10 max-w-lg">
+                            <Info size={64} className="text-gray-600 mx-auto mb-6" />
+                            <h4 className="text-2xl font-black text-gray-400 uppercase tracking-widest">Documento Não Digitalizado</h4>
+                            <p className="text-gray-500 font-bold mt-4">Esta ordem foi aberta sem anexo PDF.</p>
+                            <div className="mt-8 bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                                <p className="text-xs text-gray-300 font-mono uppercase text-left">{viewingOM.description}</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
       )}
 
-      {viewingArt && (
-          <div className="fixed inset-0 bg-vale-dark/95 flex items-center justify-center z-[80] p-4 backdrop-blur-md animate-fadeIn">
-              <div className="bg-white rounded-xl w-full max-w-5xl h-[95vh] flex flex-col overflow-hidden relative shadow-2xl">
-                  <div className="bg-vale-green text-white p-4 flex justify-between items-center shrink-0 shadow-md"><div className="flex items-center gap-3"><FileText size={24} /><div><h3 className="font-black text-lg leading-none uppercase tracking-tight">VISUALIZAÇÃO DE ART PADRÃO</h3><p className="text-[10px] font-bold text-white/70 uppercase mt-1">BIBLIOTECA TÉCNICA</p></div></div><button onClick={() => setViewingArt(null)} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X size={28}/></button></div>
-                  <div className="flex-1 overflow-y-auto bg-gray-200 p-6 custom-scrollbar">
-                      {viewingArt.pdfUrl && (<div className="mb-8 border-b-4 border-gray-300 pb-8"><h4 className="font-black text-gray-700 mb-4 flex items-center gap-2"><FileText size={18}/> PDF ANEXADO (ORIGINAL)</h4><div className="bg-white p-2 border border-gray-300 shadow-md h-[500px]"><iframe src={viewingArt.pdfUrl} className="w-full h-full border-none" title="PDF Original" /></div></div>)}
-                      {renderStandardDocument(viewingArt)}
-                  </div>
-                  <div className="p-4 bg-white border-t border-gray-200 flex justify-end shrink-0"><button onClick={() => setViewingArt(null)} className="px-8 py-3 bg-gray-100 text-gray-700 font-black rounded-lg hover:bg-gray-200 transition-colors uppercase text-xs">FECHAR</button></div>
-              </div>
-          </div>
-      )}
+      {/* VISUALIZADOR DE ART (MODO CINEMA) */}
+      {viewingART && (
+        <div className="fixed inset-0 z-[100] bg-[#000000]/95 flex items-center justify-center p-0 backdrop-blur-xl animate-fadeIn">
+            <div className="w-full h-full flex flex-col relative">
+                {/* Header */}
+                <div className="bg-gray-900 text-white p-3 flex justify-between items-center shadow-2xl border-b border-gray-800 shrink-0 z-50">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-orange-500 p-1.5 rounded"><FileSearch size={18}/></div>
+                        <div>
+                            <h3 className="font-black text-sm tracking-tight uppercase text-gray-100">Manual de Procedimento</h3>
+                            <p className="text-[9px] font-bold text-orange-500 tracking-widest uppercase">ART: {viewingART.code}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {artBlobUrl && (
+                            <a href={artBlobUrl} download className="hidden md:flex px-3 py-1.5 bg-gray-700 text-white font-bold rounded-lg text-[9px] uppercase hover:bg-gray-600 transition-all items-center gap-1">
+                                <Download size={12}/> Baixar
+                            </a>
+                        )}
+                        <button onClick={() => setViewingART(null)} className="p-2 bg-gray-800 hover:bg-red-600 text-white rounded-full transition-all shadow-inner"><X size={18}/></button>
+                    </div>
+                </div>
 
-      {showToast && (
-          <div className={`fixed bottom-10 right-10 px-6 py-4 rounded-xl shadow-2xl text-white font-black uppercase text-xs flex items-center gap-3 animate-fade-in-up z-50 ${showToast.type === 'success' ? 'bg-vale-green' : 'bg-red-500'}`}>
-              <CheckCircle2 size={20} /> {showToast.message}
-          </div>
+                {/* PDF */}
+                <div className="flex-1 bg-[#1a1a1a] relative overflow-hidden flex items-center justify-center p-0">
+                    {artBlobUrl ? (
+                        <div className="w-full h-full bg-white relative">
+                             <iframe
+                                src={artBlobUrl}
+                                className="w-full h-full border-none"
+                                title="Visualizador"
+                            />
+                        </div>
+                    ) : (
+                        <div className="bg-white p-20 text-center rounded-3xl">
+                            <Info size={48} className="text-orange-500 mx-auto mb-4" />
+                            <h4 className="text-xl font-black text-gray-800 uppercase">Resumo Técnico</h4>
+                            <p className="mt-4 text-gray-600 font-bold uppercase">{viewingART.controlMeasures}</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
       )}
     </div>
   );
