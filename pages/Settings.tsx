@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
-import { checkConnection, supabase } from '../services/supabase';
+import { supabase, checkConnection } from '../services/supabase';
 import { Employee, User, OMRecord, RegisteredART, ScheduleItem, DocumentRecord } from '../types';
 import { 
   Save, Database, Users, Shield, 
-  BrainCircuit, Trash2, Plus, 
-  Eye, X, Info, FileText, Lock, Upload, RefreshCw, Cloud, Edit2, Calendar, LayoutList, Eraser, CheckCircle2, Sparkles, Loader2, RotateCcw, FileSearch, Terminal, Copy, Zap
+  BrainCircuit, Trash2,
+  Eye, X, FileText, Cloud, Edit2, Calendar, Eraser, CheckCircle2, Sparkles, Loader2, Copy, Zap, Terminal, RefreshCw
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -278,9 +278,33 @@ export const Settings: React.FC = () => {
       setTimeout(() => setIsSyncing(false), 1000);
   };
 
-  const handleClearCache = () => {
-    if (window.confirm("⚠️ ATENÇÃO: Isso irá apagar todos os dados locais salvos (Cache) e você será deslogado. Deseja continuar?")) {
+  const handleClearCache = async () => {
+    if (window.confirm("⚠️ ATENÇÃO: Isso irá apagar todos os dados locais salvos (Cache), limpar o cache do navegador e você será deslogado. Deseja continuar?")) {
+        // Clear Local Storage
         localStorage.clear();
+        
+        // Clear Cache API (Service Worker)
+        if ('caches' in window) {
+            try {
+                const keys = await caches.keys();
+                await Promise.all(keys.map(key => caches.delete(key)));
+            } catch (e) {
+                console.error("Erro ao limpar cache storage", e);
+            }
+        }
+        
+        // Unregister Service Worker
+        if ('serviceWorker' in navigator) {
+            try {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for(let registration of registrations) {
+                    await registration.unregister();
+                }
+            } catch (e) {
+                console.error("Erro ao remover service worker", e);
+            }
+        }
+
         window.location.href = '/';
     }
   };
@@ -293,6 +317,7 @@ export const Settings: React.FC = () => {
       setScheduleItems(StorageService.getSchedule());
   };
 
+  // ... (PDF Extraction logic remains same as previous version) ...
   const extractDataFromPdf = async (file: File, isEditMode = false) => {
     setIsExtracting(true);
     try {
@@ -431,22 +456,6 @@ export const Settings: React.FC = () => {
           // Precisamos de pelo menos 2 colunas para fazer sentido
           if (cols.length < 2) continue;
           
-          // Mapeamento baseado na imagem fornecida (14 colunas agora)
-          // 0: FROTA/OM
-          // 1: DESCRIÇÃO DA ATIVIDADE
-          // 2: DATA MIN
-          // 3: DATA MAX
-          // 4: PRIORIDADE
-          // 5: N DE PESSOAS
-          // 6: H
-          // 7: DATA INICIO
-          // 8: DATA FIM
-          // 9: CENTRO DE TRABALHO
-          // 10: HORA INICIO
-          // 11: HORA FIM
-          // 12: RECURSOS
-          // 13: RECURSOS 2
-
           const frotaOm = cols[0]?.trim().toUpperCase() || 'N/D';
           const description = cols[1]?.trim().toUpperCase() || 'MANUTENÇÃO PROGRAMADA';
           const dateMin = cols[2]?.trim() || '';

@@ -1,5 +1,5 @@
 
-import { DocumentRecord, Employee, RegisteredART, User, ScheduleItem, ActiveMaintenance, MaintenanceLog, ChatMessage, OMRecord, ChecklistTemplateItem, AvailabilityRecord, AvailabilityStatus } from '../types';
+import { DocumentRecord, Employee, RegisteredART, User, ScheduleItem, ActiveMaintenance, MaintenanceLog, ChatMessage, OMRecord, ChecklistTemplateItem, AvailabilityRecord } from '../types';
 import { supabase } from './supabase';
 
 export interface NotificationItem {
@@ -21,7 +21,6 @@ const KEYS = {
   OMS: 'safemaint_oms',
   CHECKLIST_TEMPLATE: 'safemaint_checklist_template',
   AVAILABILITY: 'safemaint_availability', 
-  SYNC_QUEUE: 'safemaint_sync_queue',
   USERS: 'safemaint_users'
 };
 
@@ -44,7 +43,6 @@ const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
         localStorage.setItem(key, JSON.stringify(cleanData));
     } catch (e) {
         console.error('[STORAGE] Erro de cota/espaço no LocalStorage.', e);
-        // Opcional: Notificar usuário que o espaço local acabou
     }
 };
 
@@ -88,7 +86,7 @@ const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
 
 export const StorageService = {
   initialSync: async () => {
-      // Se estiver offline, não tenta sincronizar para não sobrescrever dados
+      // Se estiver offline, não tenta sincronizar
       if (!navigator.onLine) return;
 
       const tables = [
@@ -109,21 +107,13 @@ export const StorageService = {
           try {
               const { data, error } = await supabase.from(t.remote).select('*');
               
-              if (error) {
-                  // Se houver erro (ex: tabela não existe ou erro de rede), ignora e mantém local
-                  console.warn(`[SYNC] Erro ao buscar ${t.remote}:`, error.message);
-                  continue;
-              }
-
-              if (data) {
-                  // Lógica de Merge: Mantém itens locais que não existem no remoto (criação offline)
-                  // Atualiza itens que existem em ambos (prioridade remoto para consistência)
+              if (!error && data) {
                   const localData = JSON.parse(localStorage.getItem(t.local) || '[]');
                   const remoteIds = new Set(data.map((item: any) => item.id));
                   
                   const merged = [...data];
                   
-                  // Adiciona itens locais que ainda não subiram
+                  // Mantém itens locais que não existem no remoto (criação offline)
                   localData.forEach((lItem: any) => {
                       if (!remoteIds.has(lItem.id)) {
                           merged.push(lItem);
@@ -132,16 +122,12 @@ export const StorageService = {
 
                   trySaveLocal(t.local, merged, t.strip || []);
                   
-                  if (t.local === KEYS.CHAT) {
-                      window.dispatchEvent(new Event('safemaint_chat_update'));
-                  }
-
                   if (t.local === KEYS.CHECKLIST_TEMPLATE && merged.length === 0) {
                       trySaveLocal(KEYS.CHECKLIST_TEMPLATE, DEFAULT_CHECKLIST);
                   }
               }
           } catch (e) {
-              console.error(`Erro crítico ao sincronizar ${t.remote}:`, e);
+              console.warn(`[SYNC] Falha leve ao sincronizar ${t.remote}`);
           }
       }
       triggerUpdate();
@@ -150,17 +136,18 @@ export const StorageService = {
   getPendingSyncCount: () => 0,
 
   validateUser: async (login: string, pass: string): Promise<User | null> => {
-      // 1. Tenta Autenticar Online
+      // 1. Tenta Autenticar Online (Supabase - Banco de Autenticação)
       try {
           if (navigator.onLine) {
               const { data, error } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
               
               if (!error && data) {
+                  // Atualiza localmente se login for bem sucedido online
+                  StorageService.saveUser(data); 
                   return data as User;
               }
 
               // Se não achou usuário, mas estamos online, verifique se o banco está vazio (Primeiro Acesso)
-              // Se sim, e o usuário tentado for o padrão, cria ele lá.
               if (!data) {
                   const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
                   if (count === 0 && login.toUpperCase() === '81025901' && pass === '123') {
@@ -187,9 +174,42 @@ export const StorageService = {
       return localUsers.find(u => u.login === login.toUpperCase() && u.password === pass) || null;
   },
 
+  registerUser: async (newUser: User): Promise<{ success: boolean; message: string }> => {
+        // Validações básicas
+        if (!newUser.login || !newUser.password || !newUser.matricula || !newUser.name) {
+            return { success: false, message: 'Preencha todos os campos obrigatórios.' };
+        }
+
+        // Verifica duplicidade no Supabase (se online)
+        if (navigator.onLine) {
+            try {
+                // Checa duplicidade de login ou matrícula
+                const { data } = await supabase.from('users').select('id')
+                    .or(`login.eq.${newUser.login},matricula.eq.${newUser.matricula}`);
+                
+                if (data && data.length > 0) {
+                    return { success: false, message: 'Usuário ou Matrícula já cadastrados no sistema.' };
+                }
+            } catch (e) {
+                console.warn('Erro ao verificar duplicidade online', e);
+            }
+        }
+
+        // Verifica duplicidade local
+        const localUsers = StorageService.getUsers();
+        if (localUsers.some(u => u.login === newUser.login || u.matricula === newUser.matricula)) {
+            return { success: false, message: 'Usuário já existe localmente.' };
+        }
+
+        // Salva
+        await StorageService.saveUser(newUser);
+        return { success: true, message: 'Cadastro realizado com sucesso!' };
+  },
+
   getUsers: (): User[] => {
       const users = JSON.parse(localStorage.getItem(KEYS.USERS) || '[]');
       if (users.length === 0) {
+          // Usuário padrão local caso storage esteja vazio
           const defaultUser: User = {
               id: 'default-admin',
               name: 'ADMINISTRADOR',
@@ -211,7 +231,12 @@ export const StorageService = {
       trySaveLocal(KEYS.USERS, list);
       triggerUpdate();
       
-      try { await supabase.from('users').upsert(user); } catch(e) {}
+      // Persistência Remota (Banco de Autenticação)
+      try { 
+          await supabase.from('users').upsert(user); 
+      } catch(e) {
+          console.error("Erro ao salvar usuário no Supabase", e);
+      }
   },
   deleteUser: async (id: string) => {
       const list = StorageService.getUsers().filter(u => u.id !== id);
@@ -325,18 +350,9 @@ export const StorageService = {
       const tasks = StorageService.getActiveMaintenances();
       const task = tasks.find(t => t.id === id);
       if (task) {
-          const wasWaiting = task.status === 'AGUARDANDO';
           task.status = 'ANDAMENTO';
           task.currentSessionStart = new Date().toISOString();
           
-          // Se estava aguardando, atualiza quem retomou (opcional, pode manter original)
-          // mas como o requisito diz "esperando PROXIMO mecanico", faz sentido atualizar se quiser rastrear.
-          // Por enquanto mantemos o dono original ou atualiza se quiser:
-          if (wasWaiting) {
-             const currentUser = localStorage.getItem('safemaint_user');
-             if(currentUser) task.openedBy = currentUser;
-          }
-
           trySaveLocal(KEYS.ACTIVE, tasks);
           triggerUpdate();
           try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}

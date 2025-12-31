@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'safemaint-v3';
+const CACHE_NAME = 'safemaint-v4';
 const urlsToCache = [
   '/',
   '/index.html',

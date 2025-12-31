@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   FileInput, PlayCircle, Trash2, Search, CalendarDays, User,
   Wrench, AlertOctagon, Clock, CheckCircle2, Eye, X, Info, FileText,
-  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight
+  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -50,32 +50,45 @@ export const OMManagement: React.FC = () => {
     return () => window.removeEventListener('safemaint_storage_update', refreshData);
   }, [refreshData]);
 
+  // CORREÇÃO VISUALIZADOR PDF
   useEffect(() => {
+    let activeUrl: string | null = null;
+
     if (viewingOM?.pdfUrl) {
         try {
+            // Verifica se é Base64 com cabeçalho
             if (viewingOM.pdfUrl.startsWith('data:application/pdf;base64,')) {
                 const parts = viewingOM.pdfUrl.split(',');
                 if (parts.length > 1) {
-                    const byteCharacters = atob(parts[1]);
+                    const base64Data = parts[1].replace(/\s/g, ''); // Remove quebras de linha/espaços
+                    const byteCharacters = atob(base64Data);
                     const byteNumbers = new Array(byteCharacters.length);
                     for (let i = 0; i < byteCharacters.length; i++) {
                         byteNumbers[i] = byteCharacters.charCodeAt(i);
                     }
                     const byteArray = new Uint8Array(byteNumbers);
                     const blob = new Blob([byteArray], { type: 'application/pdf' });
-                    const url = URL.createObjectURL(blob);
-                    setPdfBlobUrl(url);
-                    return () => URL.revokeObjectURL(url);
+                    activeUrl = URL.createObjectURL(blob);
+                    setPdfBlobUrl(activeUrl);
                 }
             } else {
+                // Caso seja URL direta ou blob anterior
                 setPdfBlobUrl(viewingOM.pdfUrl);
             }
         } catch (e) {
-            setPdfBlobUrl(viewingOM.pdfUrl);
+            console.error("Erro ao processar PDF:", e);
+            setPdfBlobUrl(null); // Em caso de erro, limpa para mostrar fallback
         }
     } else {
         setPdfBlobUrl(null);
     }
+
+    // Cleanup function
+    return () => {
+        if (activeUrl) {
+            URL.revokeObjectURL(activeUrl);
+        }
+    };
   }, [viewingOM]);
 
   const handleExecute = (om: OMRecord) => {
@@ -451,7 +464,19 @@ export const OMManagement: React.FC = () => {
                             <p className="text-[10px] font-bold text-gray-400 uppercase">OM: {viewingOM.omNumber}</p>
                         </div>
                     </div>
-                    <button onClick={() => setViewingOM(null)} className="p-2 bg-white/10 hover:bg-red-600 rounded-full transition-all"><X size={20}/></button>
+                    <div className="flex gap-2">
+                        {pdfBlobUrl && (
+                            <a 
+                                href={pdfBlobUrl} 
+                                download={`OM-${viewingOM.omNumber}.pdf`}
+                                className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors"
+                                title="Baixar"
+                            >
+                                <Download size={20}/>
+                            </a>
+                        )}
+                        <button onClick={() => setViewingOM(null)} className="p-2 bg-white/10 hover:bg-red-600 rounded-full transition-all"><X size={20}/></button>
+                    </div>
                 </div>
                 <div className="flex-1 bg-gray-100 relative flex items-center justify-center">
                     {pdfBlobUrl ? (
@@ -459,7 +484,7 @@ export const OMManagement: React.FC = () => {
                     ) : (
                         <div className="flex flex-col items-center justify-center text-gray-400 gap-3">
                             <Info size={48} className="opacity-20" />
-                            <span className="font-black text-xs uppercase tracking-widest">Documento não disponível</span>
+                            <span className="font-black text-xs uppercase tracking-widest">Carregando ou Documento não disponível</span>
                         </div>
                     )}
                 </div>

@@ -7,19 +7,15 @@ import {
   MessageSquare, FileInput, BarChart2, LogOut, Shield
 } from 'lucide-react';
 import { Logo } from './Logo';
-import { StorageService } from '../services/storage';
 
-export const Sidebar: React.FC<{ isOpen: boolean; toggle: () => void; onLogout?: () => void; }> = ({ isOpen, toggle, onLogout }) => {
+export const Sidebar: React.FC<{ isOpen: boolean; toggle: () => void; onLogout?: () => void }> = ({ isOpen, toggle, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  
-  // Efeito para detectar status online/offline
+  const [userName, setUserName] = useState('');
+  const [userRole, setUserRole] = useState('');
+
   useEffect(() => {
-    const hOnline = () => setIsOnline(true);
-    const hOffline = () => setIsOnline(false);
-    window.addEventListener('online', hOnline); 
-    window.addEventListener('offline', hOffline);
-    return () => { window.removeEventListener('online', hOnline); window.removeEventListener('offline', hOffline); };
+      setUserName(localStorage.getItem('safemaint_user') || 'USUÁRIO');
+      setUserRole(localStorage.getItem('safemaint_role') || 'OPERADOR');
   }, []);
   
   const sections = [
@@ -152,31 +148,25 @@ export const Sidebar: React.FC<{ isOpen: boolean; toggle: () => void; onLogout?:
           ))}
         </nav>
 
-        {/* Footer / Status / Logout */}
+        {/* Footer / Logout */}
         <div className="p-4 bg-black/20 border-t border-gray-800/50 backdrop-blur-sm">
-            {/* Status Indicator */}
+            {/* User Info */}
             {!isCollapsed && (
-                <div className="flex items-center justify-between mb-4 px-2">
-                    <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'} animate-pulse`}></div>
-                        <span className="text-[10px] font-bold uppercase text-gray-500">{isOnline ? 'Sistema Online' : 'Offline'}</span>
-                    </div>
-                    <Shield size={12} className="text-gray-600"/>
+                <div className="mb-4 px-2">
+                    <p className="text-xs font-black text-white truncate">{userName}</p>
+                    <p className="text-[10px] font-bold text-[#007e7a] uppercase">{userRole}</p>
                 </div>
             )}
 
             <button 
-                onClick={onLogout} 
+                onClick={onLogout}
                 className={`
-                    w-full flex items-center gap-3 px-4 py-3 rounded-xl 
-                    bg-gradient-to-r from-red-900/40 to-red-900/20 border border-red-900/30
-                    text-red-400 hover:text-white hover:from-red-600 hover:to-red-700 hover:border-red-500 hover:shadow-[0_0_15px_rgba(220,38,38,0.4)]
-                    transition-all duration-300 group
-                    ${isCollapsed ? 'justify-center' : ''}
+                    w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white transition-all duration-300 group border border-red-900/30
+                    ${isCollapsed ? 'justify-center px-2' : ''}
                 `}
             >
-                <LogOut size={18} className="group-hover:rotate-12 transition-transform"/>
-                {!isCollapsed && <span className="text-xs font-black uppercase tracking-wider">Sair do Sistema</span>}
+                <LogOut size={20} className="group-hover:rotate-180 transition-transform duration-500" />
+                {!isCollapsed && <span className="font-bold text-xs uppercase">Sair do Sistema</span>}
             </button>
         </div>
       </div>
