@@ -8,6 +8,7 @@ interface CommonHeaderProps {
   data: HeaderData;
   onChange: (data: HeaderData) => void;
   readOnly?: boolean;
+  title?: string;
 }
 
 const TYPE_OPTIONS: { id: MaintenanceType; label: string; icon: React.ReactNode; color: string }[] = [
@@ -18,7 +19,12 @@ const TYPE_OPTIONS: { id: MaintenanceType; label: string; icon: React.ReactNode;
   { id: 'OUTROS', label: 'Outros', icon: <MoreHorizontal size={18} />, color: 'bg-gray-600' },
 ];
 
-export const CommonHeader: React.FC<CommonHeaderProps> = ({ data, onChange, readOnly = false }) => {
+export const CommonHeader: React.FC<CommonHeaderProps> = ({ 
+  data, 
+  onChange, 
+  readOnly = false,
+  title = "Identificação da Manutenção" 
+}) => {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [availableOms, setAvailableOms] = useState<OMRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -56,7 +62,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({ data, onChange, read
           <div className="bg-vale-green/10 p-2 rounded-xl">
              <Wrench size={20} className="text-vale-green" />
           </div>
-          <h3 className="text-lg font-black text-vale-darkgray uppercase tracking-tighter">Identificação da Manutenção</h3>
+          <h3 className="text-lg font-black text-vale-darkgray uppercase tracking-tighter">{title}</h3>
         </div>
         
         {!readOnly && (

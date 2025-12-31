@@ -1,19 +1,25 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { StorageService } from '../services/storage';
-import { ActiveMaintenance, ScheduleItem } from '../types';
 import { Clock } from 'lucide-react';
 
 interface TVItem {
     id: string;
-    om: string;
-    tag: string;
+    frotaOm: string;
     description: string;
-    status: 'EMERGÊNCIA' | 'ANDAMENTO' | 'PLANEJADO' | 'PAUSADA';
-    startTime: string; 
-    endTime: string;   
-    responsible: string;
-    type: string; 
+    dateMin: string;
+    dateMax: string;
+    priority: string;
+    peopleCount: string | number;
+    hours: string | number;
+    dateStart: string;
+    dateEnd: string;
+    workCenter: string;
+    timeStart: string;
+    timeEnd: string;
+    resources: string;
+    resources2: string; // 22
+    statusColor: 'EMERGENCY' | 'RUNNING' | 'PLANNED' | 'PAUSED';
 }
 
 export const TVSchedule: React.FC = () => {
@@ -72,47 +78,91 @@ export const TVSchedule: React.FC = () => {
     const schedule = StorageService.getSchedule();
     const tvItems: TVItem[] = [];
 
+    // Map Active Tasks to TV Schema
     activeTasks.forEach(task => {
-        let status: 'EMERGÊNCIA' | 'ANDAMENTO' | 'PAUSADA' = 'ANDAMENTO';
-        if (task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL') status = 'EMERGÊNCIA';
-        else if (task.status === 'PAUSADA') status = 'PAUSADA';
+        let statusColor: 'EMERGENCY' | 'RUNNING' | 'PAUSED' = 'RUNNING';
+        if (task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL') statusColor = 'EMERGENCY';
+        else if (task.status === 'PAUSADA') statusColor = 'PAUSED';
 
+        const startDate = new Date(task.startTime);
+        
         tvItems.push({
             id: task.id,
-            om: task.header.om,
-            tag: task.header.tag,
+            frotaOm: `${task.header.tag} / ${task.header.om}`,
             description: task.header.description,
-            status: status,
-            startTime: new Date(task.startTime).toLocaleTimeString().slice(0,5),
-            endTime: 'EXEC',
-            responsible: 'MANUTENÇÃO',
-            type: task.header.type
+            dateMin: startDate.toLocaleDateString(),
+            dateMax: startDate.toLocaleDateString(),
+            priority: task.origin,
+            peopleCount: 1,
+            hours: "EXEC",
+            dateStart: startDate.toLocaleDateString(),
+            dateEnd: "---",
+            workCenter: "MANUTENÇÃO",
+            timeStart: startDate.toLocaleTimeString().slice(0,5),
+            timeEnd: "---",
+            resources: task.openedBy || "EQUIPE",
+            resources2: task.header.type,
+            statusColor: statusColor
         });
     });
 
+    // Map Scheduled Items
     schedule.forEach(item => {
         let om = item.frotaOm;
-        let tag = item.frotaOm;
         if (item.frotaOm.includes('\n')) {
-            const parts = item.frotaOm.split('\n'); tag = parts[0].trim(); if(parts.length > 1) om = parts[1].trim();
-        } else if (item.frotaOm.includes('/')) {
-            const parts = item.frotaOm.split('/'); tag = parts[0].trim(); om = parts.length > 1 ? parts[1].trim() : parts[0].trim();
+            om = item.frotaOm.replace('\n', ' / ');
         }
 
-        const isAlreadyActive = activeTasks.some(t => t.header.om === om);
-        if (!isAlreadyActive) {
-            tvItems.push({
-                id: item.id, om, tag, description: item.description, status: 'PLANEJADO',
-                startTime: item.timeStart, endTime: item.timeEnd, responsible: item.resources, type: item.resources2 || 'GERAL'
-            });
-        }
+        // Avoid duplicates if already active
+        // Simplistic check: if description matches exactly, might be same. 
+        // Better: Check OM if present in active tasks
+        // For now, we show both if they exist, or filter out by OM if needed.
+        // Assuming user wants to see everything.
+
+        tvItems.push({
+            id: item.id,
+            frotaOm: om,
+            description: item.description,
+            dateMin: item.dateMin,
+            dateMax: item.dateMax,
+            priority: item.priority,
+            peopleCount: item.peopleCount,
+            hours: item.hours,
+            dateStart: item.dateStart,
+            dateEnd: item.dateEnd,
+            workCenter: item.workCenter,
+            timeStart: item.timeStart,
+            timeEnd: item.timeEnd,
+            resources: item.resources,
+            resources2: item.resources2,
+            statusColor: 'PLANNED'
+        });
     });
 
+    // Sort: Emergency -> Running -> Paused -> Planned
     tvItems.sort((a, b) => {
-        const score = (s: string) => s === 'EMERGÊNCIA' ? 0 : s === 'ANDAMENTO' ? 1 : s === 'PAUSADA' ? 2 : 3;
-        return score(a.status) - score(b.status);
+        const score = (s: string) => s === 'EMERGENCY' ? 0 : s === 'RUNNING' ? 1 : s === 'PAUSED' ? 2 : 3;
+        return score(a.statusColor) - score(b.statusColor);
     });
     setItems(tvItems);
+  };
+
+  // Define column widths - MUST sum to near 100% or use flex
+  const colWidths = {
+      om: '8%',
+      desc: '20%',
+      dMin: '6%',
+      dMax: '6%',
+      prio: '6%',
+      people: '4%',
+      h: '3%',
+      dIni: '6%',
+      dFim: '6%',
+      center: '8%',
+      hIni: '5%',
+      hFim: '5%',
+      res: '10%',
+      res2: '7%'
   };
 
   return (
@@ -124,22 +174,22 @@ export const TVSchedule: React.FC = () => {
                 </div>
                 <div>
                     <h1 className="font-black text-white text-lg tracking-widest uppercase mb-0 drop-shadow-md leading-none">SAFEMAINT TV</h1>
-                    <p className="text-[#10b981] font-bold text-[8px] tracking-[0.3em]">MONITORAMENTO EM TEMPO REAL</p>
+                    <p className="text-[#10b981] font-bold text-[8px] tracking-[0.3em]">PROGRAMAÇÃO OFICIAL</p>
                 </div>
             </div>
             
             <div className="flex items-center gap-3">
                  <div className="flex gap-2">
                      <div className="flex flex-col items-center bg-red-900/30 px-2 py-0.5 rounded border border-red-700 min-w-[50px]">
-                        <span className="text-xs font-black text-red-500 leading-none">{items.filter(i => i.status === 'EMERGÊNCIA').length}</span>
+                        <span className="text-xs font-black text-red-500 leading-none">{items.filter(i => i.statusColor === 'EMERGENCY').length}</span>
                         <span className="text-[7px] font-bold text-red-400">EMERG.</span>
                      </div>
                      <div className="flex flex-col items-center bg-green-900/30 px-2 py-0.5 rounded border border-green-700 min-w-[50px]">
-                        <span className="text-xs font-black text-green-500 leading-none">{items.filter(i => i.status === 'ANDAMENTO').length}</span>
+                        <span className="text-xs font-black text-green-500 leading-none">{items.filter(i => i.statusColor === 'RUNNING').length}</span>
                         <span className="text-[7px] font-bold text-green-400">ANDAM.</span>
                      </div>
                      <div className="flex flex-col items-center bg-gray-800/50 px-2 py-0.5 rounded border border-gray-600 min-w-[50px]">
-                        <span className="text-xs font-black text-gray-400 leading-none">{items.filter(i => i.status === 'PLANEJADO').length}</span>
+                        <span className="text-xs font-black text-gray-400 leading-none">{items.filter(i => i.statusColor === 'PLANNED').length}</span>
                         <span className="text-[7px] font-bold text-gray-500">PLAN.</span>
                      </div>
                 </div>
@@ -150,18 +200,29 @@ export const TVSchedule: React.FC = () => {
             </div>
         </div>
 
-        {/* CONTAINER PRINCIPAL: w-full e overflow-x-hidden para garantir que não haja rolagem horizontal */}
+        {/* CONTAINER PRINCIPAL */}
         <div className="flex-1 overflow-hidden bg-gray-950 relative w-full max-w-full">
             <div className="w-full h-full relative bg-gray-900/20 shadow-2xl flex flex-col">
-                <div className="grid grid-cols-12 gap-0 bg-gray-900 text-gray-400 text-[9px] font-black py-1 border-b border-gray-700 shadow-md z-10 uppercase tracking-wider w-full shrink-0">
-                    <div className="col-span-2 text-center">STATUS</div>
-                    <div className="col-span-1 text-center">INÍCIO</div>
-                    <div className="col-span-2 pl-2">TAG / OM</div>
-                    <div className="col-span-4">DESCRIÇÃO DA ATIVIDADE</div>
-                    <div className="col-span-2 text-center">TIPO</div>
-                    <div className="col-span-1 text-right pr-2">EXEC.</div>
+                
+                {/* HEADER ROW */}
+                <div className="flex bg-gray-900 text-gray-400 text-[8px] md:text-[9px] font-black py-1 border-b border-gray-700 shadow-md z-10 uppercase tracking-wider w-full shrink-0">
+                    <div style={{width: colWidths.om}} className="px-1 text-left border-r border-gray-800">FROTA/OM</div>
+                    <div style={{width: colWidths.desc}} className="px-1 text-left border-r border-gray-800">DESCRIÇÃO DA ATIVIDADE</div>
+                    <div style={{width: colWidths.dMin}} className="px-1 text-center border-r border-gray-800">DATA MIN</div>
+                    <div style={{width: colWidths.dMax}} className="px-1 text-center border-r border-gray-800">DATA MAX</div>
+                    <div style={{width: colWidths.prio}} className="px-1 text-center border-r border-gray-800">PRIORIDADE</div>
+                    <div style={{width: colWidths.people}} className="px-1 text-center border-r border-gray-800">N PES.</div>
+                    <div style={{width: colWidths.h}} className="px-1 text-center border-r border-gray-800">H</div>
+                    <div style={{width: colWidths.dIni}} className="px-1 text-center border-r border-gray-800 bg-blue-900/20">DATA INI</div>
+                    <div style={{width: colWidths.dFim}} className="px-1 text-center border-r border-gray-800">DATA FIM</div>
+                    <div style={{width: colWidths.center}} className="px-1 text-left border-r border-gray-800">CENTRO</div>
+                    <div style={{width: colWidths.hIni}} className="px-1 text-center border-r border-gray-800">HR INI</div>
+                    <div style={{width: colWidths.hFim}} className="px-1 text-center border-r border-gray-800">HR FIM</div>
+                    <div style={{width: colWidths.res}} className="px-1 text-left border-r border-gray-800">RECURSOS</div>
+                    <div style={{width: colWidths.res2}} className="px-1 text-center">22</div>
                 </div>
 
+                {/* DATA ROWS */}
                 <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar w-full">
                     {items.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-gray-600 opacity-50">
@@ -172,51 +233,32 @@ export const TVSchedule: React.FC = () => {
                     
                     {items.map((item, idx) => {
                         let rowClass = "bg-gray-900 border-b border-gray-800 text-gray-300";
-                        let statusBadge = "bg-gray-700 text-gray-300";
-                        let tagColor = "text-gray-100";
-                        let descColor = "text-gray-400";
-
                         if (idx % 2 === 1) rowClass = "bg-[#1f2937]/50 border-b border-gray-800 text-gray-300";
 
-                        if (item.status === 'EMERGÊNCIA') {
-                            rowClass = "bg-red-900/20 border-b border-red-900/50 text-white animate-pulse-slow";
-                            statusBadge = "bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]";
-                            tagColor = "text-red-200";
-                            descColor = "text-white";
-                        } else if (item.status === 'ANDAMENTO') {
-                            rowClass = "bg-green-900/10 border-b border-green-900/30 text-green-50";
-                            statusBadge = "bg-green-600 text-white shadow-[0_0_10px_rgba(22,163,74,0.4)]";
-                            tagColor = "text-green-200";
-                            descColor = "text-green-100";
-                        } else if (item.status === 'PAUSADA') {
+                        if (item.statusColor === 'EMERGENCY') {
+                            rowClass = "bg-red-900/20 border-b border-red-900/50 text-red-100 animate-pulse-slow font-bold";
+                        } else if (item.statusColor === 'RUNNING') {
+                            rowClass = "bg-green-900/10 border-b border-green-900/30 text-green-50 font-bold";
+                        } else if (item.statusColor === 'PAUSED') {
                             rowClass = "bg-yellow-900/10 border-b border-yellow-900/30 text-yellow-50";
-                            statusBadge = "bg-yellow-600 text-white";
-                            tagColor = "text-yellow-200";
                         }
 
                         return (
-                            <div key={item.id} className={`grid grid-cols-12 gap-0 items-center py-0.5 min-h-[28px] w-full ${rowClass} transition-all`}>
-                                <div className="col-span-2 text-center flex justify-center">
-                                    <span className={`px-1 py-0.5 rounded-[2px] text-[8px] font-black uppercase tracking-widest w-[90%] ${statusBadge}`}>
-                                        {item.status}
-                                    </span>
-                                </div>
-                                <div className="col-span-1 text-center font-mono font-bold text-[9px] opacity-90 text-white shadow-black drop-shadow-sm">
-                                    {item.startTime}
-                                </div>
-                                <div className="col-span-2 pl-2 leading-none overflow-hidden">
-                                    <div className={`font-black text-[9px] ${tagColor} truncate`}>{item.tag}</div>
-                                    <div className="text-[7px] opacity-60 font-mono truncate">{item.om}</div>
-                                </div>
-                                <div className={`col-span-4 text-[8px] font-bold uppercase pr-2 leading-tight break-words whitespace-normal ${descColor}`}>
-                                    {item.description}
-                                </div>
-                                <div className="col-span-2 text-center text-[8px] font-bold opacity-70 border border-gray-700 rounded mx-4 py-0.5 truncate">
-                                    {item.type}
-                                </div>
-                                <div className="col-span-1 text-right pr-2 font-bold text-[8px] truncate opacity-70">
-                                    {item.responsible}
-                                </div>
+                            <div key={item.id} className={`flex items-center py-0.5 min-h-[32px] w-full ${rowClass} transition-all text-[8px] md:text-[9px]`}>
+                                <div style={{width: colWidths.om}} className="px-1 truncate font-black text-white">{item.frotaOm}</div>
+                                <div style={{width: colWidths.desc}} className="px-1 truncate">{item.description}</div>
+                                <div style={{width: colWidths.dMin}} className="px-1 text-center">{item.dateMin}</div>
+                                <div style={{width: colWidths.dMax}} className="px-1 text-center">{item.dateMax}</div>
+                                <div style={{width: colWidths.prio}} className="px-1 text-center truncate">{item.priority}</div>
+                                <div style={{width: colWidths.people}} className="px-1 text-center">{item.peopleCount}</div>
+                                <div style={{width: colWidths.h}} className="px-1 text-center">{item.hours}</div>
+                                <div style={{width: colWidths.dIni}} className="px-1 text-center font-bold text-yellow-400">{item.dateStart}</div>
+                                <div style={{width: colWidths.dFim}} className="px-1 text-center">{item.dateEnd}</div>
+                                <div style={{width: colWidths.center}} className="px-1 truncate">{item.workCenter}</div>
+                                <div style={{width: colWidths.hIni}} className="px-1 text-center font-bold text-white">{item.timeStart}</div>
+                                <div style={{width: colWidths.hFim}} className="px-1 text-center">{item.timeEnd}</div>
+                                <div style={{width: colWidths.res}} className="px-1 truncate opacity-80">{item.resources}</div>
+                                <div style={{width: colWidths.res2}} className="px-1 text-center truncate">{item.resources2}</div>
                             </div>
                         );
                     })}

@@ -5,6 +5,7 @@ import { DocumentRecord, SignatureRecord } from '../types';
 import { Eye, Download, Trash2, X, FileText, CheckCircle, Clipboard, Filter, QrCode, Cloud, Archive as ArchiveIcon, Calendar, Hash, Tag, Printer, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BackButton } from '../components/BackButton';
+import { Logo } from '../components/Logo';
 
 interface ListItemProps {
   doc: DocumentRecord;
@@ -126,7 +127,8 @@ export const Archive: React.FC = () => {
     const allDocs = StorageService.getDocuments();
     const trashItems = allDocs.filter(d => d.status === 'LIXEIRA');
     setTrashCount(trashItems.length);
-    let filtered: DocumentRecord[] = allDocs.filter(d => d.status !== 'LIXEIRA');
+    // Filtrar LIXEIRA e RASCUNHO (só mostra RASCUNHO quando virar ATIVO)
+    let filtered: DocumentRecord[] = allDocs.filter(d => d.status !== 'LIXEIRA' && d.status !== 'RASCUNHO');
 
     switch(activeTab) {
         case 'ARTS': filtered = filtered.filter(d => d.type === 'ART_EMERGENCIAL' || d.type === 'ART_ATIVIDADE'); break;
@@ -167,18 +169,33 @@ export const Archive: React.FC = () => {
   const handleShowQR = (e: React.MouseEvent, doc: DocumentRecord) => { e.stopPropagation(); setShowQr(doc); };
 
   const renderFullDocument = (doc: DocumentRecord) => {
-      // If manual upload exists (PDF/Image)
+      // If manual upload exists (PDF/Image) or attached PDF from ART
       if (doc.content?.manualFileUrl) {
-          if (doc.content.manualFileUrl.includes('image')) {
-              return <img src={doc.content.manualFileUrl} className="max-w-full mx-auto" alt="Anexo" />;
-          }
-          if (docBlobUrl) {
-              return (
-                  <div className="w-full h-[800px] bg-gray-200">
-                      <iframe src={docBlobUrl} className="w-full h-full border-none" title="Visualizador"/>
+          return (
+              <div className="flex flex-col h-full bg-gray-200">
+                  {/* HEADER PARA PDF ORIGINAL - GARANTE VISIBILIDADE DE OM E ART */}
+                  <div className="bg-gray-900 text-white p-3 flex justify-between items-center shrink-0 border-b border-gray-700">
+                      <div>
+                          <span className="font-black text-sm uppercase tracking-widest text-vale-green block mb-1">DOCUMENTO ORIGINAL ANEXO</span>
+                          <span className="font-bold text-xs uppercase flex gap-4">
+                              {doc.header.om && <span>OM: <span className="text-white">{doc.header.om}</span></span>}
+                              {doc.header.tag && <span>TAG: <span className="text-white">{doc.header.tag}</span></span>}
+                              {doc.content.artNumber && <span>ART: <span className="text-white">{doc.content.artNumber}</span></span>}
+                          </span>
+                      </div>
                   </div>
-              );
-          }
+                  
+                  <div className="flex-1 relative bg-gray-200 overflow-hidden">
+                      {doc.content.manualFileUrl.includes('image') ? (
+                          <div className="flex items-center justify-center h-full overflow-auto">
+                              <img src={doc.content.manualFileUrl} className="max-w-full max-h-full shadow-lg" alt="Anexo" />
+                          </div>
+                      ) : (
+                          docBlobUrl && <iframe src={docBlobUrl} className="w-full h-full border-none" title="Visualizador" />
+                      )}
+                  </div>
+              </div>
+          );
       }
 
       const riskList = doc.type === 'ART_EMERGENCIAL' && doc.content?.checklistRisks 
@@ -187,133 +204,197 @@ export const Archive: React.FC = () => {
 
       // Default HTML Render for Printing
       return (
-          <div className="bg-white p-8 md:p-12 shadow-none max-w-[21cm] mx-auto font-sans text-gray-900 border border-gray-200 print:border-none print:p-0">
-              {/* HEADER */}
-              <div className="flex justify-between items-center border-b-4 border-[#007e7a] pb-4 mb-6">
-                  <div>
-                      <h1 className="text-2xl font-black text-[#111827] uppercase tracking-tight">SAFEMAINT</h1>
-                      <p className="text-xs font-bold text-[#007e7a] tracking-[0.3em] uppercase">Documento Técnico</p>
-                  </div>
-                  <div className="text-right">
-                      <p className="text-[10px] font-black text-gray-400 uppercase">DOC ID</p>
-                      <p className="text-sm font-mono font-bold text-gray-800">{doc.id.slice(0,8).toUpperCase()}</p>
-                  </div>
-              </div>
-
-              {/* INFO GERAL */}
-              <div className="grid grid-cols-4 gap-4 mb-6 bg-gray-50 p-4 rounded border border-gray-200 text-xs">
-                  <div><span className="block font-black text-gray-400 uppercase">DATA</span><span className="font-bold">{new Date(doc.createdAt).toLocaleDateString()}</span></div>
-                  <div><span className="block font-black text-gray-400 uppercase">HORA</span><span className="font-bold">{new Date(doc.createdAt).toLocaleTimeString().slice(0,5)}</span></div>
-                  <div><span className="block font-black text-gray-400 uppercase">OM</span><span className="font-black text-gray-800">{doc.header.om}</span></div>
-                  <div><span className="block font-black text-gray-400 uppercase">TAG</span><span className="font-black text-gray-800">{doc.header.tag}</span></div>
-                  <div className="col-span-4 border-t border-gray-200 pt-2 mt-1">
-                      <span className="block font-black text-gray-400 uppercase">ATIVIDADE / DESCRIÇÃO</span>
-                      <span className="font-bold text-gray-700 uppercase">{doc.header.description}</span>
-                  </div>
-              </div>
-
-              <div className="mb-6">
-                  <h2 className="font-black text-lg border-l-4 border-[#007e7a] pl-3 uppercase mb-4">{doc.type.replace('_', ' ')}</h2>
-                  
-                  {/* ART EMERGENCIAL CONTENT */}
-                  {doc.type === 'ART_EMERGENCIAL' && (
-                      <div className="space-y-6">
-                          {/* Riscos Identificados */}
-                          <div>
-                              <h3 className="font-bold text-xs uppercase bg-gray-100 p-2 mb-2">Riscos Identificados & Controles</h3>
-                              <table className="w-full text-xs border border-gray-300">
-                                  <thead className="bg-gray-200 font-bold">
-                                      <tr>
-                                          <th className="p-2 text-left border-r border-gray-300 w-10">#</th>
-                                          <th className="p-2 text-left border-r border-gray-300">Risco</th>
-                                          <th className="p-2 text-left">Medida de Controle</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody>
-                                      {riskList.length > 0 ? riskList.map(([id, val]: any) => (
-                                          <tr key={id} className="border-t border-gray-300">
-                                              <td className="p-2 border-r border-gray-300 text-center font-bold">{id}</td>
-                                              <td className="p-2 border-r border-gray-300 font-bold text-red-700">RISCO #{id} (Ver Tabela Padrão)</td>
-                                              <td className="p-2 uppercase">{val.control || 'N/A'}</td>
-                                          </tr>
-                                      )) : <tr><td colSpan={3} className="p-4 text-center italic">Nenhum risco marcado</td></tr>}
-                                  </tbody>
-                              </table>
+          <div className={`bg-white shadow-none mx-auto font-sans text-gray-900 border border-gray-200 print:border-none print:p-0 ${doc.content?.scheduleItems ? 'max-w-[98%] p-4 landscape:w-full' : 'max-w-[21cm] p-8 md:p-12'}`}>
+              
+              {/* SPECIAL RENDER FOR SCHEDULE REPORT (PROGRAMAÇÃO) */}
+              {doc.type === 'RELATORIO' && doc.content?.scheduleItems ? (
+                  <div className="w-full overflow-x-auto">
+                      {/* Custom Header matching image */}
+                      <div className="flex border border-gray-300 mb-0 bg-gray-100">
+                          <div className="w-48 p-1 flex items-center justify-center border-r border-gray-300 bg-white">
+                              <Logo size="md" showText={true} />
                           </div>
-                          {/* Mapa 360 */}
-                          {doc.content?.quadrantRisks && (
-                              <div className="grid grid-cols-4 gap-2 text-center text-xs font-bold border border-gray-300 p-4 rounded">
-                                  {Object.entries(doc.content.quadrantRisks).map(([quad, risks]: any) => (
-                                      <div key={quad} className="bg-gray-50 p-2 rounded border border-gray-200">
-                                          <div className="text-gray-400 text-[10px] mb-1">{quad}</div>
-                                          <div className="text-red-600">{risks.length > 0 ? risks.join(', ') : '-'}</div>
-                                      </div>
-                                  ))}
-                              </div>
-                          )}
+                          <div className="flex-1 bg-gray-200 flex items-center justify-center text-gray-800 font-black text-2xl uppercase border-r border-gray-300">
+                              PROGRAMAÇÃO SEMANAL - SEMANA {doc.content.weekNumber}
+                          </div>
+                          <div className="w-32 bg-gray-200 flex items-center justify-center text-gray-600 font-bold text-sm uppercase border-r border-gray-300">
+                              SEMANA:
+                          </div>
+                          <div className="w-24 bg-white flex items-center justify-center text-gray-800 font-bold text-2xl border-r border-gray-300">
+                              {doc.content.weekNumber}
+                          </div>
                       </div>
-                  )}
 
-                  {/* CHECKLIST CONTENT */}
-                  {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
-                      <div>
-                          <table className="w-full text-[10px] border border-gray-300">
-                              <thead className="bg-gray-200 font-bold uppercase">
-                                  <tr>
-                                      <th className="p-2 text-left">Item</th>
-                                      <th className="p-2 text-left">Descrição</th>
-                                      <th className="p-2 text-center w-20">Status</th>
-                                      <th className="p-2 text-left w-1/3">Observação</th>
+                      <table className="w-full text-[9px] border-collapse border border-gray-300 font-sans">
+                          <thead>
+                              <tr className="bg-gray-100 text-gray-700">
+                                  <th className="border border-gray-300 p-1 font-bold uppercase min-w-[80px]">FROTA/OM</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase min-w-[200px]">DESCRIÇÃO DA ATIVIDADE</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-16 text-center">DATA MIN</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-16 text-center">DATA MAX</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-16 text-center">PRIORIDADE</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-10 text-center">N DE PESSOAS</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-8 text-center">H</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-16 text-center">DATA INICIO</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-16 text-center">DATA FIM</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-20 text-center">CENTRO DE TRABALHO</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-12 text-center">HORA INICIO</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase w-12 text-center">HORA FIM</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase min-w-[100px] text-center">RECURSOS</th>
+                                  <th className="border border-gray-300 p-1 font-bold uppercase min-w-[100px] text-center">RECURSOS 2</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {doc.content.scheduleItems.map((item: any, idx: number) => (
+                                  <tr key={idx} className="hover:bg-gray-50 border-b border-gray-200">
+                                      <td className="border border-gray-300 p-1 text-center font-bold text-black">{item.frotaOm}</td>
+                                      <td className="border border-gray-300 p-1 uppercase">{item.description}</td>
+                                      <td className="border border-gray-300 p-1 text-center whitespace-nowrap">{item.dateMin}</td>
+                                      <td className="border border-gray-300 p-1 text-center whitespace-nowrap">{item.dateMax}</td>
+                                      <td className="border border-gray-300 p-1 text-center">{item.priority}</td>
+                                      <td className="border border-gray-300 p-1 text-center">{item.peopleCount}</td>
+                                      <td className="border border-gray-300 p-1 text-center">{item.hours}</td>
+                                      <td className="border border-gray-300 p-1 text-center font-bold whitespace-nowrap">{item.dateStart}</td>
+                                      <td className="border border-gray-300 p-1 text-center whitespace-nowrap">{item.dateEnd}</td>
+                                      <td className="border border-gray-300 p-1 text-center">{item.workCenter}</td>
+                                      <td className="border border-gray-300 p-1 text-center">{item.timeStart}</td>
+                                      <td className="border border-gray-300 p-1 text-center">{item.timeEnd}</td>
+                                      <td className="border border-gray-300 p-1 text-center text-[8px]">{item.resources}</td>
+                                      <td className="border border-gray-300 p-1 text-center text-[8px]">{item.resources2}</td>
                                   </tr>
-                              </thead>
-                              <tbody>
-                                  {doc.content.checklistItems.map((item: any, idx: number) => (
-                                      <tr key={idx} className="border-t border-gray-300">
-                                          <td className="p-2 font-bold text-gray-500">{item.id}</td>
-                                          <td className="p-2 uppercase font-bold">{item.desc}</td>
-                                          <td className="p-2 text-center font-black">
-                                              {item.status === 'ATENDE' ? <span className="text-green-600">OK</span> : 
-                                               item.status === 'NAO_ATENDE' ? <span className="text-red-600">NOK</span> : '-'}
-                                          </td>
-                                          <td className="p-2 italic uppercase text-gray-600">{item.obs}</td>
-                                      </tr>
-                                  ))}
-                              </tbody>
-                          </table>
-                      </div>
-                  )}
-
-                  {/* REPORT CONTENT */}
-                  {doc.type === 'RELATORIO' && doc.content && (
-                      <div className="space-y-4 text-xs">
-                          <div className="p-4 bg-gray-50 border border-gray-200 rounded">
-                              <span className="block font-black text-gray-400 mb-1">RAW TEXT / CONTEÚDO:</span>
-                              <pre className="whitespace-pre-wrap font-mono">{doc.content.rawText}</pre>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                              <div className="p-3 border rounded"><span className="block font-bold text-gray-400">INÍCIO</span>{doc.content.startTime}</div>
-                              <div className="p-3 border rounded"><span className="block font-bold text-gray-400">FIM</span>{doc.content.endTime}</div>
-                              <div className="p-3 border rounded col-span-2"><span className="block font-bold text-gray-400">MOTIVO PARADA</span>{doc.content.stopReason}</div>
-                          </div>
-                      </div>
-                  )}
-              </div>
-
-              {/* ASSINATURAS */}
-              <div className="mt-8 pt-6 border-t-2 border-gray-200 break-inside-avoid">
-                  <h4 className="text-xs font-black mb-4 uppercase text-gray-400 tracking-widest">Assinaturas Digitais Validadas</h4>
-                  <div className="grid grid-cols-3 gap-6">
-                    {doc.signatures.map(sig => (
-                        <div key={sig.id} className="text-center border border-gray-200 p-2 rounded bg-gray-50">
-                            <img src={sig.signatureData} className="h-10 mx-auto mb-1 mix-blend-multiply" />
-                            <div className="border-t border-gray-300 pt-1">
-                                <p className="text-[9px] font-black uppercase">{sig.name}</p>
-                                <p className="text-[8px] text-gray-500 uppercase">{sig.function} | {new Date(sig.date).toLocaleDateString()}</p>
-                            </div>
-                        </div>
-                    ))}
+                              ))}
+                          </tbody>
+                      </table>
                   </div>
-              </div>
+              ) : (
+                  // STANDARD DOCUMENT RENDER
+                  <>
+                    <div className="flex justify-between items-center border-b-4 border-[#007e7a] pb-4 mb-6">
+                        <div>
+                            <h1 className="text-2xl font-black text-[#111827] uppercase tracking-tight">SAFEMAINT</h1>
+                            <p className="text-xs font-bold text-[#007e7a] tracking-[0.3em] uppercase">Documento Técnico</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] font-black text-gray-400 uppercase">DOC ID</p>
+                            <p className="text-sm font-mono font-bold text-gray-800">{doc.id.slice(0,8).toUpperCase()}</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-4 mb-6 bg-gray-50 p-4 rounded border border-gray-200 text-xs">
+                        <div><span className="block font-black text-gray-400 uppercase">DATA</span><span className="font-bold">{new Date(doc.createdAt).toLocaleDateString()}</span></div>
+                        <div><span className="block font-black text-gray-400 uppercase">HORA</span><span className="font-bold">{new Date(doc.createdAt).toLocaleTimeString().slice(0,5)}</span></div>
+                        <div><span className="block font-black text-gray-400 uppercase">OM</span><span className="font-black text-gray-800">{doc.header.om}</span></div>
+                        <div><span className="block font-black text-gray-400 uppercase">TAG</span><span className="font-black text-gray-800">{doc.header.tag}</span></div>
+                        {doc.content?.artNumber && (
+                            <div className="col-span-4 border-t border-gray-200 pt-2 mt-1">
+                                <span className="block font-black text-gray-400 uppercase">ART VINCULADA</span>
+                                <span className="font-bold text-gray-700 uppercase">{doc.content.artNumber} - {doc.content.artName}</span>
+                            </div>
+                        )}
+                        <div className="col-span-4 border-t border-gray-200 pt-2 mt-1">
+                            <span className="block font-black text-gray-400 uppercase">ATIVIDADE / DESCRIÇÃO</span>
+                            <span className="font-bold text-gray-700 uppercase">{doc.header.description}</span>
+                        </div>
+                    </div>
+
+                    <div className="mb-6">
+                        <h2 className="font-black text-lg border-l-4 border-[#007e7a] pl-3 uppercase mb-4">{doc.type.replace('_', ' ')}</h2>
+                        
+                        {doc.type === 'ART_EMERGENCIAL' && (
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className="font-bold text-xs uppercase bg-gray-100 p-2 mb-2">Riscos Identificados & Controles</h3>
+                                    <table className="w-full text-xs border border-gray-300">
+                                        <thead className="bg-gray-200 font-bold">
+                                            <tr>
+                                                <th className="p-2 text-left border-r border-gray-300 w-10">#</th>
+                                                <th className="p-2 text-left border-r border-gray-300">Risco</th>
+                                                <th className="p-2 text-left">Medida de Controle</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {riskList.length > 0 ? riskList.map(([id, val]: any) => (
+                                                <tr key={id} className="border-t border-gray-300">
+                                                    <td className="p-2 border-r border-gray-300 text-center font-bold">{id}</td>
+                                                    <td className="p-2 border-r border-gray-300 font-bold text-red-700">RISCO #{id} (Ver Tabela Padrão)</td>
+                                                    <td className="p-2 uppercase">{val.control || 'N/A'}</td>
+                                                </tr>
+                                            )) : <tr><td colSpan={3} className="p-4 text-center italic">Nenhum risco marcado</td></tr>}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {doc.content?.quadrantRisks && (
+                                    <div className="grid grid-cols-4 gap-2 text-center text-xs font-bold border border-gray-300 p-4 rounded">
+                                        {Object.entries(doc.content.quadrantRisks).map(([quad, risks]: any) => (
+                                            <div key={quad} className="bg-gray-50 p-2 rounded border border-gray-200">
+                                                <div className="text-gray-400 text-[10px] mb-1">{quad}</div>
+                                                <div className="text-red-600">{risks.length > 0 ? risks.join(', ') : '-'}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
+                            <div>
+                                <table className="w-full text-[10px] border border-gray-300">
+                                    <thead className="bg-gray-200 font-bold uppercase">
+                                        <tr>
+                                            <th className="p-2 text-left">Item</th>
+                                            <th className="p-2 text-left">Descrição</th>
+                                            <th className="p-2 text-center w-20">Status</th>
+                                            <th className="p-2 text-left w-1/3">Observação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {doc.content.checklistItems.map((item: any, idx: number) => (
+                                            <tr key={idx} className="border-t border-gray-300">
+                                                <td className="p-2 font-bold text-gray-500">{item.id}</td>
+                                                <td className="p-2 uppercase font-bold">{item.desc}</td>
+                                                <td className="p-2 text-center font-black">
+                                                    {item.status === 'ATENDE' ? <span className="text-green-600">OK</span> : 
+                                                    item.status === 'NAO_ATENDE' ? <span className="text-red-600">NOK</span> : '-'}
+                                                </td>
+                                                <td className="p-2 italic uppercase text-gray-600">{item.obs}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {doc.type === 'RELATORIO' && !doc.content?.scheduleItems && doc.content && (
+                            <div className="space-y-4 text-xs">
+                                <div className="p-4 bg-gray-50 border border-gray-200 rounded">
+                                    <span className="block font-black text-gray-400 mb-1">RAW TEXT / CONTEÚDO:</span>
+                                    <pre className="whitespace-pre-wrap font-mono">{doc.content.rawText}</pre>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="p-3 border rounded"><span className="block font-bold text-gray-400">INÍCIO</span>{doc.content.startTime}</div>
+                                    <div className="p-3 border rounded"><span className="block font-bold text-gray-400">FIM</span>{doc.content.endTime}</div>
+                                    <div className="p-3 border rounded col-span-2"><span className="block font-bold text-gray-400">MOTIVO PARADA</span>{doc.content.stopReason}</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t-2 border-gray-200 break-inside-avoid">
+                        <h4 className="text-xs font-black mb-4 uppercase text-gray-400 tracking-widest">Assinaturas Digitais Validadas</h4>
+                        <div className="grid grid-cols-3 gap-6">
+                            {doc.signatures.map(sig => (
+                                <div key={sig.id} className="text-center border border-gray-200 p-2 rounded bg-gray-50">
+                                    <img src={sig.signatureData} className="h-10 mx-auto mb-1 mix-blend-multiply" />
+                                    <div className="border-t border-gray-300 pt-1">
+                                        <p className="text-[9px] font-black uppercase">{sig.name}</p>
+                                        <p className="text-[8px] text-gray-500 uppercase">{sig.function} | {new Date(sig.date).toLocaleDateString()}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                  </>
+              )}
           </div>
       );
   };
@@ -369,7 +450,7 @@ export const Archive: React.FC = () => {
                   {recentDocs.length === 0 ? (
                       <div className="py-12 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
                           <ArchiveIcon size={32} className="mx-auto text-gray-300 mb-2" />
-                          <p className="font-black text-[10px] text-gray-400 uppercase tracking-widest">Vazio.</p>
+                          <p className="font-black text-[10px] text-gray-400 uppercase tracking-widest">Nenhum documento finalizado.</p>
                       </div>
                   ) : (
                       recentDocs.map(doc => <ListItem key={doc.id} doc={doc} isArchived={false} onView={setViewDoc} onShowQR={handleShowQR} onDownload={handleDownload} onDelete={handleDelete} />)

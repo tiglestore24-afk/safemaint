@@ -43,7 +43,8 @@ const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
         }
         localStorage.setItem(key, JSON.stringify(cleanData));
     } catch (e) {
-        console.error('[STORAGE] Erro de espaço.', e);
+        console.error('[STORAGE] Erro de cota/espaço no LocalStorage.', e);
+        // Opcional: Notificar usuário que o espaço local acabou
     }
 };
 
@@ -87,37 +88,60 @@ const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
 
 export const StorageService = {
   initialSync: async () => {
+      // Se estiver offline, não tenta sincronizar para não sobrescrever dados
+      if (!navigator.onLine) return;
+
       const tables = [
           { local: KEYS.DOCS, remote: 'documents', strip: ['manualFileUrl'] },
           { local: KEYS.EMPLOYEES, remote: 'employees' },
-          { local: KEYS.OMS, remote: 'oms', strip: [] }, // MANTÉM PDFUrl
-          { local: KEYS.ARTS, remote: 'arts', strip: [] }, // MANTÉM PDFUrl
+          { local: KEYS.OMS, remote: 'oms', strip: [] }, 
+          { local: KEYS.ARTS, remote: 'arts', strip: [] }, 
           { local: KEYS.SCHEDULE, remote: 'schedule' },
           { local: KEYS.HISTORY, remote: 'history' },
           { local: KEYS.ACTIVE, remote: 'active_maintenance' },
           { local: KEYS.USERS, remote: 'users' },
           { local: KEYS.CHECKLIST_TEMPLATE, remote: 'checklist_definitions' },
-          { local: KEYS.AVAILABILITY, remote: 'availability' }
+          { local: KEYS.AVAILABILITY, remote: 'availability' },
+          { local: KEYS.CHAT, remote: 'chat_messages' } 
       ];
 
       for (const t of tables) {
           try {
               const { data, error } = await supabase.from(t.remote).select('*');
-              if (!error && data) {
+              
+              if (error) {
+                  // Se houver erro (ex: tabela não existe ou erro de rede), ignora e mantém local
+                  console.warn(`[SYNC] Erro ao buscar ${t.remote}:`, error.message);
+                  continue;
+              }
+
+              if (data) {
+                  // Lógica de Merge: Mantém itens locais que não existem no remoto (criação offline)
+                  // Atualiza itens que existem em ambos (prioridade remoto para consistência)
                   const localData = JSON.parse(localStorage.getItem(t.local) || '[]');
+                  const remoteIds = new Set(data.map((item: any) => item.id));
+                  
                   const merged = [...data];
+                  
+                  // Adiciona itens locais que ainda não subiram
                   localData.forEach((lItem: any) => {
-                      if (!merged.find((mItem: any) => mItem.id === lItem.id)) {
+                      if (!remoteIds.has(lItem.id)) {
                           merged.push(lItem);
                       }
                   });
+
                   trySaveLocal(t.local, merged, t.strip || []);
+                  
+                  if (t.local === KEYS.CHAT) {
+                      window.dispatchEvent(new Event('safemaint_chat_update'));
+                  }
+
                   if (t.local === KEYS.CHECKLIST_TEMPLATE && merged.length === 0) {
                       trySaveLocal(KEYS.CHECKLIST_TEMPLATE, DEFAULT_CHECKLIST);
                   }
               }
           } catch (e) {
-              console.error(`Erro ao sincronizar ${t.remote}:`, e);
+              console.error(`Erro crítico ao sincronizar ${t.remote}:`, e);
           }
       }
       triggerUpdate();
@@ -126,26 +150,75 @@ export const StorageService = {
   getPendingSyncCount: () => 0,
 
   validateUser: async (login: string, pass: string): Promise<User | null> => {
-      const { data } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
-      if (data) return data as User;
+      // 1. Tenta Autenticar Online
+      try {
+          if (navigator.onLine) {
+              const { data, error } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
+              
+              if (!error && data) {
+                  return data as User;
+              }
+
+              // Se não achou usuário, mas estamos online, verifique se o banco está vazio (Primeiro Acesso)
+              // Se sim, e o usuário tentado for o padrão, cria ele lá.
+              if (!data) {
+                  const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
+                  if (count === 0 && login.toUpperCase() === '81025901' && pass === '123') {
+                      console.log("Banco vazio detectado. Criando usuário ADMIN padrão...");
+                      const defaultAdmin: User = {
+                          id: 'default-admin',
+                          name: 'ADMINISTRADOR',
+                          matricula: '81025901',
+                          login: '81025901',
+                          password: '123',
+                          role: 'ADMIN'
+                      };
+                      await supabase.from('users').insert(defaultAdmin);
+                      return defaultAdmin;
+                  }
+              }
+          }
+      } catch (e) {
+          console.warn("Login offline fallback ou erro de conexão Supabase");
+      }
+
+      // 2. Fallback Local (Login Offline ou falha na conexão)
       const localUsers = StorageService.getUsers();
       return localUsers.find(u => u.login === login.toUpperCase() && u.password === pass) || null;
   },
 
-  getUsers: (): User[] => JSON.parse(localStorage.getItem(KEYS.USERS) || '[]'),
+  getUsers: (): User[] => {
+      const users = JSON.parse(localStorage.getItem(KEYS.USERS) || '[]');
+      if (users.length === 0) {
+          const defaultUser: User = {
+              id: 'default-admin',
+              name: 'ADMINISTRADOR',
+              matricula: '81025901',
+              login: '81025901',
+              password: '123',
+              role: 'ADMIN'
+          };
+          users.push(defaultUser);
+          localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+      }
+      return users;
+  },
+
   saveUser: async (user: User) => {
       const list = StorageService.getUsers();
       const idx = list.findIndex(u => u.id === user.id);
       if(idx > -1) list[idx] = user; else list.push(user);
       trySaveLocal(KEYS.USERS, list);
-      await supabase.from('users').upsert(user);
       triggerUpdate();
+      
+      try { await supabase.from('users').upsert(user); } catch(e) {}
   },
   deleteUser: async (id: string) => {
       const list = StorageService.getUsers().filter(u => u.id !== id);
       trySaveLocal(KEYS.USERS, list);
-      await supabase.from('users').delete().eq('id', id);
       triggerUpdate();
+      
+      try { await supabase.from('users').delete().eq('id', id); } catch(e) {}
   },
 
   getEmployees: (): Employee[] => JSON.parse(localStorage.getItem(KEYS.EMPLOYEES) || '[]'),
@@ -154,34 +227,39 @@ export const StorageService = {
       const idx = list.findIndex(e => e.id === emp.id);
       if(idx > -1) list[idx] = emp; else list.push(emp);
       trySaveLocal(KEYS.EMPLOYEES, list);
-      await supabase.from('employees').upsert(emp);
       triggerUpdate();
+
+      try { await supabase.from('employees').upsert(emp); } catch(e) {}
   },
   deleteEmployee: async (id: string) => {
       const list = StorageService.getEmployees().filter(e => e.id !== id);
       trySaveLocal(KEYS.EMPLOYEES, list);
-      await supabase.from('employees').delete().eq('id', id);
       triggerUpdate();
+
+      try { await supabase.from('employees').delete().eq('id', id); } catch(e) {}
   },
 
   getSchedule: (): ScheduleItem[] => JSON.parse(localStorage.getItem(KEYS.SCHEDULE) || '[]'),
   saveScheduleItem: async (item: ScheduleItem) => {
       const list = StorageService.getSchedule();
-      list.push(item);
+      const idx = list.findIndex(i => i.id === item.id);
+      if(idx > -1) list[idx] = item; else list.push(item);
       trySaveLocal(KEYS.SCHEDULE, list);
-      await supabase.from('schedule').upsert(item);
       triggerUpdate();
+
+      try { await supabase.from('schedule').upsert(item); } catch(e) {}
   },
   deleteScheduleItem: async (id: string) => {
       const list = StorageService.getSchedule().filter(i => i.id !== id);
       trySaveLocal(KEYS.SCHEDULE, list);
-      await supabase.from('schedule').delete().eq('id', id);
       triggerUpdate();
+
+      try { await supabase.from('schedule').delete().eq('id', id); } catch(e) {}
   },
   archiveAndClearSchedule: async () => {
     localStorage.setItem(KEYS.SCHEDULE, '[]');
-    await supabase.from('schedule').delete().neq('id', '0');
     triggerUpdate();
+    try { await supabase.from('schedule').delete().neq('id', '0'); } catch(e) {}
   },
 
   getOMs: (): OMRecord[] => JSON.parse(localStorage.getItem(KEYS.OMS) || '[]'),
@@ -189,9 +267,10 @@ export const StorageService = {
     const list = StorageService.getOMs();
     const idx = list.findIndex(o => o.id === om.id);
     if (idx > -1) list[idx] = om; else list.push(om);
-    trySaveLocal(KEYS.OMS, list, []); // REMOVIDO 'pdfUrl' do strip
-    await supabase.from('oms').upsert(om);
+    trySaveLocal(KEYS.OMS, list, []); 
     triggerUpdate();
+
+    try { await supabase.from('oms').upsert(om); } catch(e) {}
   },
   updateOMStatus: async (id: string, status: any) => {
       const list = StorageService.getOMs();
@@ -199,15 +278,15 @@ export const StorageService = {
       if (om) {
           om.status = status;
           trySaveLocal(KEYS.OMS, list, []);
-          await supabase.from('oms').update({ status }).eq('id', id);
           triggerUpdate();
+          try { await supabase.from('oms').update({ status }).eq('id', id); } catch(e) {}
       }
   },
   deleteOM: async (id: string) => {
     const list = StorageService.getOMs().filter(o => o.id !== id);
     trySaveLocal(KEYS.OMS, list, []);
-    await supabase.from('oms').delete().eq('id', id);
     triggerUpdate();
+    try { await supabase.from('oms').delete().eq('id', id); } catch(e) {}
   },
 
   getARTs: (): RegisteredART[] => JSON.parse(localStorage.getItem(KEYS.ARTS) || '[]'),
@@ -215,15 +294,15 @@ export const StorageService = {
     const list = StorageService.getARTs();
     const idx = list.findIndex(a => a.id === art.id);
     if (idx > -1) list[idx] = art; else list.push(art);
-    trySaveLocal(KEYS.ARTS, list, []); // REMOVIDO 'pdfUrl' do strip
-    await supabase.from('arts').upsert(art);
+    trySaveLocal(KEYS.ARTS, list, []); 
     triggerUpdate();
+    try { await supabase.from('arts').upsert(art); } catch(e) {}
   },
   deleteART: async (id: string) => {
       const list = StorageService.getARTs().filter(a => a.id !== id);
       trySaveLocal(KEYS.ARTS, list, []);
-      await supabase.from('arts').delete().eq('id', id);
       triggerUpdate();
+      try { await supabase.from('arts').delete().eq('id', id); } catch(e) {}
   },
 
   getChecklistTemplate: (): ChecklistTemplateItem[] => {
@@ -237,19 +316,30 @@ export const StorageService = {
     const tasks = StorageService.getActiveMaintenances();
     tasks.push(task);
     trySaveLocal(KEYS.ACTIVE, tasks);
-    await supabase.from('active_maintenance').upsert(task);
-    if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
     triggerUpdate();
+    
+    try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
+    if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
   },
   resumeMaintenance: async (id: string) => {
       const tasks = StorageService.getActiveMaintenances();
       const task = tasks.find(t => t.id === id);
-      if (task && task.status !== 'ANDAMENTO') {
+      if (task) {
+          const wasWaiting = task.status === 'AGUARDANDO';
           task.status = 'ANDAMENTO';
           task.currentSessionStart = new Date().toISOString();
+          
+          // Se estava aguardando, atualiza quem retomou (opcional, pode manter original)
+          // mas como o requisito diz "esperando PROXIMO mecanico", faz sentido atualizar se quiser rastrear.
+          // Por enquanto mantemos o dono original ou atualiza se quiser:
+          if (wasWaiting) {
+             const currentUser = localStorage.getItem('safemaint_user');
+             if(currentUser) task.openedBy = currentUser;
+          }
+
           trySaveLocal(KEYS.ACTIVE, tasks);
-          await supabase.from('active_maintenance').upsert(task);
           triggerUpdate();
+          try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
       }
   },
   pauseMaintenance: async (id: string) => {
@@ -262,8 +352,8 @@ export const StorageService = {
           task.status = 'PAUSADA';
           task.currentSessionStart = undefined;
           trySaveLocal(KEYS.ACTIVE, tasks);
-          await supabase.from('active_maintenance').upsert(task);
           triggerUpdate();
+          try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
       }
   },
   setMaintenancePartial: async (id: string) => {
@@ -272,23 +362,67 @@ export const StorageService = {
   completeMaintenance: async (id: string, statusText: string, closeOM: boolean) => {
       const tasks = StorageService.getActiveMaintenances();
       const task = tasks.find(t => t.id === id);
+      
       if (task) {
+          // 1. Criar Log no Histórico (sempre registra o evento)
           const log: MaintenanceLog = {
               id: crypto.randomUUID(), om: task.header.om, tag: task.header.tag,
               description: task.header.description, startTime: task.startTime,
-              endTime: new Date().toISOString(), duration: 'CONCLUÍDO',
+              endTime: new Date().toISOString(), duration: 'REGISTRADO',
               responsible: task.openedBy || 'SISTEMA', status: statusText,
-              type: task.origin // SALVA A ORIGEM (CORRETIVA OU PREVENTIVA) NO LOG
+              type: task.origin
           };
           const history = StorageService.getHistory();
           history.push(log);
           trySaveLocal(KEYS.HISTORY, history);
-          await supabase.from('history').upsert(log);
+          triggerUpdate();
+          try { await supabase.from('history').upsert(log); } catch(e) {}
+
+          // 2. Se for PARCIAL: NÃO DELETA A TAREFA. Apenas muda status para 'AGUARDANDO'.
+          if (statusText === 'PARCIAL') {
+              if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
+                  // Computa o tempo até agora antes de parar
+                  const now = new Date().getTime();
+                  const start = new Date(task.currentSessionStart).getTime();
+                  task.accumulatedTime = (task.accumulatedTime || 0) + (now - start);
+              }
+              
+              task.status = 'AGUARDANDO'; // Status laranja no Dashboard
+              task.currentSessionStart = undefined; // Para o cronômetro
+              
+              trySaveLocal(KEYS.ACTIVE, tasks);
+              triggerUpdate();
+              try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
+              
+              // Garante que OM continue EM_ANDAMENTO
+              if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
+              
+              return; // Encerra aqui para não deletar
+          }
+
+          // 3. Se for FINALIZAÇÃO TOTAL: Prossegue com arquivamento e exclusão
+          if (task.artId) {
+              const allDocs = StorageService.getDocuments();
+              const artDoc = allDocs.find(d => d.id === task.artId);
+              if (artDoc && artDoc.status === 'RASCUNHO') {
+                  artDoc.status = 'ATIVO';
+                  trySaveLocal(KEYS.DOCS, allDocs, ['manualFileUrl']);
+                  try { await supabase.from('documents').upsert(artDoc); } catch(e) {}
+              }
+          }
+
           const newTasks = tasks.filter(t => t.id !== id);
           trySaveLocal(KEYS.ACTIVE, newTasks);
-          await supabase.from('active_maintenance').delete().eq('id', id);
-          if (closeOM && task.omId) await StorageService.updateOMStatus(task.omId, 'CONCLUIDA');
           triggerUpdate();
+          try { await supabase.from('active_maintenance').delete().eq('id', id); } catch(e) {}
+          
+          if (task.omId) {
+              if (closeOM) {
+                  await StorageService.updateOMStatus(task.omId, 'CONCLUIDA');
+              } else {
+                  await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
+              }
+          }
       }
   },
 
@@ -298,15 +432,15 @@ export const StorageService = {
       const list = StorageService.getDocuments();
       list.push(doc);
       trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
-      await supabase.from('documents').upsert(doc);
       triggerUpdate();
+      try { await supabase.from('documents').upsert(doc); } catch(e) {}
   },
   moveManyToTrash: async (ids: string[]) => {
       const docs = StorageService.getDocuments();
       docs.forEach(d => { if (ids.includes(d.id)) d.status = 'LIXEIRA'; });
       trySaveLocal(KEYS.DOCS, docs);
-      await supabase.from('documents').update({ status: 'LIXEIRA' }).in('id', ids);
       triggerUpdate();
+      try { await supabase.from('documents').update({ status: 'LIXEIRA' }).in('id', ids); } catch(e) {}
   },
   restoreFromTrash: async (id: string) => {
       const docs = StorageService.getDocuments();
@@ -314,25 +448,25 @@ export const StorageService = {
       if (doc) {
           doc.status = 'ATIVO';
           trySaveLocal(KEYS.DOCS, docs);
-          await supabase.from('documents').update({ status: 'ATIVO' }).eq('id', id);
           triggerUpdate();
+          try { await supabase.from('documents').update({ status: 'ATIVO' }).eq('id', id); } catch(e) {}
       }
   },
   deletePermanently: async (id: string) => {
       const docs = StorageService.getDocuments().filter(d => d.id !== id);
       trySaveLocal(KEYS.DOCS, docs);
-      await supabase.from('documents').delete().eq('id', id);
       triggerUpdate();
+      try { await supabase.from('documents').delete().eq('id', id); } catch(e) {}
   },
   emptyTrash: async () => {
       const allDocs = StorageService.getDocuments();
       const trashIds = allDocs.filter(d => d.status === 'LIXEIRA').map(d => d.id);
       const remaining = allDocs.filter(d => d.status !== 'LIXEIRA');
       trySaveLocal(KEYS.DOCS, remaining);
-      if (trashIds.length > 0) {
-          await supabase.from('documents').delete().in('id', trashIds);
-      }
       triggerUpdate();
+      if (trashIds.length > 0) {
+          try { await supabase.from('documents').delete().in('id', trashIds); } catch(e) {}
+      }
   },
   getNotifications: (): NotificationItem[] => {
       const oms = StorageService.getOMs();
@@ -344,24 +478,41 @@ export const StorageService = {
   getAvailability: (): AvailabilityRecord[] => JSON.parse(localStorage.getItem(KEYS.AVAILABILITY) || '[]'),
   saveAvailability: async (recs: AvailabilityRecord[]) => {
       trySaveLocal(KEYS.AVAILABILITY, recs);
-      await supabase.from('availability').upsert(recs);
       triggerUpdate();
+      try { await supabase.from('availability').upsert(recs); } catch(e) {}
   },
   moveToTrash: async (id: string) => {
       const docs = StorageService.getDocuments();
       const doc = docs.find(d => d.id === id);
-      if (doc) { doc.status = 'LIXEIRA'; trySaveLocal(KEYS.DOCS, docs); await supabase.from('documents').update({ status: 'LIXEIRA' }).eq('id', id); triggerUpdate(); }
+      if (doc) { 
+          doc.status = 'LIXEIRA'; 
+          trySaveLocal(KEYS.DOCS, docs); 
+          triggerUpdate();
+          try { await supabase.from('documents').update({ status: 'LIXEIRA' }).eq('id', id); } catch(e) {}
+      }
   },
-  getChatMessages: (): ChatMessage[] => JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]'),
-  sendChatMessage: (msg: ChatMessage) => {
+  getChatMessages: (): ChatMessage[] => JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]').sort((a: ChatMessage, b: ChatMessage) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+  sendChatMessage: async (msg: ChatMessage) => {
       const list = StorageService.getChatMessages();
       list.push(msg);
       trySaveLocal(KEYS.CHAT, list);
       window.dispatchEvent(new Event('safemaint_chat_update'));
+      
+      try {
+          await supabase.from('chat_messages').upsert({
+              id: msg.id,
+              sender: msg.sender,
+              role: msg.role,
+              text: msg.text,
+              timestamp: msg.timestamp,
+              is_system: msg.isSystem || false
+          });
+      } catch(e) {}
   },
-  clearChat: () => {
+  clearChat: async () => {
       localStorage.setItem(KEYS.CHAT, '[]');
       window.dispatchEvent(new Event('safemaint_chat_update'));
+      try { await supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'); } catch(e) {}
   },
   runRetentionPolicy: () => {}
 };

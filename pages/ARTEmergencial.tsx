@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { CommonHeader } from '../components/CommonHeader';
 import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
 import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, CheckCircle } from 'lucide-react';
+import { ShieldCheck, CheckCircle, AlertTriangle, MapPin, List, ArrowRight } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 
 export const ARTEmergencial: React.FC = () => {
@@ -14,31 +15,20 @@ export const ARTEmergencial: React.FC = () => {
     om: '', tag: '', date: new Date().toISOString().split('T')[0], time: '', type: 'MECANICA', description: ''
   });
   
-  // Guardar ID da OM vindo da Gestão de OM
   const [omId, setOmId] = useState<string | undefined>(undefined);
-
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
 
-  // 360 Visual State
   const [selectedRiskId, setSelectedRiskId] = useState<number | null>(null);
   const [quadrantRisks, setQuadrantRisks] = useState<Record<string, number[]>>({
-      'FRENTE': [],
-      'TRAS': [],
-      'ESQUERDA': [],
-      'DIREITA': []
+      'FRENTE': [], 'TRAS': [], 'ESQUERDA': [], 'DIREITA': []
   });
 
-  // Standard Risks List from PDF
   const [checklistRisks, setChecklistRisks] = useState<Record<number, { checked: boolean; control: string }>>({});
 
   useEffect(() => {
-    // Check for state passed from Dashboard (Resume functionality)
     if (location.state) {
         const stateData = location.state as any;
-        setHeader(prev => ({
-            ...prev,
-            ...stateData
-        }));
+        setHeader(prev => ({ ...prev, ...stateData }));
         if (stateData.omId) setOmId(stateData.omId);
     } else {
         const now = new Date();
@@ -47,19 +37,14 @@ export const ARTEmergencial: React.FC = () => {
   }, [location]);
 
   const handleRiskChange = (id: number, checked: boolean) => {
-    setChecklistRisks(prev => {
-        const current = prev[id] || { checked: false, control: '' };
-        return {
-            ...prev,
-            [id]: { ...current, checked }
-        };
-    });
+    setChecklistRisks(prev => ({
+        ...prev,
+        [id]: { ...(prev[id] || { control: '' }), checked }
+    }));
     
-    // Auto-select for placement if checked
     if(checked) {
         setSelectedRiskId(id);
     } else {
-        // Remove from quadrants if unchecked
         const newQuad = { ...quadrantRisks };
         Object.keys(newQuad).forEach(key => {
             newQuad[key] = newQuad[key].filter(rId => rId !== id);
@@ -70,13 +55,10 @@ export const ARTEmergencial: React.FC = () => {
   };
 
   const handleControlChange = (id: number, control: string) => {
-    setChecklistRisks(prev => {
-        const current = prev[id] || { checked: false, control: '' };
-        return {
-            ...prev,
-            [id]: { ...current, control }
-        };
-    });
+    setChecklistRisks(prev => ({
+        ...prev,
+        [id]: { ...(prev[id] || { checked: false }), control }
+    }));
   };
 
   const handleQuadrantClick = (quadrant: string) => {
@@ -92,16 +74,8 @@ export const ARTEmergencial: React.FC = () => {
   };
 
   const handleSave = () => {
-    // Basic validation fields
-    if(!header.om || !header.tag) {
-        alert("PREENCHA OM E TAG.");
-        return;
-    }
-
-    if(signatures.length === 0) {
-        alert("ASSINATURA OBRIGATÓRIA PARA INICIAR.");
-        return;
-    }
+    if(!header.om || !header.tag) { alert("PREENCHA OM E TAG."); return; }
+    if(signatures.length === 0) { alert("ASSINATURA OBRIGATÓRIA."); return; }
 
     const artId = crypto.randomUUID();
     const doc: DocumentRecord = {
@@ -109,15 +83,16 @@ export const ARTEmergencial: React.FC = () => {
       type: 'ART_EMERGENCIAL',
       header,
       createdAt: new Date().toISOString(),
-      status: 'ATIVO',
+      status: 'RASCUNHO',
       content: { quadrantRisks, checklistRisks },
       signatures
     };
     
     StorageService.saveDocument(doc);
     
-    // START CORRECTIVE MAINTENANCE (RED)
     const nowIso = new Date().toISOString();
+    const currentUser = localStorage.getItem('safemaint_user') || 'ADMIN';
+
     const activeTask: ActiveMaintenance = {
         id: crypto.randomUUID(),
         omId: omId,
@@ -125,266 +100,227 @@ export const ARTEmergencial: React.FC = () => {
         startTime: nowIso,
         artId: artId,
         artType: 'ART_EMERGENCIAL',
-        origin: 'CORRETIVA', // RED CARD
+        origin: 'CORRETIVA',
         status: 'ANDAMENTO',
-        currentSessionStart: nowIso // INICIA CONTADOR IMEDIATAMENTE
+        currentSessionStart: nowIso,
+        openedBy: currentUser
     };
-    // ATUALIZA STATUS NO SUPABASE
     StorageService.startMaintenance(activeTask);
 
     alert('ART SALVA E MANUTENÇÃO CORRETIVA INICIADA!');
-    navigate('/dashboard'); // Always go to Dashboard
+    navigate('/dashboard');
   };
 
   const riskList = [
-    "CONTATO COM SUPERFÍCIES CORTANTES/PERFURANTE",
-    "PRENSAMENTO DE DEDOS OU MÃOS",
-    "QUEDA DE PEÇAS/ESTRUTURAS/EQUIPAMENTOS",
-    "PRENSAMENTO OU AGARRAMENTO DO CORPO",
-    "ATROPELAMENTO/ESMAGAMENTO POR VEÍCULOS",
-    "QUEDA, TROPEÇO OU ESCORREGÃO",
-    "ANIMAIS PEÇONHENTOS/INSETOS",
-    "DESMORONAMENTOS DE PILHAS",
-    "QUEDA DE PLATAFORMA OU ESCADAS",
-    "ARCO E/OU CHOQUE ELÉTRICO",
-    "FONTES DE ENERGIA (HIDRÁULICA, PNEUMÁTICA, ETC)",
-    "EXPOSIÇÃO A VAPORES, CONDENSADOS OU QUENTES",
-    "GASES, VAPORES, POEIRAS OU FUMOS",
-    "PRODUTOS QUÍMICOS OU QUEIMADURAS",
-    "PROJEÇÃO DE MATERIAIS NA FACE/OLHOS",
-    "CONDIÇÕES CLIMÁTICAS ADVERSAS",
-    "QUEDA DE HOMEM AO MAR/AFOGAMENTO",
-    "INTERFERÊNCIA ENTRE EQUIPES",
-    "EXCESSO OU DEFICIÊNCIA DE ILUMINAÇÃO",
-    "OUTRAS SITUAÇÕES DE RISCO"
+    "CONTATO COM SUPERFÍCIES CORTANTES/PERFURANTE", "PRENSAMENTO DE DEDOS OU MÃOS", "QUEDA DE PEÇAS/ESTRUTURAS/EQUIPAMENTOS",
+    "PRENSAMENTO OU AGARRAMENTO DO CORPO", "ATROPELAMENTO/ESMAGAMENTO POR VEÍCULOS", "QUEDA, TROPEÇO OU ESCORREGÃO",
+    "ANIMAIS PEÇONHENTOS/INSETOS", "DESMORONAMENTOS DE PILHAS", "QUEDA DE PLATAFORMA OU ESCADAS", "ARCO E/OU CHOQUE ELÉTRICO",
+    "FONTES DE ENERGIA (HIDRÁULICA, PNEUMÁTICA)", "EXPOSIÇÃO A VAPORES, CONDENSADOS OU QUENTES", "GASES, VAPORES, POEIRAS OU FUMOS",
+    "PRODUTOS QUÍMICOS OU QUEIMADURAS", "PROJEÇÃO DE MATERIAIS NA FACE/OLHOS", "CONDIÇÕES CLIMÁTICAS ADVERSAS",
+    "QUEDA DE HOMEM AO MAR/AFOGAMENTO", "INTERFERÊNCIA ENTRE EQUIPES", "EXCESSO OU DEFICIÊNCIA DE ILUMINAÇÃO", "OUTRAS SITUAÇÕES DE RISCO"
   ];
 
-  // Helper Check for Status
   const hasHeader = !!(header.om && header.tag);
-  // FIX: Explicitly type 'r' as any to avoid 'unknown' error
   const hasRisks = Object.values(checklistRisks).some((r: any) => r.checked);
   const hasSignatures = signatures.length > 0;
 
   return (
-    <div className="max-w-7xl mx-auto pb-24 px-4 md:px-6 relative">
-      <div className="flex items-center gap-3 mb-6 border-b pb-4 pt-4">
-        <BackButton className="mr-2" />
-        <div className="bg-red-600 p-2 rounded-lg text-white shadow-md">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    <div className="max-w-7xl mx-auto pb-32 px-4 relative">
+      {/* Title Header */}
+      <div className="flex items-center gap-4 mb-8 border-b border-gray-200 pb-6 pt-6">
+        <BackButton />
+        <div className="bg-red-600/10 p-2 rounded-xl">
+            <AlertTriangle className="text-red-600" size={28} />
         </div>
         <div>
-            <h2 className="text-2xl font-black text-vale-darkgray uppercase tracking-tight">
-                ART EMERGENCIAL
-            </h2>
-            <p className="text-xs font-bold text-gray-400">ANÁLISE DE RISCO - MANUTENÇÃO CORRETIVA</p>
+            <h2 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter leading-none">ART Emergencial</h2>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Análise Preliminar de Risco (APR) - Corretiva</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* COLUNA ESQUERDA: CONTEÚDO PRINCIPAL */}
-          <div className="lg:col-span-2 space-y-6">
-              
-              <CommonHeader data={header} onChange={setHeader} />
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+          
+          {/* LEFT CONTENT */}
+          <div className="xl:col-span-8 space-y-8">
+              <CommonHeader data={header} onChange={setHeader} title="Identificação do Equipamento" />
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  {/* Checklist Grid */}
-                  <div className="bg-white p-6 rounded-lg shadow-md border-2 border-gray-100">
-                    <h3 className="text-lg font-black mb-4 text-gray-700 flex items-center gap-2">
-                        <span className="bg-vale-dark text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                        SELECIONE OS RISCOS E MEDIDAS
-                    </h3>
-                    <p className="text-xs text-gray-500 mb-2 italic">AO MARCAR UM RISCO, DESCREVA A MEDIDA DE CONTROLE.</p>
-                    
-                    <div className="space-y-4 h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                      {riskList.map((risk, idx) => {
-                        const index = idx + 1;
-                        const isSelectedForPlacement = selectedRiskId === index;
-                        const isChecked = checklistRisks[index]?.checked || false;
+              {/* UNIFIED RISK COCKPIT */}
+              <section className="bg-white rounded-[2rem] shadow-lg border border-gray-100 overflow-hidden flex flex-col">
+                  {/* Cockpit Header */}
+                  <div className="bg-gray-50 p-6 border-b flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                          <div className="bg-vale-dark text-white w-6 h-6 rounded-full flex items-center justify-center font-black text-xs">2</div>
+                          <h3 className="font-black text-gray-700 uppercase tracking-tight">Mapeamento de Riscos e Ambiente</h3>
+                      </div>
+                      <div className="text-[9px] font-bold text-gray-400 uppercase hidden sm:block tracking-wider">
+                          Selecione o risco &rarr; Posicione no Mapa
+                      </div>
+                  </div>
 
-                        return (
-                          <div key={index} className={`border border-gray-200 rounded-lg p-3 transition-colors ${isChecked ? 'bg-red-50 border-red-300' : 'hover:bg-gray-50'}`}>
-                            <div className="flex items-start gap-3">
-                              <input 
-                                type="checkbox" 
-                                id={`risk-${index}`}
-                                className="mt-1 h-5 w-5 text-red-600 rounded focus:ring-red-500"
-                                checked={isChecked}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRiskChange(index, e.target.checked)}
-                              />
-                              <div className="flex-1">
-                                <label 
-                                    htmlFor={`risk-${index}`}
-                                    className={`block text-sm font-black mb-1 cursor-pointer ${isSelectedForPlacement ? 'text-vale-blue' : 'text-gray-700'}`}
-                                    onClick={(e) => {
-                                        // Prevent double triggering if clicking label vs box
-                                        if(!isChecked) return;
-                                        setSelectedRiskId(index);
-                                    }}
-                                >
-                                  <span className="font-bold mr-1 text-gray-400">#{index}</span> {risk}
-                                </label>
-                                
-                                {/* Inline Control Measure Input */}
-                                {isChecked && (
-                                    <div className="mt-2 animate-fadeIn">
-                                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">MEDIDA DE CONTROLE:</label>
-                                        <textarea
-                                            rows={2}
-                                            placeholder="DESCREVA COMO CONTROLAR..."
-                                            className="w-full border-red-300 rounded text-sm p-2 focus:ring-red-500 focus:border-red-500 shadow-sm border font-bold"
-                                            value={checklistRisks[index]?.control || ''}
-                                            onChange={(e) => handleControlChange(index, e.target.value)}
-                                            autoFocus // Focus automatically when opened
-                                        />
-                                        <div className="mt-1 flex justify-end">
-                                             <button 
-                                                onClick={() => setSelectedRiskId(index)} 
-                                                className="text-[10px] bg-blue-100 text-vale-blue px-2 py-1 rounded hover:bg-blue-200 font-bold"
-                                             >
-                                                 POSICIONAR NO MAPA 360º
-                                             </button>
+                  <div className="flex flex-col lg:flex-row h-[650px]">
+                      {/* Left: Scrollable List */}
+                      <div className="flex-1 border-b lg:border-b-0 lg:border-r border-gray-100 flex flex-col h-full">
+                          <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                              <List size={14}/> Lista de Verificação Padrão
+                          </div>
+                          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                              {riskList.map((risk, idx) => {
+                                  const index = idx + 1;
+                                  const isChecked = checklistRisks[index]?.checked || false;
+                                  const isActive = selectedRiskId === index;
+                                  
+                                  return (
+                                    <div 
+                                        key={index} 
+                                        className={`
+                                            border rounded-xl p-3 transition-all duration-200 cursor-pointer
+                                            ${isActive ? 'ring-2 ring-blue-400 border-blue-400 bg-blue-50 shadow-md transform scale-[1.02]' : isChecked ? 'bg-red-50 border-red-200' : 'hover:bg-gray-50 border-gray-200'}
+                                        `}
+                                        onClick={(e) => {
+                                            // Click anywhere on card to toggle if not input
+                                            if ((e.target as HTMLElement).tagName !== 'INPUT' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+                                                if(!isChecked) handleRiskChange(index, true);
+                                                else setSelectedRiskId(index);
+                                            }
+                                        }}
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isChecked}
+                                                onChange={(e) => handleRiskChange(index, e.target.checked)}
+                                                className="mt-1 h-5 w-5 text-red-600 rounded border-gray-300 focus:ring-red-500 shrink-0"
+                                            />
+                                            <div className="flex-1">
+                                                <span className={`text-xs font-black uppercase leading-tight block ${isActive ? 'text-blue-800' : 'text-gray-700'}`}>
+                                                    <span className="text-gray-400 mr-2">#{index}</span>{risk}
+                                                </span>
+                                                
+                                                {isChecked && (
+                                                    <div className="mt-3 animate-fadeIn">
+                                                        <textarea 
+                                                            className="w-full text-[10px] p-2 border border-red-200 rounded bg-white focus:ring-1 focus:ring-red-500 outline-none uppercase font-bold"
+                                                            placeholder="MEDIDA DE CONTROLE..."
+                                                            rows={2}
+                                                            value={checklistRisks[index]?.control || ''}
+                                                            onChange={(e) => handleControlChange(index, e.target.value)}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {isActive && <div className="text-blue-500 animate-pulse"><MapPin size={18} fill="currentColor"/></div>}
+                                        </div>
+                                    </div>
+                                  );
+                              })}
+                          </div>
+                      </div>
+
+                      {/* Right: 360 Map */}
+                      <div className="lg:w-[45%] bg-gray-50/30 flex flex-col relative">
+                           <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                              <MapPin size={14}/> Radar 360º (Entorno)
+                          </div>
+                          
+                          <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
+                                {selectedRiskId && (
+                                    <div className="absolute top-4 left-0 right-0 px-4 z-20">
+                                        <div className="bg-blue-600 text-white p-3 rounded-xl shadow-lg flex items-center justify-center gap-3 animate-bounce">
+                                            <span className="font-black text-xs uppercase">Risco #{selectedRiskId} Selecionado</span>
+                                            <ArrowRight size={16} />
+                                            <span className="font-bold text-[10px] uppercase">Clique no Quadrante</span>
                                         </div>
                                     </div>
                                 )}
-                              </div>
-                            </div>
+
+                                <div className="relative w-full max-w-[320px] aspect-square">
+                                    <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-2xl">
+                                        {/* Base */}
+                                        <circle cx="50" cy="50" r="48" fill="white" stroke="#e2e8f0" strokeWidth="1" />
+                                        <line x1="50" y1="2" x2="50" y2="98" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="2" />
+                                        <line x1="2" y1="50" x2="98" y2="50" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="2" />
+                                        
+                                        {/* Quadrants - Interactive */}
+                                        <path d="M50 50 L15 15 A 49 49 0 0 1 85 15 Z" fill={selectedRiskId ? "rgba(59, 130, 246, 0.1)" : "transparent"} className="cursor-pointer hover:fill-blue-200 transition-colors" onClick={() => handleQuadrantClick('FRENTE')} />
+                                        <path d="M50 50 L85 15 A 49 49 0 0 1 85 85 Z" fill={selectedRiskId ? "rgba(59, 130, 246, 0.1)" : "transparent"} className="cursor-pointer hover:fill-blue-200 transition-colors" onClick={() => handleQuadrantClick('DIREITA')} />
+                                        <path d="M50 50 L85 85 A 49 49 0 0 1 15 85 Z" fill={selectedRiskId ? "rgba(59, 130, 246, 0.1)" : "transparent"} className="cursor-pointer hover:fill-blue-200 transition-colors" onClick={() => handleQuadrantClick('TRAS')} />
+                                        <path d="M50 50 L15 85 A 49 49 0 0 1 15 15 Z" fill={selectedRiskId ? "rgba(59, 130, 246, 0.1)" : "transparent"} className="cursor-pointer hover:fill-blue-200 transition-colors" onClick={() => handleQuadrantClick('ESQUERDA')} />
+                                        
+                                        {/* Labels */}
+                                        <text x="50" y="10" textAnchor="middle" fontSize="4" fontWeight="900" fill="#94a3b8">FRENTE</text>
+                                        <text x="94" y="52" textAnchor="middle" fontSize="4" fontWeight="900" fill="#94a3b8">DIR</text>
+                                        <text x="50" y="95" textAnchor="middle" fontSize="4" fontWeight="900" fill="#94a3b8">TRÁS</text>
+                                        <text x="6" y="52" textAnchor="middle" fontSize="4" fontWeight="900" fill="#94a3b8">ESQ</text>
+
+                                        {/* User Center */}
+                                        <circle cx="50" cy="50" r="5" fill="#1e293b" stroke="white" strokeWidth="2" />
+                                    </svg>
+
+                                    {/* Risk Bubbles Overlay */}
+                                    <div className="absolute inset-0 pointer-events-none">
+                                         <div className="absolute top-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['FRENTE'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                         <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['TRAS'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                         <div className="absolute top-0 bottom-0 right-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['DIREITA'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                         <div className="absolute top-0 bottom-0 left-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['ESQUERDA'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8 bg-white p-4 rounded-xl border border-gray-200 text-center w-full max-w-xs shadow-sm">
+                                    <p className="text-[10px] font-bold text-gray-500 uppercase">
+                                        <span className="text-red-600">{Object.values(quadrantRisks).flat().length}</span> Riscos Posicionados
+                                    </p>
+                                </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                      </div>
                   </div>
-
-                  {/* 360 Analysis Section */}
-                  <div className="bg-white p-6 rounded-lg shadow-md border-2 border-gray-100 flex flex-col items-center">
-                    <h3 className="text-lg font-black mb-4 text-gray-700 flex items-center gap-2 w-full">
-                         <span className="bg-vale-dark text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">2</span>
-                         ANÁLISE 360º (QUADRANTES)
-                    </h3>
-                    
-                    {selectedRiskId ? (
-                        <div className="mb-4 px-4 py-2 bg-blue-100 text-vale-blue rounded-full font-bold text-sm animate-pulse shadow-sm text-center">
-                            ONDE ESTÁ O RISCO #{selectedRiskId}?<br/>CLIQUE NO QUADRANTE.
-                        </div>
-                    ) : (
-                        <div className="mb-4 h-12 flex items-center justify-center text-xs text-gray-400 font-bold">
-                            SELECIONE UM RISCO NA LISTA.
-                        </div>
-                    )}
-
-                    <div className="relative w-full max-w-sm aspect-square my-4">
-                        {/* SVG Visual Radar */}
-                        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-xl">
-                            <circle cx="50" cy="50" r="48" fill="#f8fafc" stroke="#334155" strokeWidth="0.5" />
-                            <line x1="50" y1="2" x2="50" y2="98" stroke="#cbd5e1" strokeWidth="0.5" />
-                            <line x1="2" y1="50" x2="98" y2="50" stroke="#cbd5e1" strokeWidth="0.5" />
-                            
-                            {/* Zones - FRENTE */}
-                            <path 
-                                d="M50 50 L15 15 A 49 49 0 0 1 85 15 Z" 
-                                fill={selectedRiskId ? "rgba(59, 130, 246, 0.05)" : "transparent"}
-                                className="cursor-pointer hover:fill-blue-200 transition-colors"
-                                onClick={() => handleQuadrantClick('FRENTE')}
-                            />
-                            <text x="50" y="12" textAnchor="middle" fontSize="5" fontWeight="black" fill="#64748b">FRENTE</text>
-                            
-                            {/* Zones - DIREITA */}
-                            <path 
-                                d="M50 50 L85 15 A 49 49 0 0 1 85 85 Z" 
-                                fill={selectedRiskId ? "rgba(59, 130, 246, 0.05)" : "transparent"}
-                                className="cursor-pointer hover:fill-blue-200 transition-colors"
-                                onClick={() => handleQuadrantClick('DIREITA')}
-                            />
-                            <text x="92" y="52" textAnchor="middle" fontSize="5" fontWeight="black" fill="#64748b">DIREITA</text>
-
-                            {/* Zones - TRAS */}
-                            <path 
-                                d="M50 50 L85 85 A 49 49 0 0 1 15 85 Z" 
-                                fill={selectedRiskId ? "rgba(59, 130, 246, 0.05)" : "transparent"}
-                                className="cursor-pointer hover:fill-blue-200 transition-colors"
-                                onClick={() => handleQuadrantClick('TRAS')}
-                            />
-                            <text x="50" y="93" textAnchor="middle" fontSize="5" fontWeight="black" fill="#64748b">TRÁS</text>
-
-                            {/* Zones - ESQUERDA */}
-                            <path 
-                                d="M50 50 L15 85 A 49 49 0 0 1 15 15 Z" 
-                                fill={selectedRiskId ? "rgba(59, 130, 246, 0.05)" : "transparent"}
-                                className="cursor-pointer hover:fill-blue-200 transition-colors"
-                                onClick={() => handleQuadrantClick('ESQUERDA')}
-                            />
-                             <text x="8" y="52" textAnchor="middle" fontSize="5" fontWeight="black" fill="#64748b">ESQUERDA</text>
-                             
-                             {/* Center User */}
-                             <circle cx="50" cy="50" r="4" fill="#3b82f6" stroke="white" strokeWidth="1" />
-                        </svg>
-
-                        {/* Risk Numbers Overlay */}
-                        <div className="absolute top-8 left-0 right-0 text-center flex justify-center flex-wrap gap-1 px-12 pointer-events-none">
-                            {quadrantRisks['FRENTE'].map(r => <span key={r} className="bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center shadow-md border border-white font-bold">{r}</span>)}
-                        </div>
-                         <div className="absolute top-0 bottom-0 right-4 flex flex-col justify-center gap-1 w-10 pointer-events-none">
-                            {quadrantRisks['DIREITA'].map(r => <span key={r} className="bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center shadow-md border border-white font-bold">{r}</span>)}
-                        </div>
-                         <div className="absolute bottom-8 left-0 right-0 text-center flex justify-center flex-wrap gap-1 px-12 pointer-events-none">
-                            {quadrantRisks['TRAS'].map(r => <span key={r} className="bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center shadow-md border border-white font-bold">{r}</span>)}
-                        </div>
-                         <div className="absolute top-0 bottom-0 left-4 flex flex-col justify-center gap-1 w-10 pointer-events-none">
-                            {quadrantRisks['ESQUERDA'].map(r => <span key={r} className="bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center shadow-md border border-white font-bold">{r}</span>)}
-                        </div>
-                    </div>
-
-                    <div className="bg-gray-50 p-4 rounded text-xs text-gray-500 w-full mt-4 font-bold border">
-                        <strong>DICA:</strong> MARQUE O RISCO, DIGITE A MEDIDA E CLIQUE NO QUADRANTE.
-                    </div>
-                  </div>
-              </div>
+              </section>
 
               <SignatureSection signatures={signatures} onUpdate={setSignatures} />
           </div>
 
-          {/* COLUNA DIREITA: STATUS & RESUMO */}
-          <div className="lg:col-span-1">
-              <div className="sticky top-6 space-y-4">
-                  <div className="bg-vale-dark text-white rounded-xl shadow-lg p-6 border-b-4 border-vale-green">
-                      <h3 className="font-black text-lg mb-4 flex items-center gap-2">
-                          <ShieldCheck className="text-vale-green" /> STATUS
+          {/* RIGHT COLUMN - STATUS */}
+          <div className="xl:col-span-4">
+              <div className="sticky top-6">
+                  <div className="bg-white rounded-[2rem] shadow-xl p-8 border border-gray-100 relative overflow-hidden">
+                      <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 to-red-600"></div>
+                      <h3 className="font-black text-lg text-gray-800 mb-6 flex items-center gap-2 uppercase">
+                          <ShieldCheck className="text-red-600" /> Status da APR
                       </h3>
                       
                       <div className="space-y-4">
-                          <div className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${hasHeader ? 'bg-green-900/30 border-green-700/50 text-green-100' : 'bg-gray-700 border-gray-600 text-gray-400'}`}>
-                              <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${hasHeader ? 'border-green-400 bg-vale-green text-white' : 'border-gray-500'}`}>
-                                  {hasHeader ? <CheckCircle size={14} /> : '1'}
-                              </div>
-                              <div className="text-xs font-bold">CABEÇALHO PREENCHIDO</div>
+                          <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${hasHeader ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+                              {hasHeader ? <CheckCircle size={20} className="fill-green-200 text-green-600"/> : <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
+                              <div className="font-black text-xs uppercase">1. Identificação</div>
+                          </div>
+                          
+                          <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${hasRisks ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+                              {hasRisks ? <CheckCircle size={20} className="fill-green-200 text-green-600"/> : <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
+                              <div className="font-black text-xs uppercase">2. Seleção de Riscos</div>
                           </div>
 
-                          <div className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${hasRisks ? 'bg-green-900/30 border-green-700/50 text-green-100' : 'bg-gray-700 border-gray-600 text-gray-400'}`}>
-                              <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${hasRisks ? 'border-green-400 bg-vale-green text-white' : 'border-gray-500'}`}>
-                                  {hasRisks ? <CheckCircle size={14} /> : '2'}
-                              </div>
-                              <div className="text-xs font-bold">RISCOS IDENTIFICADOS</div>
+                          <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${hasSignatures ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+                              {hasSignatures ? <CheckCircle size={20} className="fill-green-200 text-green-600"/> : <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
+                              <div className="font-black text-xs uppercase">3. Assinaturas</div>
                           </div>
+                      </div>
 
-                          <div className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${hasSignatures ? 'bg-green-900/30 border-green-700/50 text-green-100' : 'bg-gray-700 border-gray-600 text-gray-400'}`}>
-                               <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${hasSignatures ? 'border-green-400 bg-vale-green text-white' : 'border-gray-500'}`}>
-                                  {hasSignatures ? <CheckCircle size={14} /> : '3'}
-                              </div>
-                              <div className="text-xs font-bold">ASSINATURAS COLETADAS</div>
-                          </div>
+                      <div className="mt-8">
+                          <button 
+                            onClick={handleSave}
+                            disabled={!hasSignatures}
+                            className={`
+                                w-full py-4 rounded-xl font-black uppercase text-sm tracking-widest flex items-center justify-center gap-3 shadow-lg transition-all
+                                ${hasSignatures ? 'bg-red-600 text-white hover:bg-red-700 hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
+                            `}
+                        >
+                            <AlertTriangle size={18} fill="currentColor" className="text-white/20" />
+                            Liberar Emergência
+                        </button>
                       </div>
                   </div>
               </div>
           </div>
-      </div>
-
-      <div className="fixed bottom-6 right-6 z-50">
-        <button 
-            onClick={handleSave}
-            className={`px-8 py-4 rounded-full shadow-xl font-black text-lg flex items-center justify-center gap-3 transform transition hover:scale-105 border-4 border-white ${hasSignatures ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer' : 'bg-gray-400 text-gray-200 cursor-not-allowed'}`}
-        >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-            SALVAR / INICIAR
-        </button>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Settings } from 'lucide-react';
+import { Settings, Cog } from 'lucide-react';
 
 interface LoadingSpinnerProps {
   text?: string;
@@ -18,31 +18,33 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   
   const spinnerContent = (
     <div className={`flex flex-col items-center justify-center p-4 ${className}`}>
-      <div className="relative mb-3">
-        {/* Outer Gear */}
+      <div className="relative mb-4">
+        {/* Engrenagem Maior Externa - Gira Horário */}
         <Settings 
           size={size} 
-          className="text-vale-green animate-[spin_3s_linear_infinite]" 
+          className="text-vale-green animate-spin-slow drop-shadow-lg" 
           strokeWidth={1.5} 
         />
-        {/* Inner Gear (smaller, reverse spin for mechanical effect) */}
+        {/* Engrenagem Menor Interna - Gira Anti-Horário */}
         <div className="absolute inset-0 flex items-center justify-center">
-             <Settings 
-                size={size * 0.5} 
-                className="text-vale-green/50 animate-[spin_4s_linear_infinite_reverse]" 
+             <Cog 
+                size={size * 0.6} 
+                className="text-vale-yellow animate-spin-reverse-slow" 
                 strokeWidth={2} 
              />
         </div>
       </div>
-      <p className="text-vale-darkgray font-black text-xs uppercase tracking-[0.2em] animate-pulse">
-        {text}
-      </p>
+      {text && (
+        <p className="text-vale-darkgray font-black text-[10px] uppercase tracking-[0.2em] animate-pulse">
+          {text}
+        </p>
+      )}
     </div>
   );
 
   if (fullScreen) {
     return (
-      <div className="fixed inset-0 z-[9999] bg-white/90 backdrop-blur-sm flex items-center justify-center">
+      <div className="fixed inset-0 z-[9999] bg-white/90 backdrop-blur-sm flex items-center justify-center flex-col">
         {spinnerContent}
       </div>
     );

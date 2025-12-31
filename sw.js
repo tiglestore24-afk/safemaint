@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'safemaint-v2';
+const CACHE_NAME = 'safemaint-v3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -11,6 +11,7 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
+        // Cacheia arquivos essenciais
         return cache.addAll(urlsToCache);
       })
   );
@@ -18,46 +19,38 @@ self.addEventListener('install', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
+  const url = new URL(request.url);
 
-  // Handle Navigation Requests (HTML) - Serve index.html for SPA offline support
+  // 1. Ignorar chamadas ao Supabase (deixe a aplicação lidar com o erro/offline)
+  if (url.hostname.includes('supabase.co')) {
+    return; // Vai direto para network, app lida com falha
+  }
+
+  // 2. Navigation (HTML) - Serve sempre o index.html (SPA)
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => {
-        return caches.match('/index.html') || caches.match('/');
-      })
+      fetch(request)
+        .catch(() => {
+          return caches.match('/index.html') || caches.match('/');
+        })
     );
     return;
   }
 
-  // Handle other requests (JS, CSS, Images, CDNs)
+  // 3. Assets Estáticos (JS, CSS, Imagens) - Stale-while-revalidate
+  // Tenta cache, se não tiver vai pra rede, se tiver cache serve e atualiza em background
   event.respondWith(
     caches.match(request).then(cachedResponse => {
-      // Return cached response if found
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      // If not in cache, fetch from network
-      return fetch(request).then(networkResponse => {
-        // Check for valid response
-        if (!networkResponse || networkResponse.status !== 200 || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) {
-          return networkResponse;
+      const fetchPromise = fetch(request).then(networkResponse => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(request, responseToCache);
+          });
         }
-
-        // Clone response to store in cache
-        const responseToCache = networkResponse.clone();
-
-        caches.open(CACHE_NAME).then(cache => {
-          // Cache requests to CDNs (http/https) and local files
-          if (request.url.startsWith('http')) {
-             cache.put(request, responseToCache);
-          }
-        });
-
         return networkResponse;
-      }).catch(() => {
-         // Fallback logic could go here (e.g. placeholder image)
       });
+      return cachedResponse || fetchPromise;
     })
   );
 });
@@ -75,7 +68,7 @@ self.addEventListener('activate', event => {
           })
         );
       }),
-      self.clients.claim() // Take control immediately
+      self.clients.claim()
     ])
   );
 });

@@ -88,6 +88,7 @@ export interface ScheduleItem {
   timeStart: string;
   timeEnd: string;
   status: string;
+  weekNumber?: string; // Adicionado para controle de semanas
 }
 
 export interface ActiveMaintenance {

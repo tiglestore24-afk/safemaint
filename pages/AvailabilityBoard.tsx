@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { AvailabilityRecord, AvailabilityStatus, ScheduleItem, MaintenanceLog, ActiveMaintenance } from '../types';
 import { BackButton } from '../components/BackButton';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Edit2, X, Star, Eye, CheckCircle, Database } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Edit2, X, Star, Eye, CheckCircle, Database, RefreshCw } from 'lucide-react';
 
 const INITIAL_FLEET = [
     'CA5302', 'CA5304', 'CA5305', 'CA5306', 'CA5307', 'CA5309', 'CA5310', 
@@ -11,16 +11,16 @@ const INITIAL_FLEET = [
 ];
 
 const STATUS_OPTIONS: { id: AvailabilityStatus; label: string; icon: React.ReactNode; color: string }[] = [
-    { id: 'PREV', label: 'PREVENTIVA', icon: <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-black"></div>, color: 'text-black' },
-    { id: 'CORRETIVA', label: 'CORRETIVA', icon: <div className="w-4 h-4 rounded-full bg-red-600 shadow-sm"></div>, color: 'text-red-600' },
-    { id: 'SEM_FALHA', label: 'SEM FALHA', icon: <div className="w-4 h-4 rounded-full bg-[#007e7a] shadow-sm"></div>, color: 'text-[#007e7a]' },
-    { id: 'META', label: 'META PÓS PREV.', icon: <Star size={18} fill="#007e7a" className="text-[#007e7a]"/>, color: 'text-[#007e7a]' },
-    { id: 'DEMANDA_EXTRA', label: 'DEMANDA EXTRA', icon: <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-red-600"></div>, color: 'text-red-600' },
-    { id: 'PR', label: 'PARADA RELEVANTE', icon: <span className="text-red-600 font-black text-[10px] tracking-tighter">PR</span>, color: 'text-red-600' },
-    { id: 'LS', label: 'LUB. SEMANAL', icon: <span className="text-blue-600 font-black text-[10px] tracking-tighter">LS</span>, color: 'text-blue-600' },
-    { id: 'PNEUS', label: 'PNEUS', icon: <div className="w-4 h-4 rounded-full border-2 border-black flex items-center justify-center text-[9px] font-black">P</div>, color: 'text-black' },
-    { id: 'INSPECAO', label: 'INSPEÇÃO', icon: <Eye size={18} className="text-gray-500"/>, color: 'text-gray-500' },
-    { id: 'EMPTY', label: 'REMOVER MARCA', icon: <X size={18} className="text-gray-400"/>, color: 'text-gray-400' },
+    { id: 'PREV', label: 'PREVENTIVA (PROG)', icon: <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-black" title="Preventiva"></div>, color: 'text-black' },
+    { id: 'CORRETIVA', label: 'CORRETIVA (CARD)', icon: <div className="w-4 h-4 rounded-full bg-red-600 shadow-sm border border-red-800" title="Corretiva"></div>, color: 'text-red-600' },
+    { id: 'SEM_FALHA', label: 'SEM FALHA', icon: <div className="w-3 h-3 rounded-full bg-green-500/50" title="Disponível"></div>, color: 'text-[#007e7a]' },
+    { id: 'META', label: 'META PÓS PREV.', icon: <Star size={16} fill="#007e7a" className="text-[#007e7a]" title="Meta Atingida"/>, color: 'text-[#007e7a]' },
+    { id: 'DEMANDA_EXTRA', label: 'DEMANDA EXTRA', icon: <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-red-600" title="Demanda Extra"></div>, color: 'text-red-600' },
+    { id: 'PR', label: 'PARADA RELEVANTE', icon: <span className="text-red-600 font-black text-[9px] tracking-tighter border border-red-200 px-0.5 rounded bg-red-50">PR</span>, color: 'text-red-600' },
+    { id: 'LS', label: 'LUB. SEMANAL', icon: <span className="text-blue-600 font-black text-[9px] tracking-tighter border border-blue-200 px-0.5 rounded bg-blue-50">LS</span>, color: 'text-blue-600' },
+    { id: 'PNEUS', label: 'PNEUS', icon: <div className="w-4 h-4 rounded-full border-2 border-black flex items-center justify-center text-[8px] font-black bg-white" title="Pneus">P</div>, color: 'text-black' },
+    { id: 'INSPECAO', label: 'INSPEÇÃO', icon: <Eye size={16} className="text-purple-600" title="Inspeção"/>, color: 'text-purple-600' },
+    { id: 'EMPTY', label: 'LIMPAR MANUAL', icon: <X size={16} className="text-gray-400"/>, color: 'text-gray-400' },
 ];
 
 export const AvailabilityBoard: React.FC = () => {
@@ -43,21 +43,12 @@ export const AvailabilityBoard: React.FC = () => {
 
     const loadData = () => {
         const storedRecords = StorageService.getAvailability();
-        const storedHistory = StorageService.getHistory();
-        const storedSchedule = StorageService.getSchedule();
-        const storedActive = StorageService.getActiveMaintenances();
+        setHistory(StorageService.getHistory());
+        setSchedule(StorageService.getSchedule());
+        setActiveTasks(StorageService.getActiveMaintenances());
 
-        setHistory(storedHistory);
-        setSchedule(storedSchedule);
-        setActiveTasks(storedActive);
-
-        // Se estiver vazio, popula com a frota inicial
         if (storedRecords.length === 0) {
-            const initial = INITIAL_FLEET.map(tag => ({
-                id: crypto.randomUUID(),
-                tag,
-                statusMap: {}
-            }));
+            const initial = INITIAL_FLEET.map(tag => ({ id: crypto.randomUUID(), tag, statusMap: {} }));
             StorageService.saveAvailability(initial);
             setRecords(initial);
         } else {
@@ -66,84 +57,121 @@ export const AvailabilityBoard: React.FC = () => {
     };
 
     const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-
+    
     const changeMonth = (offset: number) => {
         const newDate = new Date(currentDate);
         newDate.setMonth(newDate.getMonth() + offset);
         setCurrentDate(newDate);
     };
 
-    // --- LÓGICA DE AUTOMAÇÃO ---
-    const getStatusForDay = (tag: string, day: number): AvailabilityStatus[] => {
+    // LÓGICA CENTRAL DE INDICADORES AUTOMÁTICOS
+    const getAutoStatuses = (tag: string, day: number): AvailabilityStatus[] => {
         const targetDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-        const dateStr = targetDate.toLocaleDateString('pt-BR');
-        const isoDate = targetDate.toISOString().split('T')[0];
         
-        // Prioridade 1: Corretiva (Card Vermelho ou Histórico)
-        const hasCorrective = activeTasks.some(t => t.header.tag === tag && t.origin === 'CORRETIVA' && t.startTime.startsWith(isoDate)) ||
-                              history.some(h => h.tag === tag && h.type === 'CORRETIVA' && h.startTime.startsWith(isoDate));
+        // Formatos de data para comparação
+        const dateStrBR = targetDate.toLocaleDateString('pt-BR'); // DD/MM/YYYY (Usado na Programação)
+        const dateIso = targetDate.toISOString().split('T')[0];   // YYYY-MM-DD (Usado nos Cards/Histórico)
         
-        if (hasCorrective) return ['CORRETIVA'];
+        const statuses: Set<AvailabilityStatus> = new Set();
 
-        // Prioridade 2: Programação (Agenda Semanal)
-        const scheduleItem = schedule.find(s => s.frotaOm.includes(tag) && s.dateStart === dateStr);
-        if (scheduleItem) {
-            const desc = scheduleItem.description.toUpperCase();
-            if (desc.includes('PNEU')) return ['PNEUS'];
-            if (desc.includes('INSPE')) return ['INSPECAO'];
-            // Se for preventiva padrão da agenda
-            return ['PREV'];
+        // 1. CORRETIVA (Cards Abertos ou Histórico)
+        const hasActiveCorrective = activeTasks.some(t => 
+            t.header.tag === tag && 
+            (t.origin === 'CORRETIVA' || t.artType === 'ART_EMERGENCIAL') && 
+            t.startTime.startsWith(dateIso)
+        );
+        const hasHistoryCorrective = history.some(h => 
+            h.tag === tag && 
+            h.type === 'CORRETIVA' && 
+            h.startTime.startsWith(dateIso)
+        );
+
+        if (hasActiveCorrective || hasHistoryCorrective) {
+            statuses.add('CORRETIVA');
         }
 
-        // Prioridade 3: Sem Falha (Passado, dias úteis/corridos sem ocorrência)
+        // 2. PROGRAMAÇÃO (Schedule)
+        // Verifica se existe item na agenda para este TAG e DATA
+        const scheduleItemsForDay = schedule.filter(s => 
+            s.frotaOm.includes(tag) && 
+            s.dateStart === dateStrBR
+        );
+
+        if (scheduleItemsForDay.length > 0) {
+            scheduleItemsForDay.forEach(item => {
+                const desc = item.description.toUpperCase();
+                
+                if (desc.includes('PNEU')) {
+                    statuses.add('PNEUS');
+                } else if (desc.includes('INSPE')) {
+                    statuses.add('INSPECAO');
+                } else if (desc.includes('LUB')) {
+                    statuses.add('LS');
+                } else {
+                    // Se não for pneu, inspeção ou lubrificação, assume PREVENTIVA padrão
+                    statuses.add('PREV');
+                }
+            });
+        }
+
+        // 3. SEM FALHA (Default para passado se não tiver nada)
         const today = new Date();
         today.setHours(0,0,0,0);
-        
-        if (targetDate < today) {
-            return ['SEM_FALHA'];
+        if (statuses.size === 0 && targetDate < today) {
+            statuses.add('SEM_FALHA');
         }
 
-        return [];
+        return Array.from(statuses);
     };
 
-    const renderCellContent = (statuses?: AvailabilityStatus[]) => {
-        if (!statuses || statuses.length === 0) return null;
+    const renderCellContent = (manualStatuses: AvailabilityStatus[], autoStatuses: AvailabilityStatus[]) => {
+        // MERGE: Combina manuais e automáticos removendo duplicatas e 'SEM_FALHA' se houver outros eventos
+        let combined = Array.from(new Set([...manualStatuses, ...autoStatuses]));
+        
+        // Se houver qualquer evento real (Auto ou Manual), remove o "Sem Falha" automático visualmente para limpar
+        if (combined.length > 1 && combined.includes('SEM_FALHA')) {
+            combined = combined.filter(s => s !== 'SEM_FALHA');
+        }
+
+        if (combined.length === 0) return null;
+
         return (
-            <div className="flex flex-wrap justify-center items-center gap-0.5 w-full h-full animate-fadeIn">
-                {statuses.map((s, idx) => {
+            <div className="flex flex-wrap justify-center items-center gap-0.5 w-full h-full p-0.5">
+                {combined.map((s, idx) => {
                     const opt = STATUS_OPTIONS.find(o => o.id === s);
-                    return opt ? <div key={idx} title={opt.label}>{opt.icon}</div> : null;
+                    return opt ? <div key={s + idx} title={opt.label} className="transform hover:scale-125 transition-transform">{opt.icon}</div> : null;
                 })}
             </div>
         );
     };
 
     const handleCellClick = (recId: string, day: number, currentStatuses: AvailabilityStatus[]) => {
-        // Se estiver em modo edição, permite override manual
         if(editMode) {
-            setSelectedCell({ recId, day, currentStatuses: currentStatuses || [] });
+            setSelectedCell({ recId, day, currentStatuses });
         } else {
-            alert("O preenchimento é automático baseada na operação. Ative 'Editar Quadro' para ajustes manuais.");
+            // Visualização apenas - Sem ação ou talvez abrir detalhes no futuro
         }
     };
 
-    // Ação Manual (Override)
     const handleStatusAction = (status: AvailabilityStatus) => {
         if (!selectedCell) return;
         const keyDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCell.day).padStart(2, '0')}`;
+        
         const updatedRecords = records.map(rec => {
             if (rec.id === selectedCell.recId) {
                 const newStatusMap = { ...rec.statusMap };
                 let currentList = [...(newStatusMap[keyDate] || [])];
-
+                
                 if (status === 'EMPTY') {
                     delete newStatusMap[keyDate];
                 } else {
+                    // Toggle status manual
                     if (currentList.includes(status)) {
                         currentList = currentList.filter(s => s !== status);
                     } else {
                         currentList.push(status);
                     }
+                    
                     if (currentList.length === 0) delete newStatusMap[keyDate];
                     else newStatusMap[keyDate] = currentList;
                 }
@@ -153,10 +181,14 @@ export const AvailabilityBoard: React.FC = () => {
         });
 
         StorageService.saveAvailability(updatedRecords);
+        
+        // Atualiza a seleção atual para refletir mudança imediata no modal
         const updatedRec = updatedRecords.find(r => r.id === selectedCell.recId);
-        if (updatedRec) {
-            setSelectedCell({ ...selectedCell, currentStatuses: updatedRec.statusMap[keyDate] || [] });
-        }
+        const autoStatuses = getAutoStatuses(updatedRec!.tag, selectedCell.day);
+        const manualStatuses = updatedRec!.statusMap[keyDate] || [];
+        const combined = Array.from(new Set([...manualStatuses, ...autoStatuses])); // Visual merge for modal logic if needed
+        
+        setSelectedCell({ ...selectedCell, currentStatuses: combined });
     };
 
     const handleAddTag = () => {
@@ -170,45 +202,49 @@ export const AvailabilityBoard: React.FC = () => {
     const daysArray = Array.from({ length: 31 }, (_, i) => i + 1);
 
     return (
-        <div className="max-w-[100%] mx-auto pb-20 px-4 md:px-8 animate-fadeIn">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b-2 border-gray-200 pb-4 bg-white p-4 rounded-2xl shadow-sm">
-                <div className="flex items-center gap-4">
+        <div className="max-w-[100%] mx-auto pb-10 px-4">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="flex items-center gap-3">
                     <BackButton />
                     <div>
-                        <h2 className="text-xl font-black text-vale-darkgray uppercase tracking-tighter">Histórico Operacional</h2>
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.3em]">Gestão de Disponibilidade Industrial</p>
+                        <h2 className="text-lg font-bold text-gray-800 uppercase flex items-center gap-2">
+                            Disponibilidade Física
+                            <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-black border border-gray-200 hidden md:inline-block">DF%</span>
+                        </h2>
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-4 bg-gray-50 px-4 py-2 rounded-xl shadow-inner border border-gray-100">
-                    <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-white hover:shadow-md rounded-lg transition-all"><ChevronLeft size={20} className="text-vale-green"/></button>
-                    <span className="font-black text-sm min-w-[150px] text-center text-vale-green uppercase tracking-widest">{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span>
-                    <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-white hover:shadow-md rounded-lg transition-all"><ChevronRight size={20} className="text-vale-green"/></button>
+                <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                    <button onClick={() => changeMonth(-1)} className="hover:bg-gray-200 rounded p-1"><ChevronLeft size={16} className="text-[#007e7a]"/></button>
+                    <span className="font-black text-sm min-w-[140px] text-center text-[#007e7a] uppercase">{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span>
+                    <button onClick={() => changeMonth(1)} className="hover:bg-gray-200 rounded p-1"><ChevronRight size={16} className="text-[#007e7a]"/></button>
                 </div>
 
                 <div className="flex gap-2">
-                    <button onClick={() => setIsAddModalOpen(true)} className="bg-[#007e7a] text-white px-4 py-2.5 rounded-xl font-black text-[10px] flex items-center gap-2 shadow-lg hover:bg-[#00605d] transition-all uppercase active:scale-95">
-                        <Plus size={16} /> Incluir Equipamento
+                    <button onClick={loadData} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2 rounded font-bold text-[10px] flex items-center gap-1 uppercase transition-colors" title="Recarregar Dados">
+                        <RefreshCw size={14} />
                     </button>
-                    <button onClick={() => setEditMode(!editMode)} className={`px-4 py-2.5 rounded-xl font-black text-[10px] flex items-center gap-2 border shadow-sm transition-all uppercase active:scale-95 ${editMode ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-                        <Edit2 size={16} /> {editMode ? 'Concluir' : 'Editar'}
+                    <button onClick={() => setIsAddModalOpen(true)} className="bg-[#007e7a] text-white px-3 py-2 rounded font-bold text-[10px] flex items-center gap-1 uppercase hover:bg-[#00605d] transition-colors">
+                        <Plus size={14} /> Equipamento
+                    </button>
+                    <button onClick={() => setEditMode(!editMode)} className={`px-3 py-2 rounded font-bold text-[10px] flex items-center gap-1 border uppercase transition-colors ${editMode ? 'bg-orange-50 text-orange-600 border-orange-200 animate-pulse' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                        <Edit2 size={14} /> {editMode ? 'MODO EDIÇÃO' : 'EDITAR MANUAL'}
                     </button>
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-2xl border-[8px] border-[#d1d5db] overflow-hidden relative group">
-                <div className="bg-[#007e7a] text-white text-center py-2 font-black uppercase text-sm tracking-[0.3em] shadow-lg relative z-10 flex justify-center items-center gap-3">
-                    <Database size={16} />
-                    DIAS OPERANDO SEM CORRETIVA APÓS PREVENTIVA
+            <div className="bg-white rounded-lg shadow-sm border border-gray-300 overflow-hidden relative">
+                <div className="bg-[#007e7a] text-white text-center py-1.5 font-bold uppercase text-[10px] tracking-widest flex justify-center items-center gap-2 shadow-md z-30 relative">
+                    <Database size={12} /> Mapa de Ocorrências & Programação
                 </div>
 
-                <div className="overflow-x-auto custom-scrollbar scroll-smooth">
+                <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full border-collapse">
                         <thead>
-                            <tr className="bg-[#f8fafc]">
-                                <th className="p-2 text-left text-[10px] font-black uppercase border border-gray-300 w-32 sticky left-0 bg-[#f8fafc] z-30 shadow-r shadow-black/5">Equipamento</th>
+                            <tr className="bg-gray-100">
+                                <th className="p-2 text-left text-[10px] font-black uppercase border border-gray-300 w-28 sticky left-0 bg-gray-100 z-20 text-gray-600 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Tag Frota</th>
                                 {daysArray.map(day => (
-                                    <th key={day} className={`p-1 text-center text-[9px] font-black border border-gray-300 w-8 ${day > daysInMonth ? 'bg-gray-200 text-gray-400' : 'text-gray-700'}`}>
+                                    <th key={day} className={`p-1 text-center text-[9px] font-bold border border-gray-300 w-9 min-w-[36px] ${day > daysInMonth ? 'bg-gray-200 text-gray-300' : 'text-gray-700'}`}>
                                         {day}
                                     </th>
                                 ))}
@@ -216,26 +252,33 @@ export const AvailabilityBoard: React.FC = () => {
                         </thead>
                         <tbody>
                             {records.map((rec) => (
-                                <tr key={rec.id} className="hover:bg-[#f0fdfa] transition-colors group/row">
-                                    <td className="p-2 border border-gray-300 font-black text-[11px] text-gray-800 bg-white sticky left-0 z-20 flex justify-between items-center shadow-r shadow-black/5">
-                                        <span className="tracking-tighter">{rec.tag.replace(/(\D+)(\d+)/, '$1 $2')}</span>
-                                        {editMode && <button onClick={() => StorageService.saveAvailability(records.filter(r => r.id !== rec.id))} className="text-red-400 hover:text-red-600 transform scale-0 group-hover/row:scale-100 transition-transform"><Trash2 size={14}/></button>}
+                                <tr key={rec.id} className="hover:bg-teal-50/20 transition-colors group">
+                                    <td className="p-2 border border-gray-300 font-black text-[10px] text-gray-700 bg-white sticky left-0 z-10 flex justify-between items-center shadow-[2px_0_5px_rgba(0,0,0,0.05)] group-hover:bg-teal-50/50">
+                                        <span>{rec.tag}</span>
+                                        {editMode && <button onClick={() => StorageService.saveAvailability(records.filter(r => r.id !== rec.id))} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={12}/></button>}
                                     </td>
                                     {daysArray.map(day => {
                                         const isActiveDay = day <= daysInMonth;
+                                        // Key date for Manual overrides
                                         const keyDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                        
                                         const manualStatuses = rec.statusMap[keyDate] || [];
-                                        const autoStatuses = isActiveDay ? getStatusForDay(rec.tag, day) : [];
-                                        const displayStatuses = manualStatuses.length > 0 ? manualStatuses : autoStatuses;
+                                        const autoStatuses = isActiveDay ? getAutoStatuses(rec.tag, day) : [];
+                                        
+                                        // Combined for passing to click handler
+                                        const combined = Array.from(new Set([...manualStatuses, ...autoStatuses]));
 
                                         return (
                                             <td 
                                                 key={day} 
-                                                onClick={() => isActiveDay && handleCellClick(rec.id, day, displayStatuses)} 
-                                                className={`border border-gray-300 text-center transition-all ${isActiveDay ? 'cursor-pointer hover:bg-[#e6fffa]' : 'bg-gray-50'}`} 
-                                                style={{ height: '28px' }}
+                                                onClick={() => isActiveDay && handleCellClick(rec.id, day, combined)} 
+                                                className={`
+                                                    border border-gray-300 text-center align-middle relative
+                                                    ${isActiveDay ? (editMode ? 'cursor-pointer hover:bg-orange-50' : 'hover:bg-gray-50') : 'bg-gray-100'}
+                                                `} 
+                                                style={{ height: '32px' }}
                                             >
-                                                {isActiveDay && renderCellContent(displayStatuses)}
+                                                {isActiveDay && renderCellContent(manualStatuses, autoStatuses)}
                                             </td>
                                         );
                                     })}
@@ -244,66 +287,66 @@ export const AvailabilityBoard: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
-
-                <div className="bg-[#f1f5f9] p-4 flex flex-wrap gap-x-6 gap-y-2 justify-center items-center border-t border-gray-300 relative z-10">
-                    <span className="font-black text-[10px] text-gray-400 uppercase tracking-[0.2em] mr-2 border-r border-gray-300 pr-6">Legenda:</span>
-                    {STATUS_OPTIONS.filter(o => o.id !== 'EMPTY').map(opt => (
-                        <div key={opt.id} className="flex items-center gap-2">
-                            <div className="transform scale-90">{opt.icon}</div>
-                            <span className={`text-[9px] font-bold uppercase ${opt.color}`}>{opt.label}</span>
-                        </div>
-                    ))}
-                </div>
+            </div>
+            
+            {/* LEGENDA DE STATUS */}
+            <div className="mt-4 flex flex-wrap gap-3 justify-center bg-white p-3 rounded-lg border border-gray-200">
+                {STATUS_OPTIONS.filter(o => o.id !== 'EMPTY').map(opt => (
+                    <div key={opt.id} className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-100">
+                        <div className="scale-75">{opt.icon}</div>
+                        <span className={`text-[9px] font-bold uppercase ${opt.color}`}>{opt.label}</span>
+                    </div>
+                ))}
             </div>
 
-            {selectedCell && editMode && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-vale-dark/80 backdrop-blur-md" onClick={() => setSelectedCell(null)}>
-                    <div className="bg-white rounded-[2rem] shadow-[0_0_80px_rgba(0,0,0,0.4)] p-8 w-full max-w-sm border-b-[8px] border-[#007e7a] animate-fade-in-up" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-6">
+            {/* MODAL EDIÇÃO MANUAL */}
+             {selectedCell && editMode && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn" onClick={() => setSelectedCell(null)}>
+                    <div className="bg-white rounded-xl p-6 w-full max-w-sm border-t-4 border-orange-500 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4 border-b pb-2">
                             <div>
-                                <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter leading-none">Marcar Dia {selectedCell.day}</h3>
-                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Status de Disponibilidade</p>
+                                <h3 className="text-lg font-black text-gray-800 uppercase leading-none">Apontamento Manual</h3>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">Dia {selectedCell.day} - Adicionar/Remover Eventos</p>
                             </div>
-                            <button onClick={() => setSelectedCell(null)} className="p-2 bg-gray-100 text-gray-400 hover:text-red-500 rounded-full transition-all"><X size={20}/></button>
+                            <button onClick={() => setSelectedCell(null)} className="hover:bg-gray-100 p-1 rounded-full"><X size={20} className="text-gray-400"/></button>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2">
                             {STATUS_OPTIONS.map(opt => {
                                 const isSelected = selectedCell.currentStatuses.includes(opt.id);
                                 return (
                                     <button 
                                         key={opt.id} 
                                         onClick={() => handleStatusAction(opt.id)} 
-                                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all relative group/btn ${opt.id === 'EMPTY' ? 'border-red-100 text-red-400 col-span-2 mt-2 bg-red-50/30' : isSelected ? 'border-[#007e7a] bg-[#f0fdfa] scale-[1.02] shadow' : 'border-gray-100 hover:border-gray-200 bg-gray-50/50 hover:bg-white'}`}
+                                        className={`
+                                            flex items-center gap-2 p-3 rounded-lg border transition-all text-[9px] font-black uppercase 
+                                            ${opt.id === 'EMPTY' 
+                                                ? 'col-span-2 border-red-100 text-red-500 bg-red-50 hover:bg-red-100' 
+                                                : isSelected 
+                                                    ? 'border-[#007e7a] bg-teal-50 ring-1 ring-[#007e7a] shadow-sm' 
+                                                    : 'border-gray-100 bg-gray-50 text-gray-500 hover:bg-white hover:border-gray-300'
+                                            }
+                                        `}
                                     >
-                                        <div className="w-6 flex justify-center transform group-hover/btn:scale-110 transition-transform">{opt.icon}</div>
-                                        <span className={`text-[9px] font-black uppercase tracking-tight ${opt.color}`}>{opt.label}</span>
-                                        {isSelected && <div className="absolute -top-1.5 -right-1.5 bg-[#007e7a] text-white p-0.5 rounded-full shadow border border-white"><CheckCircle size={10} /></div>}
+                                        <div className="scale-90">{opt.icon}</div>
+                                        <span className={opt.color}>{opt.label}</span>
+                                        {isSelected && opt.id !== 'EMPTY' && <CheckCircle size={12} className="ml-auto text-[#007e7a]" />}
                                     </button>
                                 );
                             })}
                         </div>
-                        <button onClick={() => setSelectedCell(null)} className="mt-6 w-full py-3 bg-gray-900 text-white font-black rounded-xl text-[10px] tracking-[0.2em] shadow-xl uppercase hover:bg-black transition-all active:scale-95">Salvar Condição</button>
                     </div>
                 </div>
             )}
 
+            {/* MODAL ADICIONAR TAG */}
             {isAddModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-vale-dark/80 backdrop-blur-md">
-                    <div className="bg-white rounded-[2rem] p-8 max-w-xs w-full shadow-[0_0_80px_rgba(0,0,0,0.4)] animate-fade-in-up border-b-[8px] border-vale-green">
-                        <h3 className="text-xl font-black mb-6 uppercase text-vale-dark tracking-tighter">Incluir Equipamento</h3>
-                        <div className="space-y-1 mb-6">
-                            <label className="text-[9px] font-black text-gray-400 ml-2 uppercase tracking-widest">TAG (EX: CA5302)</label>
-                            <input 
-                                value={newTag} 
-                                onChange={e => setNewTag(e.target.value.toUpperCase())} 
-                                className="w-full border-2 border-gray-100 rounded-2xl p-4 font-black text-2xl uppercase focus:border-[#007e7a] focus:bg-white bg-gray-50 outline-none transition-all shadow-inner" 
-                                placeholder="CA53XX" 
-                                autoFocus 
-                            />
-                        </div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setIsAddModalOpen(false)} className="flex-1 py-3 bg-gray-100 font-black text-gray-400 rounded-xl text-[10px] uppercase hover:bg-gray-200 transition-all">Cancelar</button>
-                            <button onClick={handleAddTag} disabled={!newTag} className="flex-1 py-3 bg-[#007e7a] text-white font-black rounded-xl text-[10px] uppercase shadow hover:bg-[#00605d] transition-all disabled:opacity-50 active:scale-95">Salvar</button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-xl p-6 max-w-xs w-full border-t-4 border-[#007e7a] shadow-2xl">
+                        <h3 className="text-lg font-black mb-4 uppercase text-gray-800">Novo Equipamento</h3>
+                        <input value={newTag} onChange={e => setNewTag(e.target.value.toUpperCase())} className="w-full border-2 border-gray-200 rounded-lg p-3 font-bold uppercase focus:border-[#007e7a] outline-none mb-4 text-sm" placeholder="TAG..." autoFocus />
+                        <div className="flex gap-2">
+                            <button onClick={() => setIsAddModalOpen(false)} className="flex-1 py-3 bg-gray-100 font-bold text-gray-500 rounded-lg text-xs uppercase hover:bg-gray-200">Cancelar</button>
+                            <button onClick={handleAddTag} disabled={!newTag} className="flex-1 py-3 bg-[#007e7a] text-white font-bold rounded-lg text-xs uppercase hover:bg-[#00605d]">Salvar</button>
                         </div>
                     </div>
                 </div>
