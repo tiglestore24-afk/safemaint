@@ -77,8 +77,9 @@ export const TVSchedule: React.FC = () => {
     const activeTasks = StorageService.getActiveMaintenances();
     const schedule = StorageService.getSchedule();
     const tvItems: TVItem[] = [];
+    const todayStr = new Date().toLocaleDateString('pt-BR');
 
-    // Map Active Tasks to TV Schema
+    // 1. CARDS EM EXECUÇÃO (Prioridade Máxima)
     activeTasks.forEach(task => {
         let statusColor: 'EMERGENCY' | 'RUNNING' | 'PAUSED' = 'RUNNING';
         if (task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL') statusColor = 'EMERGENCY';
@@ -106,18 +107,18 @@ export const TVSchedule: React.FC = () => {
         });
     });
 
-    // Map Scheduled Items
-    schedule.forEach(item => {
+    // 2. PROGRAMAÇÃO DO DIA (Filtrado estritamente pela Coluna 8 = dateStart)
+    // O usuário especificou que a Coluna 8 (dateStart) é a referência para "Manutenção do Dia"
+    const todaysSchedule = schedule.filter(item => item.dateStart === todayStr);
+
+    todaysSchedule.forEach(item => {
         let om = item.frotaOm;
         if (item.frotaOm.includes('\n')) {
             om = item.frotaOm.replace('\n', ' / ');
         }
 
-        // Avoid duplicates if already active
-        // Simplistic check: if description matches exactly, might be same. 
-        // Better: Check OM if present in active tasks
-        // For now, we show both if they exist, or filter out by OM if needed.
-        // Assuming user wants to see everything.
+        // Avoid duplicates if already in active list (simple check by description or Tag)
+        // If needed, can be refined. For now, showing both helps tracking planned vs actual.
 
         tvItems.push({
             id: item.id,
@@ -174,7 +175,7 @@ export const TVSchedule: React.FC = () => {
                 </div>
                 <div>
                     <h1 className="font-black text-white text-lg tracking-widest uppercase mb-0 drop-shadow-md leading-none">SAFEMAINT TV</h1>
-                    <p className="text-[#10b981] font-bold text-[8px] tracking-[0.3em]">PROGRAMAÇÃO OFICIAL</p>
+                    <p className="text-[#10b981] font-bold text-[8px] tracking-[0.3em]">PROGRAMAÇÃO DO DIA ({now.toLocaleDateString()})</p>
                 </div>
             </div>
             
@@ -213,7 +214,7 @@ export const TVSchedule: React.FC = () => {
                     <div style={{width: colWidths.prio}} className="px-1 text-center border-r border-gray-800">PRIORIDADE</div>
                     <div style={{width: colWidths.people}} className="px-1 text-center border-r border-gray-800">N PES.</div>
                     <div style={{width: colWidths.h}} className="px-1 text-center border-r border-gray-800">H</div>
-                    <div style={{width: colWidths.dIni}} className="px-1 text-center border-r border-gray-800 bg-blue-900/20">DATA INI</div>
+                    <div style={{width: colWidths.dIni}} className="px-1 text-center border-r border-gray-800 bg-blue-900/20 text-[#10b981]">DATA INI</div>
                     <div style={{width: colWidths.dFim}} className="px-1 text-center border-r border-gray-800">DATA FIM</div>
                     <div style={{width: colWidths.center}} className="px-1 text-left border-r border-gray-800">CENTRO</div>
                     <div style={{width: colWidths.hIni}} className="px-1 text-center border-r border-gray-800">HR INI</div>
@@ -224,67 +225,44 @@ export const TVSchedule: React.FC = () => {
 
                 {/* DATA ROWS */}
                 <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar w-full">
-                    {items.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-600 opacity-50">
-                            <Clock size={60} className="mb-4" />
-                            <span className="text-xl font-black">AGUARDANDO PROGRAMAÇÃO</span>
-                        </div>
-                    )}
-                    
-                    {items.map((item, idx) => {
-                        let rowClass = "bg-gray-900 border-b border-gray-800 text-gray-300";
-                        if (idx % 2 === 1) rowClass = "bg-[#1f2937]/50 border-b border-gray-800 text-gray-300";
-
-                        if (item.statusColor === 'EMERGENCY') {
-                            rowClass = "bg-red-900/20 border-b border-red-900/50 text-red-100 animate-pulse-slow font-bold";
-                        } else if (item.statusColor === 'RUNNING') {
-                            rowClass = "bg-green-900/10 border-b border-green-900/30 text-green-50 font-bold";
-                        } else if (item.statusColor === 'PAUSED') {
-                            rowClass = "bg-yellow-900/10 border-b border-yellow-900/30 text-yellow-50";
-                        }
-
-                        return (
-                            <div key={item.id} className={`flex items-center py-0.5 min-h-[32px] w-full ${rowClass} transition-all text-[8px] md:text-[9px]`}>
-                                <div style={{width: colWidths.om}} className="px-1 truncate font-black text-white">{item.frotaOm}</div>
-                                <div style={{width: colWidths.desc}} className="px-1 truncate">{item.description}</div>
-                                <div style={{width: colWidths.dMin}} className="px-1 text-center">{item.dateMin}</div>
-                                <div style={{width: colWidths.dMax}} className="px-1 text-center">{item.dateMax}</div>
-                                <div style={{width: colWidths.prio}} className="px-1 text-center truncate">{item.priority}</div>
-                                <div style={{width: colWidths.people}} className="px-1 text-center">{item.peopleCount}</div>
-                                <div style={{width: colWidths.h}} className="px-1 text-center">{item.hours}</div>
-                                <div style={{width: colWidths.dIni}} className="px-1 text-center font-bold text-yellow-400">{item.dateStart}</div>
-                                <div style={{width: colWidths.dFim}} className="px-1 text-center">{item.dateEnd}</div>
-                                <div style={{width: colWidths.center}} className="px-1 truncate">{item.workCenter}</div>
-                                <div style={{width: colWidths.hIni}} className="px-1 text-center font-bold text-white">{item.timeStart}</div>
-                                <div style={{width: colWidths.hFim}} className="px-1 text-center">{item.timeEnd}</div>
-                                <div style={{width: colWidths.res}} className="px-1 truncate opacity-80">{item.resources}</div>
-                                <div style={{width: colWidths.res2}} className="px-1 text-center truncate">{item.resources2}</div>
+                    {items.length === 0 ? (
+                        <div className="flex items-center justify-center h-full">
+                            <div className="text-center opacity-50">
+                                <Clock size={48} className="mx-auto mb-2 text-gray-600"/>
+                                <p className="text-gray-500 font-bold uppercase text-xs tracking-widest">Sem programação para hoje</p>
                             </div>
-                        );
-                    })}
-                    <div className="h-10"></div>
+                        </div>
+                    ) : (
+                        items.map((item, index) => (
+                            <div 
+                                key={item.id} 
+                                className={`
+                                    flex py-1.5 border-b border-gray-800 text-[9px] md:text-[10px] font-bold uppercase tracking-tight
+                                    ${index % 2 === 0 ? 'bg-transparent' : 'bg-gray-900/30'}
+                                    ${item.statusColor === 'EMERGENCY' ? 'text-red-400 bg-red-900/10 border-red-900/30' : ''}
+                                    ${item.statusColor === 'RUNNING' ? 'text-green-400 bg-green-900/10 border-green-900/30' : ''}
+                                `}
+                            >
+                                <div style={{width: colWidths.om}} className="px-1 text-left border-r border-gray-800/50 truncate font-black text-white">{item.frotaOm}</div>
+                                <div style={{width: colWidths.desc}} className="px-1 text-left border-r border-gray-800/50 truncate">{item.description}</div>
+                                <div style={{width: colWidths.dMin}} className="px-1 text-center border-r border-gray-800/50 text-gray-400">{item.dateMin}</div>
+                                <div style={{width: colWidths.dMax}} className="px-1 text-center border-r border-gray-800/50 text-gray-400">{item.dateMax}</div>
+                                <div style={{width: colWidths.prio}} className="px-1 text-center border-r border-gray-800/50">{item.priority}</div>
+                                <div style={{width: colWidths.people}} className="px-1 text-center border-r border-gray-800/50 text-blue-300">{item.peopleCount}</div>
+                                <div style={{width: colWidths.h}} className="px-1 text-center border-r border-gray-800/50 text-yellow-500">{item.hours}</div>
+                                <div style={{width: colWidths.dIni}} className="px-1 text-center border-r border-gray-800/50 font-black text-white bg-blue-500/10">{item.dateStart}</div>
+                                <div style={{width: colWidths.dFim}} className="px-1 text-center border-r border-gray-800/50 text-gray-400">{item.dateEnd}</div>
+                                <div style={{width: colWidths.center}} className="px-1 text-left border-r border-gray-800/50 truncate text-gray-300">{item.workCenter}</div>
+                                <div style={{width: colWidths.hIni}} className="px-1 text-center border-r border-gray-800/50 text-green-300">{item.timeStart}</div>
+                                <div style={{width: colWidths.hFim}} className="px-1 text-center border-r border-gray-800/50 text-red-300">{item.timeEnd}</div>
+                                <div style={{width: colWidths.res}} className="px-1 text-left border-r border-gray-800/50 truncate text-blue-200">{item.resources}</div>
+                                <div style={{width: colWidths.res2}} className="px-1 text-center text-gray-500">{item.resources2}</div>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
         </div>
-        
-        <div className="bg-[#10b981] h-1 w-full shadow-[0_-4px_20px_rgba(16,185,129,0.5)]"></div>
-        
-        <style>{`
-          .no-scrollbar::-webkit-scrollbar {
-            display: none;
-          }
-          .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-          }
-          @keyframes pulse-slow {
-            0%, 100% { background-color: rgba(127, 29, 29, 0.2); }
-            50% { background-color: rgba(127, 29, 29, 0.4); }
-          }
-          .animate-pulse-slow {
-            animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-          }
-        `}</style>
     </div>
   );
 };

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   FileInput, PlayCircle, Trash2, Search, CalendarDays, User,
   Wrench, AlertOctagon, Clock, CheckCircle2, Eye, X, Info, FileText,
-  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download, Link
+  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download, Link, LayoutGrid, List as ListIcon
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
@@ -27,11 +27,12 @@ export const OMManagement: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [processText, setProcessText] = useState('');
 
-  // --- STATE DOS FILTROS ---
+  // --- STATE DOS FILTROS & VIEW ---
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'CORRETIVA' | 'PREVENTIVA'>('ALL');
   const [dateFilter, setDateFilter] = useState('');
   const [sortOrder, setSortOrder] = useState<'DESC' | 'ASC'>('DESC');
+  const [viewMode, setViewMode] = useState<'GRID' | 'LIST'>('GRID');
   
   // --- VIEW & MODAL STATE ---
   const [viewingOM, setViewingOM] = useState<OMRecord | null>(null);
@@ -311,22 +312,22 @@ export const OMManagement: React.FC = () => {
           </button>
       </div>
 
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6 flex flex-col gap-3">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col gap-3">
           {/* LINHA 1: Abas e Busca */}
           <div className="flex flex-col lg:flex-row gap-3 justify-between items-center w-full">
               <div className="flex bg-gray-100 p-1 rounded-lg w-full lg:w-auto gap-1">
-                  <button onClick={() => setActiveTab('PENDENTE')} className={`flex-1 lg:flex-none px-6 py-2 rounded-lg font-bold text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'PENDENTE' ? 'bg-[#007e7a] text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <button onClick={() => setActiveTab('PENDENTE')} className={`flex-1 lg:flex-none px-6 py-2 rounded-lg font-bold text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'PENDENTE' ? 'bg-[#007e7a] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     Carteira Ativa
                     <span className="bg-white/20 px-1.5 rounded text-[9px] ml-1">{oms.filter(o => o.status !== 'CONCLUIDA').length}</span>
                   </button>
-                  <button onClick={() => setActiveTab('CONCLUIDA')} className={`flex-1 lg:flex-none px-6 py-2 rounded-lg font-bold text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'CONCLUIDA' ? 'bg-[#007e7a] text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <button onClick={() => setActiveTab('CONCLUIDA')} className={`flex-1 lg:flex-none px-6 py-2 rounded-lg font-bold text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'CONCLUIDA' ? 'bg-[#007e7a] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     Histórico
                   </button>
               </div>
               
               <div className="relative w-full lg:flex-1 lg:max-w-md">
                   <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
-                  <input type="text" placeholder="BUSCAR OM, TAG..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-300 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a]" />
+                  <input type="text" placeholder="BUSCAR OM, TAG..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a]/20" />
               </div>
           </div>
 
@@ -335,14 +336,14 @@ export const OMManagement: React.FC = () => {
               <div className="flex items-center gap-2 text-gray-400 mr-2 shrink-0">
                   <ListFilter size={14} /> <span className="text-[10px] font-bold uppercase hidden md:inline">Filtros:</span>
               </div>
-              <div className="grid grid-cols-2 md:flex md:flex-row gap-2 w-full">
-                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="bg-gray-50 border border-gray-300 text-gray-600 font-bold text-[10px] rounded p-2 outline-none uppercase">
+              <div className="grid grid-cols-2 md:flex md:flex-row gap-2 w-full items-center">
+                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="bg-gray-50 border border-gray-200 text-gray-600 font-bold text-[10px] rounded p-2 outline-none uppercase hover:bg-gray-100">
                       <option value="ALL">Todos Tipos</option>
                       <option value="CORRETIVA">Corretiva</option>
                       <option value="PREVENTIVA">Preventiva</option>
                   </select>
-                  <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-gray-50 border border-gray-300 text-gray-600 font-bold text-[10px] rounded p-2 outline-none uppercase" />
-                  <button onClick={() => setSortOrder(prev => prev === 'DESC' ? 'ASC' : 'DESC')} className="bg-gray-50 border border-gray-300 text-gray-600 hover:bg-gray-100 rounded px-3 py-2 flex items-center justify-center gap-2 md:ml-auto">
+                  <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-gray-50 border border-gray-200 text-gray-600 font-bold text-[10px] rounded p-2 outline-none uppercase hover:bg-gray-100" />
+                  <button onClick={() => setSortOrder(prev => prev === 'DESC' ? 'ASC' : 'DESC')} className="bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 rounded px-3 py-2 flex items-center justify-center gap-2">
                       {sortOrder === 'DESC' ? <SortDesc size={12}/> : <SortAsc size={12}/>}
                   </button>
                   {hasActiveFilters && (
@@ -350,98 +351,191 @@ export const OMManagement: React.FC = () => {
                           <XCircle size={12}/> <span className="text-[10px] font-bold uppercase">Limpar</span>
                       </button>
                   )}
+                  
+                  {/* VIEW TOGGLE */}
+                  <div className="flex bg-gray-100 p-1 rounded-lg gap-1 md:ml-auto">
+                        <button 
+                            onClick={() => setViewMode('GRID')} 
+                            className={`p-1.5 rounded transition-colors ${viewMode === 'GRID' ? 'bg-white shadow-sm text-[#007e7a]' : 'text-gray-400 hover:text-gray-600'}`}
+                            title="Visualização em Cards"
+                        >
+                            <LayoutGrid size={14}/>
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('LIST')} 
+                            className={`p-1.5 rounded transition-colors ${viewMode === 'LIST' ? 'bg-white shadow-sm text-[#007e7a]' : 'text-gray-400 hover:text-gray-600'}`}
+                            title="Visualização em Lista"
+                        >
+                            <ListIcon size={14}/>
+                        </button>
+                  </div>
               </div>
           </div>
       </div>
 
-      {/* CARDS GRID (VISUAL MELHORADO) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
-          {filteredOms.length === 0 && (
-              <div className="col-span-full py-16 text-center text-gray-400">
-                  <Info size={48} className="mx-auto mb-3 opacity-30" />
-                  <p className="font-bold uppercase text-sm tracking-widest">Nenhuma ordem encontrada</p>
-              </div>
-          )}
-
-          {filteredOms.map((om) => {
-            const isCritical = om.type === 'CORRETIVA';
-            const isStarted = om.status === 'EM_ANDAMENTO';
-            
-            return (
-                <div key={om.id} className={`group bg-white rounded-2xl shadow-sm border hover:shadow-lg transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${isCritical ? 'border-red-100' : 'border-gray-200'}`}>
+      {/* CONTENT AREA */}
+      {filteredOms.length === 0 ? (
+          <div className="col-span-full py-16 text-center text-gray-400 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <Info size={48} className="mx-auto mb-3 opacity-30" />
+              <p className="font-bold uppercase text-sm tracking-widest">Nenhuma ordem encontrada</p>
+          </div>
+      ) : (
+          viewMode === 'GRID' ? (
+            /* --- GRID VIEW (CARDS) --- */
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                {filteredOms.map((om) => {
+                    const isCritical = om.type === 'CORRETIVA';
+                    const isStarted = om.status === 'EM_ANDAMENTO';
                     
-                    {/* Barra de Progresso (Se iniciada) */}
-                    {isStarted && <div className="absolute top-0 left-0 right-0 h-1 bg-orange-500 animate-pulse"></div>}
-                    
-                    {/* Header do Card */}
-                    <div className="p-5 pb-3">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1.5 ${isCritical ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-blue-50 text-blue-600 border border-blue-100'}`}>
-                                {isCritical ? <AlertOctagon size={10}/> : <Wrench size={10}/>}
-                                {om.type}
-                            </span>
-                            {om.pdfUrl && (
-                                <button onClick={() => setViewingOM(om)} className="text-gray-400 hover:text-vale-green transition-colors" title="Ver PDF Original">
-                                    <FileText size={18}/>
-                                </button>
-                            )}
-                        </div>
-                        
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-2xl font-black text-gray-800 leading-none tracking-tight">{om.omNumber}</h3>
-                            {isStarted && <span className="text-[9px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 animate-pulse">EM EXECUÇÃO</span>}
-                        </div>
-                        <p className="text-xs font-bold text-vale-green uppercase mt-1 tracking-wide">{om.tag}</p>
-                        
-                        {om.linkedScheduleOm && (
-                            <div className="mt-2 text-[8px] bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded inline-flex items-center gap-1 font-bold">
-                                <Link size={8} /> VINC: {om.linkedScheduleOm.slice(0, 15)}...
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Descrição */}
-                    <div className="px-5 py-2 flex-1">
-                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 h-full">
-                            <p className="text-[10px] font-bold text-gray-500 uppercase line-clamp-3 leading-relaxed">
-                                {om.description || "SEM DESCRIÇÃO DETALHADA."}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Footer / Actions */}
-                    <div className="p-5 pt-3 border-t border-gray-100 bg-gray-50/50">
-                        <div className="flex justify-between text-[9px] font-bold text-gray-400 mb-3 uppercase tracking-wider">
-                            <span className="flex items-center gap-1"><CalendarDays size={10}/> {new Date(om.createdAt).toLocaleDateString()}</span>
-                            <span className="flex items-center gap-1"><User size={10}/> {om.createdBy?.split(' ')[0] || 'SISTEMA'}</span>
-                        </div>
-                        
-                        <div className="flex gap-2 items-center">
-                            {om.status === 'CONCLUIDA' ? (
-                                <div className="w-full py-3 rounded-xl bg-green-100 text-green-700 border border-green-200 text-[10px] font-black uppercase text-center flex items-center justify-center gap-2">
-                                    <CheckCircle2 size={14}/> Encerrada
+                    return (
+                        <div key={om.id} className={`group bg-white rounded-xl shadow-sm border hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${isCritical ? 'border-red-100' : 'border-gray-200'}`}>
+                            
+                            {/* Barra de Progresso (Se iniciada) */}
+                            {isStarted && <div className="absolute top-0 left-0 right-0 h-1 bg-orange-500 animate-pulse"></div>}
+                            
+                            {/* Header do Card */}
+                            <div className="p-4 pb-2">
+                                <div className="flex justify-between items-start mb-3">
+                                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1.5 ${isCritical ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-blue-50 text-blue-600 border border-blue-100'}`}>
+                                        {isCritical ? <AlertOctagon size={10}/> : <Wrench size={10}/>}
+                                        {om.type}
+                                    </span>
+                                    {om.pdfUrl && (
+                                        <button onClick={() => setViewingOM(om)} className="text-gray-400 hover:text-[#007e7a] transition-colors" title="Ver PDF Original">
+                                            <FileText size={16}/>
+                                        </button>
+                                    )}
                                 </div>
-                            ) : (
-                                <button 
-                                    onClick={() => handleExecute(om)} 
-                                    className={`flex-1 py-3 rounded-xl text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all ${isCritical ? 'bg-red-600 hover:bg-red-700 shadow-red-200' : 'bg-[#007e7a] hover:bg-[#00605d] shadow-teal-200'}`}
-                                >
-                                    {isStarted ? <><StopCircle size={14}/> Continuar</> : <><PlayCircle size={14}/> Iniciar Atividade <ArrowRight size={12}/></>}
-                                </button>
-                            )}
-                            <button 
-                                onClick={() => { if(window.confirm('Excluir esta ordem?')) StorageService.deleteOM(om.id).then(refreshData) }} 
-                                className="p-3 border border-gray-200 bg-white rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm"
-                                title="Excluir"
-                            >
-                                <Trash2 size={16}/>
-                            </button>
+                                
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-xl font-black text-gray-800 leading-none tracking-tight">{om.omNumber}</h3>
+                                    {isStarted && <span className="text-[8px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 animate-pulse">EM EXECUÇÃO</span>}
+                                </div>
+                                <p className="text-xs font-bold text-[#007e7a] uppercase mt-1 tracking-wide">{om.tag}</p>
+                                
+                                {om.linkedScheduleOm && (
+                                    <div className="mt-2 text-[8px] bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded inline-flex items-center gap-1 font-bold">
+                                        <Link size={8} /> VINC: {om.linkedScheduleOm.slice(0, 15)}...
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Descrição */}
+                            <div className="px-4 py-2 flex-1">
+                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 h-full">
+                                    <p className="text-[10px] font-bold text-gray-500 uppercase line-clamp-3 leading-relaxed">
+                                        {om.description || "SEM DESCRIÇÃO DETALHADA."}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Footer / Actions */}
+                            <div className="p-4 pt-3 border-t border-gray-100 bg-gray-50/50">
+                                <div className="flex justify-between text-[9px] font-bold text-gray-400 mb-3 uppercase tracking-wider">
+                                    <span className="flex items-center gap-1"><CalendarDays size={10}/> {new Date(om.createdAt).toLocaleDateString()}</span>
+                                    <span className="flex items-center gap-1"><User size={10}/> {om.createdBy?.split(' ')[0] || 'SISTEMA'}</span>
+                                </div>
+                                
+                                <div className="flex gap-2 items-center">
+                                    {om.status === 'CONCLUIDA' ? (
+                                        <div className="w-full py-2.5 rounded-lg bg-green-100 text-green-700 border border-green-200 text-[10px] font-black uppercase text-center flex items-center justify-center gap-2">
+                                            <CheckCircle2 size={14}/> Encerrada
+                                        </div>
+                                    ) : (
+                                        <button 
+                                            onClick={() => handleExecute(om)} 
+                                            className={`flex-1 py-2.5 rounded-lg text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all ${isCritical ? 'bg-red-600 hover:bg-red-700' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
+                                        >
+                                            {isStarted ? <><StopCircle size={14}/> Continuar</> : <><PlayCircle size={14}/> Iniciar Atividade <ArrowRight size={12}/></>}
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => { if(window.confirm('Excluir esta ordem?')) StorageService.deleteOM(om.id).then(refreshData) }} 
+                                        className="p-2.5 border border-gray-200 bg-white rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm"
+                                        title="Excluir"
+                                    >
+                                        <Trash2 size={14}/>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    );
+                })}
+            </div>
+          ) : (
+            /* --- LIST VIEW (TABLE) --- */
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fadeIn">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase font-black tracking-wider">
+                                <th className="p-4 w-32">Número OM</th>
+                                <th className="p-4 w-32">Tag</th>
+                                <th className="p-4">Descrição</th>
+                                <th className="p-4 w-32 text-center">Tipo</th>
+                                <th className="p-4 w-32 text-center">Data</th>
+                                <th className="p-4 w-32 text-center">Status</th>
+                                <th className="p-4 w-40 text-center">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody className="text-xs font-bold divide-y divide-gray-100">
+                            {filteredOms.map((om, idx) => {
+                                const isCritical = om.type === 'CORRETIVA';
+                                const isStarted = om.status === 'EM_ANDAMENTO';
+                                
+                                return (
+                                    <tr key={om.id} className="hover:bg-blue-50/30 transition-colors group">
+                                        <td className="p-4 font-black text-gray-800">{om.omNumber}</td>
+                                        <td className="p-4 text-[#007e7a]">{om.tag}</td>
+                                        <td className="p-4 text-gray-600 truncate max-w-xs" title={om.description}>{om.description}</td>
+                                        <td className="p-4 text-center">
+                                            <span className={`px-2 py-1 rounded text-[9px] font-black border ${isCritical ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                {om.type.substring(0,4)}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-center text-gray-500">{new Date(om.createdAt).toLocaleDateString()}</td>
+                                        <td className="p-4 text-center">
+                                            {isStarted ? (
+                                                <span className="text-orange-500 flex items-center justify-center gap-1"><Loader2 size={12} className="animate-spin"/> EXEC</span>
+                                            ) : om.status === 'CONCLUIDA' ? (
+                                                <span className="text-green-600 flex items-center justify-center gap-1"><CheckCircle2 size={12}/> FIM</span>
+                                            ) : (
+                                                <span className="text-gray-400">PENDENTE</span>
+                                            )}
+                                        </td>
+                                        <td className="p-4 flex items-center justify-center gap-2">
+                                            {om.pdfUrl && (
+                                                <button onClick={() => setViewingOM(om)} className="p-1.5 text-gray-400 hover:text-[#007e7a] hover:bg-gray-100 rounded" title="Ver PDF">
+                                                    <FileText size={14}/>
+                                                </button>
+                                            )}
+                                            
+                                            {om.status !== 'CONCLUIDA' && (
+                                                <button 
+                                                    onClick={() => handleExecute(om)}
+                                                    className={`p-1.5 rounded text-white ${isStarted ? 'bg-orange-500 hover:bg-orange-600' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
+                                                    title={isStarted ? "Continuar" : "Iniciar"}
+                                                >
+                                                    {isStarted ? <StopCircle size={14}/> : <PlayCircle size={14}/>}
+                                                </button>
+                                            )}
+                                            
+                                            <button 
+                                                onClick={() => { if(window.confirm('Excluir?')) StorageService.deleteOM(om.id).then(refreshData) }} 
+                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                                            >
+                                                <Trash2 size={14}/>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
-            );
-          })}
-      </div>
+            </div>
+          )
+      )}
 
       {/* MODAL CADASTRAR OM */}
       {isAddModalOpen && (

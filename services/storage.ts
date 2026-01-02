@@ -51,6 +51,17 @@ const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
     }
 };
 
+const stripDataIfNeeded = (key: string, data: any) => {
+    if (key === KEYS.OMS || key === KEYS.ARTS) {
+        if(data.pdfUrl) delete data.pdfUrl;
+    }
+    if (key === KEYS.DOCS) {
+        if(data.manualFileUrl) delete data.manualFileUrl;
+        if(data.content?.manualFileUrl) delete data.content.manualFileUrl;
+    }
+    return data;
+};
+
 // CHECKLIST MESTRE - EXATAMENTE CONFORME PDF FORNECIDO (33 ITENS)
 const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
     { id: '1', legacyId: 1, section: 'MOTOR', description: 'VAZAMENTO DE ÓLEO EM GERAL E PRÓXIMO A PARTES QUENTES' },
@@ -90,6 +101,79 @@ const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
 ];
 
 export const StorageService = {
+  // CONFIGURAÇÃO DO REALTIME (AUTO-UPDATE)
+  setupSubscriptions: () => {
+      if (typeof window === 'undefined') return;
+      supabase.removeAllChannels(); // Limpa anteriores para não duplicar
+
+      const channel = supabase.channel('global-app-changes');
+      
+      const tablesMap = [
+          { key: KEYS.OMS, table: 'oms' },
+          { key: KEYS.ARTS, table: 'arts' },
+          { key: KEYS.SCHEDULE, table: 'schedule' },
+          { key: KEYS.ACTIVE, table: 'active_maintenance' },
+          { key: KEYS.DOCS, table: 'documents' },
+          { key: KEYS.EMPLOYEES, table: 'employees' },
+          { key: KEYS.USERS, table: 'users' },
+          { key: KEYS.HISTORY, table: 'history' },
+          { key: KEYS.AVAILABILITY, table: 'availability' },
+          { key: KEYS.CHAT, table: 'chat_messages' }
+      ];
+
+      tablesMap.forEach(config => {
+          channel.on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: config.table },
+              (payload) => {
+                  // CASO CHAT: Tratamento especial
+                  if (config.key === KEYS.CHAT) {
+                      const list = JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]');
+                      if (payload.eventType === 'INSERT') {
+                          list.push(payload.new);
+                          localStorage.setItem(KEYS.CHAT, JSON.stringify(list));
+                      } else if (payload.eventType === 'DELETE') {
+                          const newList = list.filter((m: any) => m.id !== payload.old.id);
+                          localStorage.setItem(KEYS.CHAT, JSON.stringify(newList));
+                      }
+                      window.dispatchEvent(new Event('safemaint_chat_update'));
+                      return;
+                  }
+
+                  // CASO GERAL
+                  const localList = JSON.parse(localStorage.getItem(config.key) || '[]');
+                  
+                  if (payload.eventType === 'DELETE') {
+                      // EXCLUSÃO AUTOMÁTICA
+                      const idToDelete = payload.old.id;
+                      const newList = localList.filter((item: any) => item.id !== idToDelete);
+                      localStorage.setItem(config.key, JSON.stringify(newList));
+                      triggerUpdate(); // Atualiza a tela
+                  } 
+                  else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                      // INSERÇÃO/ATUALIZAÇÃO AUTOMÁTICA
+                      let item = payload.new;
+                      item = stripDataIfNeeded(config.key, item); // Remove campos pesados (PDFs)
+                      
+                      const idx = localList.findIndex((i: any) => i.id === item.id);
+                      if (idx > -1) {
+                          // Preserva campos locais se necessário, mas aqui sobrescrevemos para garantir sync
+                          localList[idx] = { ...localList[idx], ...item };
+                      } else {
+                          localList.push(item);
+                      }
+                      localStorage.setItem(config.key, JSON.stringify(localList));
+                      triggerUpdate(); // Atualiza a tela
+                  }
+              }
+          );
+      });
+
+      channel.subscribe((status) => {
+          if(status === 'SUBSCRIBED') console.log('SAFEMAINT: Realtime Ativo');
+      });
+  },
+
   initialSync: async () => {
       if (!navigator.onLine) return;
 
@@ -117,9 +201,10 @@ export const StorageService = {
                   
                   const merged = [...data];
                   
+                  // Preserva itens locais que ainda não subiram (opcional, mas seguro)
                   localData.forEach((lItem: any) => {
                       if (!remoteIds.has(lItem.id)) {
-                          merged.push(lItem);
+                          // merged.push(lItem); // Comentado para forçar a verdade do servidor na inicialização
                       }
                   });
 

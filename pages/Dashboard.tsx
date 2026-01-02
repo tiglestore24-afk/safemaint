@@ -7,7 +7,7 @@ import {
   Clock, AlertOctagon, PauseCircle, 
   StopCircle, Bell, X, Activity, 
   ShieldCheck, WifiOff, Database, Wrench, PlayCircle, Timer, Lock, 
-  Volume2, VolumeX, Eye, Info, CheckSquare, CloudLightning, FileText, Box, Layers, UserCheck
+  Volume2, VolumeX, Eye, Info, CheckSquare, CloudLightning, FileText, Box, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame
 } from 'lucide-react';
 import { checkConnection } from '../services/supabase';
 
@@ -36,50 +36,18 @@ const MaintenanceTimer: React.FC<{ task: ActiveMaintenance }> = ({ task }) => {
         return () => clearInterval(interval);
     }, [task, calculateTime]);
 
-    return <span className="text-xl font-mono font-bold text-gray-800 leading-none">{time}</span>;
+    return <span className="text-lg font-mono font-bold text-gray-800 tracking-wider">{time}</span>;
 };
 
-// --- 3D MODAL COMPONENT ---
-const Modal3D: React.FC<{ task: ActiveMaintenance; onClose: () => void }> = ({ task, onClose }) => {
-    return (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn" onClick={onClose}>
-            <div className="relative w-full max-w-lg aspect-square flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                {/* HUD CIRCLES */}
-                <div className="absolute inset-0 border-2 border-cyan-500/30 rounded-full animate-spin-slow"></div>
-                <div className="absolute inset-4 border border-dashed border-cyan-500/20 rounded-full animate-spin-reverse-slow"></div>
-                
-                {/* 3D CUBE CONTAINER */}
-                <div className="relative w-32 h-32 preserve-3d animate-rotate-3d">
-                    <div className="absolute inset-0 bg-cyan-500/20 border-2 border-cyan-400/50 translate-z-16 flex items-center justify-center text-cyan-200 font-bold text-xs">FRONT</div>
-                    <div className="absolute inset-0 bg-cyan-500/20 border-2 border-cyan-400/50 -translate-z-16 rotate-y-180 flex items-center justify-center text-cyan-200 font-bold text-xs">BACK</div>
-                    <div className="absolute inset-0 bg-cyan-500/20 border-2 border-cyan-400/50 -translate-x-16 rotate-y-90 flex items-center justify-center text-cyan-200 font-bold text-xs">LEFT</div>
-                    <div className="absolute inset-0 bg-cyan-500/20 border-2 border-cyan-400/50 translate-x-16 -rotate-y-90 flex items-center justify-center text-cyan-200 font-bold text-xs">RIGHT</div>
-                    <div className="absolute inset-0 bg-cyan-500/20 border-2 border-cyan-400/50 -translate-y-16 rotate-x-90 flex items-center justify-center text-cyan-200 font-bold text-xs">TOP</div>
-                    <div className="absolute inset-0 bg-cyan-500/20 border-2 border-cyan-400/50 translate-y-16 -rotate-x-90 flex items-center justify-center text-cyan-200 font-bold text-xs">BOTTOM</div>
-                </div>
-
-                {/* INFO PANELS FLOATING */}
-                <div className="absolute top-0 left-0 bg-black/50 border border-cyan-500/50 p-4 rounded-xl backdrop-blur-sm shadow-[0_0_15px_rgba(6,182,212,0.3)]">
-                    <h4 className="text-cyan-400 text-xs font-black uppercase tracking-widest mb-1">EQUIPAMENTO</h4>
-                    <p className="text-white text-xl font-black">{task.header.tag}</p>
-                </div>
-
-                <div className="absolute bottom-0 right-0 bg-black/50 border border-cyan-500/50 p-4 rounded-xl backdrop-blur-sm shadow-[0_0_15px_rgba(6,182,212,0.3)] text-right">
-                    <h4 className="text-cyan-400 text-xs font-black uppercase tracking-widest mb-1">STATUS ATUAL</h4>
-                    <p className="text-white text-xl font-black animate-pulse">{task.status}</p>
-                </div>
-
-                <div className="absolute top-0 right-0 bg-black/50 border border-cyan-500/50 p-4 rounded-xl backdrop-blur-sm shadow-[0_0_15px_rgba(6,182,212,0.3)] text-right">
-                    <h4 className="text-cyan-400 text-xs font-black uppercase tracking-widest mb-1">TEMPO</h4>
-                    <div className="text-white"><MaintenanceTimer task={task} /></div>
-                </div>
-
-                <button onClick={onClose} className="absolute -bottom-12 bg-white text-black px-6 py-2 rounded-full font-black uppercase text-xs hover:scale-105 transition-transform">
-                    FECHAR VISUALIZAÇÃO 3D
-                </button>
-            </div>
-        </div>
-    );
+// Ícone baseado no tipo de manutenção
+const getTaskIcon = (type: string) => {
+    switch (type) {
+        case 'ELETRICA': return <Zap size={20} className="text-yellow-600" />;
+        case 'LUBRIFICACAO': return <Droplets size={20} className="text-blue-600" />;
+        case 'SOLDA': return <Flame size={20} className="text-orange-600" />;
+        case 'OUTROS': return <MoreHorizontal size={20} className="text-gray-600" />;
+        default: return <Wrench size={20} className="text-gray-600" />; // MECANICA default
+    }
 };
 
 export const Dashboard: React.FC = () => {
@@ -91,7 +59,6 @@ export const Dashboard: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [closingTask, setClosingTask] = useState<ActiveMaintenance | null>(null);
   const [viewingOM, setViewingOM] = useState<OMRecord | null>(null);
-  const [active3DTask, setActive3DTask] = useState<ActiveMaintenance | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   
   const [currentUser, setCurrentUser] = useState('');
@@ -181,49 +148,55 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto pb-10 px-4">
+    <div className="max-w-[1600px] mx-auto pb-10">
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex items-center gap-3">
-            <ShieldCheck size={20} className="text-[#007e7a]" />
+      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
+        <div className="flex items-center gap-4">
+            <div className="bg-[#007e7a]/10 p-2 rounded-lg">
+                <ShieldCheck size={24} className="text-[#007e7a]" />
+            </div>
             <div>
-                <h2 className="text-lg font-bold text-gray-800 uppercase leading-none">Painel de Controle</h2>
+                <h2 className="text-xl font-bold text-gray-800 uppercase leading-none tracking-tight">Painel de Controle</h2>
                 <div className="flex items-center gap-2 mt-1">
-                    {/* Visual Connection Indicator Only - No Text */}
+                    {/* Visual Connection Indicator */}
                     {isOnline ? (
                         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 border border-green-200 rounded-full" title="Conexão de Dados Ativa">
                             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
-                            <Database size={12} className="text-green-600" />
+                            <span className="text-[9px] font-black text-green-700 uppercase">ONLINE</span>
                         </div>
                     ) : (
                         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-red-50 border border-red-200 rounded-full" title="Desconectado">
-                            <WifiOff size={12} className="text-red-600" />
+                            <WifiOff size={10} className="text-red-600" />
+                            <span className="text-[9px] font-black text-red-700 uppercase">OFFLINE</span>
                         </div>
                     )}
                 </div>
             </div>
         </div>
 
-        <div className="flex gap-2 items-center">
-            <button onClick={toggleMute} className={`p-2 rounded border transition-all ${isMuted ? 'bg-gray-100 text-gray-400' : 'bg-white text-[#007e7a] border-[#007e7a]'}`}>
-                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        <div className="flex gap-3 items-center">
+            <button onClick={toggleMute} className={`p-2.5 rounded-lg border transition-all ${isMuted ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-white text-[#007e7a] border-[#007e7a]/30 shadow-sm'}`}>
+                {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
             <div className="relative">
-                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-white rounded border border-gray-200 relative hover:bg-gray-50">
-                    <Bell size={16} className="text-gray-600" />
-                    {notifications.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full">{notifications.length}</span>}
+                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2.5 bg-white rounded-lg border border-gray-200 relative hover:bg-gray-50 transition-colors shadow-sm">
+                    <Bell size={18} className="text-gray-600" />
+                    {notifications.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-bounce">{notifications.length}</span>}
                 </button>
                 {showNotifications && (
-                    <div className="absolute right-0 mt-2 w-64 bg-white rounded shadow-xl border border-gray-200 z-50 overflow-hidden">
-                        <div className="bg-gray-100 p-2 flex justify-between items-center border-b">
-                            <span className="font-bold text-[10px] uppercase text-gray-600">Notificações</span>
-                            <button onClick={() => setShowNotifications(false)}><X size={14}/></button>
+                    <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden ring-1 ring-black/5 animate-fadeIn">
+                        <div className="bg-gray-50 p-3 flex justify-between items-center border-b">
+                            <span className="font-black text-[10px] uppercase text-gray-500 tracking-wider">Notificações</span>
+                            <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
                         </div>
-                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                            {notifications.length === 0 ? <div className="p-3 text-center text-gray-400 text-[10px] font-bold">Sem alertas</div> : notifications.map(n => (
-                                <div key={n.id} onClick={() => handleNotificationClick(n)} className="p-2 border-b border-gray-50 cursor-pointer hover:bg-gray-50">
-                                    <div className="flex justify-between mb-1"><span className={`text-[8px] font-bold px-1 rounded ${n.type === 'URGENT' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{n.type}</span><span className="text-[8px] text-gray-400">{n.date}</span></div>
-                                    <p className="text-[10px] font-bold text-gray-700 truncate">{n.title}</p>
+                        <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                            {notifications.length === 0 ? <div className="p-6 text-center text-gray-400 text-[10px] font-bold uppercase">Sem alertas pendentes</div> : notifications.map(n => (
+                                <div key={n.id} onClick={() => handleNotificationClick(n)} className="p-3 border-b border-gray-50 cursor-pointer hover:bg-blue-50 transition-colors group">
+                                    <div className="flex justify-between mb-1">
+                                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${n.type === 'URGENT' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{n.type}</span>
+                                        <span className="text-[9px] text-gray-400">{n.date}</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-gray-700 truncate group-hover:text-blue-700">{n.title}</p>
                                 </div>
                             ))}
                         </div>
@@ -233,106 +206,127 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* COLUNA ESQUERDA - CARDS ATIVOS */}
         <div className="lg:col-span-8 space-y-4">
-            <h3 className="font-bold text-sm text-gray-600 uppercase border-b pb-1">Atividades em Execução</h3>
+            <h3 className="font-black text-sm text-gray-500 uppercase border-b border-gray-200 pb-2 flex items-center gap-2">
+                <Activity size={16} /> Atividades em Execução
+            </h3>
+            
             {activeTasks.length === 0 ? (
-                <div className="bg-white rounded-lg p-10 text-center border-2 border-dashed border-gray-200">
-                    <Wrench className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                    <h3 className="text-sm font-bold text-gray-400 uppercase">Nenhuma Atividade em andamento</h3>
-                    <p className="text-[10px] text-gray-400 uppercase mt-1">Inicie um serviço pela Agenda ou Ordens</p>
+                <div className="bg-white rounded-xl p-12 text-center border-2 border-dashed border-gray-300 flex flex-col items-center justify-center opacity-70 animate-fadeIn">
+                    <div className="bg-gray-50 p-4 rounded-full mb-3">
+                        <Wrench className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-sm font-bold text-gray-500 uppercase">Nenhuma Atividade Iniciada</h3>
+                    <p className="text-[10px] text-gray-400 uppercase mt-1">Utilize a Agenda ou Cadastro de OM para iniciar</p>
                 </div>
             ) : (
-                <div className="space-y-4">
-                    {/* 3D CARDS LAYOUT */}
+                <div className="space-y-4 animate-fadeIn">
                     {activeTasks.map(task => {
                         const isRed = task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL';
                         const isPartial = task.status === 'AGUARDANDO';
+                        const isPaused = task.status === 'PAUSADA';
                         const taskOwner = task.openedBy?.toUpperCase() || 'SISTEMA';
                         
-                        // VERIFICAÇÃO DE PROPRIEDADE: Apenas quem abriu ou Admin pode encerrar
-                        // MAS, se estiver "AGUARDANDO" (Parcial), qualquer um pode assumir (Retomar).
+                        // VERIFICAÇÃO DE PROPRIEDADE RESTRITA
                         const isOwner = taskOwner === currentUser;
-                        const isAdmin = currentRole === 'ADMIN';
-                        const canControl = isOwner || isAdmin || isPartial;
+                        const canControl = isOwner; 
 
-                        let borderClass = 'border-l-[#007e7a]';
-                        if (isPartial) borderClass = 'border-l-orange-500';
-                        else if (isRed) borderClass = 'border-l-red-500';
-
-                        let bgClass = 'bg-white';
-                        if (isPartial) bgClass = 'bg-orange-50';
-
-                        let statusBadgeClass = 'bg-green-50 text-green-600 border-green-200';
-                        if (task.status === 'PAUSADA') statusBadgeClass = 'bg-yellow-100 text-yellow-700 border-yellow-200';
-                        if (task.status === 'AGUARDANDO') statusBadgeClass = 'bg-orange-100 text-orange-700 border-orange-200';
+                        // Definição de Cores Flat e Profissionais
+                        let borderClass = 'border-l-[#007e7a]'; // Verde Vale Padrão
+                        let bgBadge = 'bg-green-100 text-green-800';
+                        
+                        if (isPaused) {
+                            borderClass = 'border-l-yellow-500';
+                            bgBadge = 'bg-yellow-100 text-yellow-800';
+                        } else if (isPartial) {
+                            borderClass = 'border-l-orange-500';
+                            bgBadge = 'bg-orange-100 text-orange-800';
+                        } else if (isRed) {
+                            borderClass = 'border-l-red-600';
+                            bgBadge = 'bg-red-100 text-red-800';
+                        }
 
                         return (
-                            <div key={task.id} className="group perspective-1000">
-                                <div className={`
-                                    relative rounded-xl p-4 shadow-lg border-l-8 
-                                    ${borderClass} ${bgClass}
-                                    transition-all duration-500 transform-style-3d 
-                                    group-hover:rotate-y-2 group-hover:rotate-x-2 group-hover:shadow-2xl
-                                    flex flex-col md:flex-row justify-between items-center gap-4
-                                    border border-gray-100
-                                `}>
-                                    {/* GLOW EFFECT ON HOVER */}
-                                    <div className={`absolute -inset-0.5 rounded-xl blur opacity-0 group-hover:opacity-30 transition duration-500 ${isRed ? 'bg-red-500' : isPartial ? 'bg-orange-500' : 'bg-cyan-500'}`}></div>
-                                    
-                                    <div className="relative rounded-lg p-2 flex-1 w-full md:w-auto z-10 flex flex-col md:flex-row gap-4 items-center">
-                                        <div className={`p-3 rounded-full shadow-inner ${isRed ? 'bg-red-50 text-red-500' : isPartial ? 'bg-orange-100 text-orange-500' : 'bg-teal-50 text-[#007e7a]'}`}>
-                                            {isRed ? <AlertOctagon size={24}/> : <Box size={24}/>}
+                            <div key={task.id} className={`bg-white rounded-xl shadow-sm border border-gray-200 border-l-[6px] ${borderClass} p-5 hover:shadow-md transition-shadow relative overflow-hidden`}>
+                                
+                                {/* Header do Card */}
+                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`p-3 rounded-lg ${isRed ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                                            {isRed ? <AlertOctagon size={24} /> : getTaskIcon(task.header.type)}
                                         </div>
-                                        <div className="min-w-0 text-center md:text-left">
-                                            <div className="flex items-center justify-center md:justify-start gap-2">
-                                                <h4 className="font-black text-xl text-gray-800 leading-none truncate">{task.header.om}</h4>
-                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase border whitespace-nowrap ${statusBadgeClass}`}>
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h4 className="font-black text-xl text-gray-800 leading-none">{task.header.om}</h4>
+                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${bgBadge}`}>
                                                     {task.status === 'AGUARDANDO' ? 'PARCIAL' : task.status}
                                                 </span>
                                             </div>
-                                            <div className="flex items-center gap-2 mt-1 justify-center md:justify-start">
-                                                <p className="text-[11px] font-bold text-gray-500 uppercase truncate">
-                                                    {task.header.tag}
-                                                </p>
-                                                <span className="text-gray-300">|</span>
-                                                <div className="flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
-                                                    <UserCheck size={10} className="text-blue-600"/>
-                                                    <span className="text-[9px] font-black text-blue-700 uppercase">{taskOwner}</span>
-                                                </div>
-                                            </div>
+                                            <p className="text-xs font-bold text-[#007e7a] uppercase tracking-wide">{task.header.tag}</p>
                                         </div>
                                     </div>
 
-                                    <div className="relative z-10 flex items-center gap-6 shrink-0 w-full md:w-auto justify-between md:justify-end px-4 md:px-0">
-                                         <div className="text-right">
-                                            <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1">Tempo em Atividade</p>
-                                            <div className="bg-gray-100 px-3 py-1 rounded-lg border border-gray-200">
-                                                <MaintenanceTimer task={task} />
+                                    {/* Timer e Responsável */}
+                                    <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                        <div className="text-right px-2">
+                                            <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">TEMPO DECORRIDO</p>
+                                            <MaintenanceTimer task={task} />
+                                        </div>
+                                        <div className="w-px h-8 bg-gray-200"></div>
+                                        <div className="px-2">
+                                            <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">RESPONSÁVEL</p>
+                                            <div className="flex items-center gap-1">
+                                                <UserCheck size={12} className="text-blue-500"/>
+                                                <span className="text-xs font-bold text-gray-700 truncate max-w-[100px]">{taskOwner.split(' ')[0]}</span>
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <button 
-                                                onClick={() => setActive3DTask(task)} 
-                                                className="bg-gray-900 text-white p-2.5 rounded-lg hover:bg-black transition-colors shadow-lg hover:scale-110 active:scale-95" 
-                                                title="Modelo 3D"
-                                            >
-                                                <Box size={18} />
-                                            </button>
-                                            {task.status === 'ANDAMENTO' ? (
-                                                canControl ? (
-                                                    <>
-                                                        <button onClick={() => StorageService.pauseMaintenance(task.id)} className="bg-gray-100 text-gray-600 p-2.5 rounded-lg hover:bg-gray-200 transition-colors shadow hover:scale-105 active:scale-95" title="Pausar"><PauseCircle size={18} /></button>
-                                                        <button onClick={() => handleAction(task)} className="bg-red-600 text-white px-4 py-2.5 rounded-lg font-black text-[10px] hover:bg-red-700 transition-all uppercase flex items-center gap-1.5 shadow-lg hover:shadow-red-500/30 hover:scale-105 active:scale-95"><StopCircle size={14} /> ENCERRAR</button>
-                                                    </>
-                                                ) : <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded text-[8px] font-bold text-gray-400 uppercase flex flex-col items-center justify-center min-w-[80px]"><Lock size={12} className="mb-1" /> RESP: {taskOwner.split(' ')[0]}</div>
-                                            ) : (
-                                                canControl ? (
-                                                    <button onClick={() => handleAction(task)} className="bg-[#007e7a] text-white px-4 py-2.5 rounded-lg font-black text-[10px] hover:bg-[#00605d] transition-all uppercase flex items-center gap-1.5 shadow-lg hover:shadow-teal-500/30 hover:scale-105 active:scale-95"><PlayCircle size={14} /> RETOMAR</button>
-                                                ) : <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded text-[8px] font-bold text-gray-400 uppercase flex flex-col items-center justify-center min-w-[80px]"><Lock size={12} className="mb-1" /> RESP: {taskOwner.split(' ')[0]}</div>
-                                            )}
-                                        </div>
                                     </div>
+                                </div>
+
+                                {/* Descrição Breve */}
+                                <div className="mb-5 px-1">
+                                    <p className="text-[11px] font-medium text-gray-500 uppercase line-clamp-1">{task.header.description || 'Sem descrição detalhada.'}</p>
+                                </div>
+
+                                {/* Ações */}
+                                <div className="flex flex-wrap gap-2 justify-end border-t border-gray-100 pt-4">
+                                    {task.status === 'ANDAMENTO' ? (
+                                        canControl ? (
+                                            <>
+                                                <button 
+                                                    onClick={() => StorageService.pauseMaintenance(task.id)} 
+                                                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-yellow-50 text-yellow-700 font-bold text-xs uppercase hover:bg-yellow-100 transition-colors"
+                                                >
+                                                    <PauseCircle size={16} /> Pausar
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleAction(task)} 
+                                                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-red-600 text-white font-black text-xs uppercase hover:bg-red-700 shadow-sm transition-all active:scale-95"
+                                                >
+                                                    <StopCircle size={16} /> Encerrar
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <div className="px-4 py-2 bg-gray-100 text-gray-400 rounded-lg text-xs font-bold uppercase flex items-center gap-2 cursor-not-allowed border border-gray-200">
+                                                <Lock size={14} /> Controle Bloqueado
+                                            </div>
+                                        )
+                                    ) : (
+                                        canControl ? (
+                                            <button 
+                                                onClick={() => handleAction(task)} 
+                                                className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2 rounded-lg bg-[#007e7a] text-white font-black text-xs uppercase hover:bg-[#00605d] shadow-sm transition-all active:scale-95"
+                                            >
+                                                <PlayCircle size={16} /> Retomar Atividade
+                                            </button>
+                                        ) : (
+                                            <div className="px-4 py-2 bg-gray-100 text-gray-400 rounded-lg text-xs font-bold uppercase flex items-center gap-2 cursor-not-allowed border border-gray-200">
+                                                <Lock size={14} /> Retomada Bloqueada
+                                            </div>
+                                        )
+                                    )}
                                 </div>
                             </div>
                         );
@@ -341,21 +335,36 @@ export const Dashboard: React.FC = () => {
             )}
         </div>
 
+        {/* COLUNA DIREITA - HISTÓRICO */}
         <div className="lg:col-span-4 space-y-4">
-             <h3 className="font-bold text-sm text-gray-600 uppercase border-b pb-1">Últimos Concluídos</h3>
-             <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden h-[450px] flex flex-col">
+             <h3 className="font-black text-sm text-gray-500 uppercase border-b border-gray-200 pb-2 flex items-center gap-2">
+                 <Clock size={16} /> Histórico Recente
+             </h3>
+             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-[500px] flex flex-col animate-fadeIn">
                 <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-2">
-                    {history.length === 0 && <div className="text-center text-gray-300 font-bold text-[10px] mt-10 uppercase">Sem registros recentes</div>}
-                    {history.slice(0, 15).map(log => (
-                        <div key={log.id} className="bg-gray-50 p-2.5 rounded border-l-2 border-gray-300 hover:border-[#007e7a] transition-all group">
-                            <div className="flex justify-between items-start">
-                                <span className="font-black text-gray-800 text-[11px] group-hover:text-[#007e7a]">{log.om}</span>
-                                <span className="text-[8px] font-bold text-gray-400">{new Date(log.endTime).toLocaleDateString()} {new Date(log.endTime).toLocaleTimeString().slice(0,5)}</span>
+                    {history.length === 0 && (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-300">
+                            <Layers size={32} className="opacity-20 mb-2" />
+                            <span className="text-[10px] font-bold uppercase">Nenhum registro</span>
+                        </div>
+                    )}
+                    {history.slice(0, 20).map(log => (
+                        <div key={log.id} className="bg-gray-50 p-3 rounded-lg border-l-4 border-gray-300 hover:border-[#007e7a] hover:bg-white hover:shadow-sm transition-all group cursor-default">
+                            <div className="flex justify-between items-start mb-1">
+                                <span className="font-black text-gray-800 text-xs group-hover:text-[#007e7a]">{log.om}</span>
+                                <span className="text-[9px] font-bold text-gray-400 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                                    {new Date(log.endTime).toLocaleDateString()}
+                                </span>
                             </div>
-                            <div className="text-[10px] font-black text-[#007e7a] uppercase mt-0.5">{log.tag}</div>
-                            <div className="flex justify-between items-center mt-2">
-                                <span className="text-[9px] font-bold text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-100 flex items-center gap-1"><Timer size={10}/> {log.duration}</span>
-                                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${log.status.includes('TOTAL') ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{log.status}</span>
+                            <div className="text-[10px] font-black text-[#007e7a] uppercase mb-1.5">{log.tag}</div>
+                            
+                            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                                <span className="text-[9px] font-bold text-gray-500 flex items-center gap-1">
+                                    <Timer size={10}/> {log.duration}
+                                </span>
+                                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${log.status.includes('TOTAL') ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                    {log.status === 'TOTAL (MANUAL)' ? 'CONCLUÍDO' : log.status}
+                                </span>
                             </div>
                         </div>
                     ))}
@@ -364,28 +373,36 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* MODAL DE ENCERRAMENTO */}
       {closingTask && (
-          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white w-full max-w-sm rounded-xl p-6 shadow-2xl border-t-4 border-[#007e7a]">
-                  <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Finalizar Atividade</h3>
-                      <button onClick={() => setClosingTask(null)} className="p-1 hover:bg-gray-100 rounded-full"><X size={20} className="text-gray-400"/></button>
+          <div className="fixed inset-0 z-50 bg-gray-900/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl border-t-4 border-[#007e7a]">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Finalizar Atividade</h3>
+                      <button onClick={() => setClosingTask(null)} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-red-500 transition-colors"><X size={20}/></button>
                   </div>
-                  <div className="bg-gray-50 p-3 rounded-lg mb-6 border border-gray-200">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">DETALHES DA ORDEM</p>
-                      <p className="text-xs font-black text-gray-700 uppercase">OM: {closingTask.header.om} | {closingTask.header.tag}</p>
+                  
+                  <div className="bg-gray-50 p-4 rounded-xl mb-6 border border-gray-200">
+                      <div className="flex justify-between items-end mb-1">
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">OM</p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">TAG</p>
+                      </div>
+                      <div className="flex justify-between items-end">
+                          <p className="text-lg font-black text-gray-800 uppercase leading-none">{closingTask.header.om}</p>
+                          <p className="text-lg font-black text-[#007e7a] uppercase leading-none">{closingTask.header.tag}</p>
+                      </div>
                   </div>
 
                   <div className="space-y-3">
-                      <button onClick={() => completeAction('CHECKLIST')} className="w-full bg-[#007e7a] text-white p-4 rounded-xl font-black text-[11px] hover:bg-[#00605d] uppercase shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95 border-b-4 border-[#004d4a]">
-                          <CheckSquare size={18} /> CHECKLIST E FINALIZAR
+                      <button onClick={() => completeAction('CHECKLIST')} className="w-full bg-[#007e7a] text-white p-4 rounded-xl font-black text-xs hover:bg-[#00605d] uppercase shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95 border-b-4 border-[#004d4a]">
+                          <CheckSquare size={18} /> REALIZAR CHECKLIST E FINALIZAR
                       </button>
                       <div className="grid grid-cols-2 gap-3">
-                          <button onClick={() => completeAction('PARCIAL')} className="bg-orange-50 text-orange-700 border border-orange-200 p-3 rounded-xl font-black text-[9px] hover:bg-orange-100 uppercase flex flex-col items-center gap-1.5 transition-all active:scale-95">
-                              <Activity size={18} /> PARADA PARCIAL
+                          <button onClick={() => completeAction('PARCIAL')} className="bg-orange-50 text-orange-700 border border-orange-200 p-3 rounded-xl font-black text-[10px] hover:bg-orange-100 uppercase flex flex-col items-center gap-2 transition-all active:scale-95 hover:border-orange-300">
+                              <Activity size={20} /> PARADA PARCIAL
                           </button>
-                          <button onClick={() => completeAction('TOTAL')} className="bg-gray-50 text-gray-600 border border-gray-200 p-3 rounded-xl font-black text-[9px] hover:bg-gray-100 uppercase flex flex-col items-center gap-1.5 transition-all active:scale-95">
-                              <StopCircle size={18} /> ENCERRAR S/ CHK
+                          <button onClick={() => completeAction('TOTAL')} className="bg-gray-50 text-gray-600 border border-gray-200 p-3 rounded-xl font-black text-[10px] hover:bg-gray-100 uppercase flex flex-col items-center gap-2 transition-all active:scale-95 hover:border-gray-300">
+                              <StopCircle size={20} /> ENCERRAR S/ CHK
                           </button>
                       </div>
                   </div>
@@ -393,51 +410,35 @@ export const Dashboard: React.FC = () => {
           </div>
       )}
 
-      {active3DTask && (
-          <Modal3D task={active3DTask} onClose={() => setActive3DTask(null)} />
-      )}
-
+      {/* PDF VIEWER OVERLAY */}
       {viewingOM && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 backdrop-blur-md">
-            <div className="w-full h-full max-w-4xl bg-white flex flex-col rounded-2xl overflow-hidden shadow-2xl">
-                <div className="bg-gray-900 text-white p-3 flex justify-between items-center shrink-0">
-                    <div className="flex items-center gap-2">
-                        <FileText size={16} className="text-[#007e7a]" />
-                        <span className="font-black text-[10px] uppercase tracking-widest">Documento - {viewingOM.omNumber}</span>
+        <div className="fixed inset-0 z-[100] bg-gray-900/95 flex items-center justify-center p-4 backdrop-blur-md">
+            <div className="w-full h-full max-w-5xl bg-white flex flex-col rounded-2xl overflow-hidden shadow-2xl">
+                <div className="bg-white p-3 flex justify-between items-center shrink-0 border-b border-gray-200">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-[#007e7a] text-white p-1.5 rounded">
+                            <FileText size={18} />
+                        </div>
+                        <div>
+                            <span className="font-black text-xs text-gray-800 uppercase tracking-wide block">Visualização de Documento</span>
+                            <span className="font-bold text-[10px] text-[#007e7a] uppercase tracking-widest">{viewingOM.omNumber}</span>
+                        </div>
                     </div>
-                    <button onClick={() => setViewingOM(null)} className="p-1 hover:bg-red-600 rounded-full transition-all"><X size={20}/></button>
+                    <button onClick={() => setViewingOM(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-all"><X size={20}/></button>
                 </div>
-                <div className="flex-1 bg-gray-200 relative">
+                <div className="flex-1 bg-gray-100 relative">
                     {pdfBlobUrl ? (
                         <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
                     ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                            <Info size={32} className="opacity-20" />
-                            <span className="font-bold text-[10px] uppercase tracking-widest">Nenhum PDF Disponível</span>
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                            <Info size={40} className="opacity-20" />
+                            <span className="font-bold text-[10px] uppercase tracking-widest">Documento não carregado</span>
                         </div>
                     )}
                 </div>
             </div>
         </div>
       )}
-
-        <style>{`
-            .perspective-1000 { perspective: 1000px; }
-            .transform-style-3d { transform-style: preserve-3d; }
-            .preserve-3d { transform-style: preserve-3d; }
-            .translate-z-16 { transform: translateZ(64px); }
-            .-translate-z-16 { transform: translateZ(-64px); }
-            .translate-x-16 { transform: translateX(64px) rotateY(90deg); }
-            .-translate-x-16 { transform: translateX(-64px) rotateY(-90deg); }
-            .translate-y-16 { transform: translateY(64px) rotateX(-90deg); }
-            .-translate-y-16 { transform: translateY(-64px) rotateX(90deg); }
-            
-            @keyframes rotate3d {
-                0% { transform: rotateX(0) rotateY(0) rotateZ(0); }
-                100% { transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg); }
-            }
-            .animate-rotate-3d { animation: rotate3d 10s linear infinite; }
-        `}</style>
     </div>
   );
 };

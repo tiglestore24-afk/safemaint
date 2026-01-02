@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom';
 import { 
   AlertTriangle, FileText, CheckSquare, Calendar, Archive,
   Settings, Menu, LayoutDashboard, ChevronLeft, ChevronRight,
-  MessageSquare, FileInput, BarChart2, LogOut, Shield
+  MessageSquare, FileInput, BarChart2, LogOut
 } from 'lucide-react';
 import { Logo } from './Logo';
 

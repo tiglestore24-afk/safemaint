@@ -6,11 +6,12 @@ import { Employee, User, OMRecord, RegisteredART, ScheduleItem, DocumentRecord }
 import { 
   Save, Database, Users, Shield, 
   BrainCircuit, Trash2,
-  Eye, X, FileText, Cloud, Edit2, Calendar, Eraser, CheckCircle2, Sparkles, Loader2, Copy, Zap, Terminal, RefreshCw, BookOpen, Table
+  Eye, X, FileText, Cloud, Edit2, Calendar, Eraser, CheckCircle2, Sparkles, Loader2, Copy, Zap, Terminal, RefreshCw, BookOpen, Table, UploadCloud
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 import * as pdfjsLib from 'pdfjs-dist';
+import { useNavigate } from 'react-router-dom';
 
 // Configuração do PDF.js Worker
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
@@ -136,6 +137,7 @@ ON CONFLICT (id) DO NOTHING;
 `;
 
 export const Settings: React.FC = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'OMS' | 'PROCEDURES' | 'SCHEDULE' | 'EMPLOYEES' | 'USERS' | 'DB_LIVE'>('OMS');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -183,8 +185,9 @@ export const Settings: React.FC = () => {
   const [newOmPdf, setNewOmPdf] = useState<string>('');
   const [isExtracting, setIsExtracting] = useState(false);
   
-  // Forms - Schedule (APENAS SEMANA)
+  // Forms - Schedule (TABELA)
   const [weekNumber, setWeekNumber] = useState('');
+  const [scheduleText, setScheduleText] = useState('');
 
   // Forms - Employee
   const [empName, setEmpName] = useState('');
@@ -392,7 +395,7 @@ export const Settings: React.FC = () => {
             const text = textItems.join(' ');
             
             const codePatterns = [
-                /(?:CÓDIGO DA ART|CODIGO DA ART|ART|PT|PET|PERMISSÃO)[\s.Nnº°]*([0-9A-Z.-]{4,})/i, 
+                /(?:CÓDIGO DA ART|CODIGO DA ART|ART|PT|PERMISSÃO)[\s.Nnº°]*([0-9A-Z.-]{4,})/i, 
                 /(?:DOC|DOCUMENTO)[:\s]*([0-9A-Z.-]+)/i
             ];
             for (const pattern of codePatterns) { const match = text.match(pattern); if (match) { foundCode = match[1]; break; } }
@@ -435,17 +438,19 @@ export const Settings: React.FC = () => {
       setUserName(''); setUserLogin(''); setUserPass('');
       setArtCode(''); setArtTask(''); setArtPdf('');
       setWeekNumber('');
+      setScheduleText('');
   };
   
   // --- HELPER FUNCTION FOR FEEDBACK ---
-  const withFeedback = async (action: () => Promise<void>, processingMsg: string, successMsg: string) => {
+  const withFeedback = async (action: () => Promise<void>, processingMsg: string, successMsg: string | (() => string)) => {
       setProcessText(processingMsg);
       setIsProcessing(true);
       try {
           await new Promise(r => setTimeout(r, 800)); // Visual delay
           await action();
           setIsProcessing(false);
-          setSuccessText(successMsg);
+          const msg = typeof successMsg === 'function' ? successMsg() : successMsg;
+          setSuccessText(msg);
           setIsSuccess(true);
           setTimeout(() => {
               setIsSuccess(false);
@@ -500,71 +505,97 @@ export const Settings: React.FC = () => {
       }, "ATUALIZANDO...", "OM ATUALIZADA!");
   };
 
-  // --- SCHEDULE ACTIONS (INITIALIZE WEEK) ---
-  const handleInitializeSchedule = () => {
-      if (!weekNumber) {
-          alert('Digite o número da semana.');
+  // --- SCHEDULE ACTIONS (IMPORT) ---
+  const handleImportSchedule = () => {
+      if (!scheduleText || !weekNumber) {
+          alert('Preencha o Número da Semana e cole a tabela.');
           return;
       }
       
+      let count = 0;
+
       withFeedback(async () => {
-          // 1. Limpar (Arquivar) programação anterior
+          // Limpa a programação anterior para substituir pela nova
           await StorageService.archiveAndClearSchedule();
 
-          // 2. Criar um item placeholder para a semana (Header)
-          // Isso serve para a tabela de programação não ficar vazia e mostrar a semana ativa
-          const placeholderItem: ScheduleItem = {
-              id: crypto.randomUUID(),
-              frotaOm: `SEM-${weekNumber}`,
-              description: `INÍCIO DA PROGRAMAÇÃO - SEMANA ${weekNumber}`,
-              dateMin: '',
-              dateMax: '',
-              priority: 'INFO',
-              peopleCount: 0,
-              hours: 0,
-              dateStart: new Date().toLocaleDateString('pt-BR'),
-              dateEnd: '',
-              workCenter: 'GERAL',
-              timeStart: '08:00',
-              timeEnd: '17:00',
-              resources: '',
-              resources2: '',
-              status: 'ABERTO',
-              weekNumber: weekNumber 
-          };
+          const rows = scheduleText.split('\n');
+          const importedItems: ScheduleItem[] = [];
           
-          await StorageService.saveScheduleItem(placeholderItem);
+          // Variável para armazenar o último CA/OM encontrado (Fill Down)
+          let lastFrotaOm = '';
 
-          // 3. Criar Documento de Relatório (Estrutura)
-          const now = new Date().toISOString();
-          const doc: DocumentRecord = {
-              id: crypto.randomUUID(),
-              type: 'RELATORIO',
-              header: {
-                  om: `SEM-${weekNumber}`,
-                  tag: 'GERAL',
-                  date: now.split('T')[0],
-                  time: now.split('T')[1].slice(0,5),
-                  type: 'OUTROS',
-                  description: `PROGRAMAÇÃO SEMANAL - SEMANA ${weekNumber}`
-              },
-              createdAt: now,
-              status: 'ATIVO',
-              content: {
-                  rawText: "Semana Inicializada",
-                  stopReason: 'PLANEJAMENTO SEMANAL',
-                  activities: `Semana ${weekNumber} aberta.`,
-                  startTime: '08:00',
-                  endTime: '17:00',
-                  weekNumber: weekNumber,
-                  scheduleItems: [placeholderItem] 
-              },
-              signatures: []
-          };
-          await StorageService.saveDocument(doc);
-          
+          for (const row of rows) {
+              if (!row.trim()) continue;
+              // Ignora cabeçalho se houver (detecção simples)
+              if (row.toUpperCase().includes('FROTA') && row.toUpperCase().includes('DESCRIÇÃO')) continue; 
+
+              const cols = row.split('\t');
+              // Garante que tem colunas suficientes (ajustar conforme necessidade, min 2)
+              if (cols.length < 2) continue;
+              
+              // Mapeamento das colunas do Excel
+              let frotaOm = cols[0]?.trim().toUpperCase() || '';
+              
+              // Lógica FILL DOWN: Se frotaOm estiver vazio, usa o anterior
+              if (frotaOm) {
+                  lastFrotaOm = frotaOm;
+              } else if (lastFrotaOm) {
+                  frotaOm = lastFrotaOm;
+              } else {
+                  frotaOm = 'N/D';
+              }
+
+              const description = cols[1]?.trim().toUpperCase() || 'MANUTENÇÃO PROGRAMADA';
+              const dateMin = cols[2]?.trim() || '';
+              const dateMax = cols[3]?.trim() || '';
+              const priority = cols[4]?.trim() || 'NORMAL';
+              const peopleCount = parseInt(cols[5]?.trim() || '1') || 1;
+              const hours = parseFloat(cols[6]?.trim().replace(',','.') || '1') || 1;
+              
+              // COLUNA 8 (index 7) é a DATA DE REFERÊNCIA - GARANTIDO
+              const dateStart = cols[7]?.trim() || new Date().toLocaleDateString('pt-BR');
+              
+              const dateEnd = cols[8]?.trim() || dateStart;
+              const workCenter = cols[9]?.trim().toUpperCase() || 'MANUTENÇÃO';
+              const timeStart = cols[10]?.trim() || '07:00';
+              const timeEnd = cols[11]?.trim() || '17:00';
+              const resources = cols[12]?.trim().toUpperCase() || '';
+              const resources2 = cols[13]?.trim().toUpperCase() || '';
+
+              const item: ScheduleItem = {
+                  id: crypto.randomUUID(),
+                  frotaOm,
+                  description,
+                  dateMin,
+                  dateMax,
+                  priority,
+                  peopleCount,
+                  hours,
+                  dateStart,
+                  dateEnd,
+                  workCenter,
+                  timeStart,
+                  timeEnd,
+                  resources,
+                  resources2,
+                  status: 'PROGRAMADO',
+                  weekNumber: weekNumber 
+              };
+              
+              await StorageService.saveScheduleItem(item);
+              importedItems.push(item);
+              count++;
+          }
+
+          setScheduleText('');
           setWeekNumber('');
-      }, "INICIALIZANDO SEMANA...", "SEMANA CRIADA!");
+          
+          // Redireciona após 1.5s (tempo do feedback)
+          setTimeout(() => {
+              navigate('/schedule');
+          }, 1500);
+
+      }, "ATUALIZANDO AGENDA...", () => `IMPORTADOS ${count} ITENS! INDO PARA AGENDA...`);
   };
 
   // --- EMPLOYEE ACTIONS (EDIT/SAVE) ---
@@ -725,25 +756,14 @@ export const Settings: React.FC = () => {
                   {activeTab === 'SCHEDULE' && (
                     <div className="space-y-4">
                         <div className="space-y-3">
-                            <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Iniciar Programação Semanal</h3>
-                            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-center">
-                                <Table className="mx-auto text-blue-600 mb-2" size={32} />
-                                <p className="text-[10px] text-blue-800 font-bold uppercase mb-2">
-                                    APENAS INFORME O NÚMERO DA SEMANA PARA GERAR A ESTRUTURA DA TABELA.
-                                </p>
-                                <input 
-                                    value={weekNumber} 
-                                    onChange={e => setWeekNumber(e.target.value.toUpperCase())} 
-                                    className="w-full bg-white border-2 border-blue-200 p-3 rounded-lg text-lg font-black uppercase text-center focus:border-blue-500 outline-none" 
-                                    placeholder="Nº SEMANA (EX: 42)" 
-                                />
+                            <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Importação em Massa (Excel)</h3>
+                            <input value={weekNumber} onChange={e => setWeekNumber(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="NÚMERO DA SEMANA (EX: 42)" />
+                            <div className="bg-blue-50 p-2 rounded text-[9px] text-blue-800">
+                                <strong>COLE AS COLUNAS DO EXCEL (14 COLUNAS):</strong><br/>
+                                FROTA/OM | DESC | D.MIN | D.MAX | PRIOR | PESSOAS | H | D.INI (REF) | D.FIM | CENTRO | H.INI | H.FIM | REC | REC2
                             </div>
-                            <button 
-                                onClick={handleInitializeSchedule} 
-                                className="w-full bg-green-600 text-white py-4 rounded-xl font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg hover:shadow-green-200 transition-all active:scale-95"
-                            >
-                                <Cloud size={16}/> INICIALIZAR SEMANA
-                            </button>
+                            <textarea value={scheduleText} onChange={e => setScheduleText(e.target.value)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-xs font-mono h-64 resize-none" placeholder="Cole aqui os dados copiados do Excel..." />
+                            <button onClick={handleImportSchedule} className="w-full bg-green-600 text-white py-3 rounded font-bold text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg"><Cloud size={14}/> Importar Programação</button>
                         </div>
                     </div>
                   )}
@@ -832,7 +852,16 @@ export const Settings: React.FC = () => {
 
           <div className="lg:col-span-8">
               <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-[500px]">
-                  {activeTab !== 'DB_LIVE' && (
+                  {activeTab === 'SCHEDULE' ? (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-400 p-10 animate-fadeIn">
+                          <UploadCloud size={64} className="mb-4 opacity-20 text-blue-500"/>
+                          <p className="font-black text-sm uppercase tracking-widest text-gray-500">Área de Importação</p>
+                          <p className="text-[10px] font-bold mt-2 max-w-sm text-center">
+                              Utilize o formulário à esquerda para colar e processar a tabela de programação.
+                              <br/>Esta visualização é exclusiva para inserção de dados em massa.
+                          </p>
+                      </div>
+                  ) : activeTab !== 'DB_LIVE' && (
                       <>
                         <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                             <h4 className="text-sm font-bold text-gray-700 uppercase">
@@ -900,14 +929,6 @@ export const Settings: React.FC = () => {
                                                 ) : <span className="text-[9px] text-gray-400">PENDENTE</span>}
                                             </td>
                                             <td className="p-3 text-right"><div className="flex justify-end gap-2">{art.pdfUrl && (<button onClick={() => setViewingART(art)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Ver Modelo Original"><Eye size={14}/></button>)}<button onClick={() => { if(window.confirm('Excluir ART?')) StorageService.deleteART(art.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
-                                        </tr>
-                                    ))}
-                                    {activeTab === 'SCHEDULE' && scheduleItems.filter(i => i.frotaOm.includes(searchQuery)).slice(0, 50).map(item => (
-                                        <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
-                                            <td className="p-3 font-bold text-xs">{item.frotaOm}</td>
-                                            <td className="p-3 font-bold text-xs text-gray-700 truncate max-w-[200px]">{item.description}</td>
-                                            <td className="p-3 text-xs text-gray-500">{item.dateStart}</td>
-                                            <td className="p-3 text-right"><button onClick={() => { if(window.confirm('Excluir item?')) StorageService.deleteScheduleItem(item.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></td>
                                         </tr>
                                     ))}
                                 </tbody>

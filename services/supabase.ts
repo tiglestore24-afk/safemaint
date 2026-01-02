@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 // ID do Projeto: lmazcbbuzzjbdgolsbhz
 export const SUPABASE_PROJECT_ID = 'lmazcbbuzzjbdgolsbhz';
 const SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co`;
-const SUPABASE_KEY = 'sb_publishable_vAgjUesV71WRr6rQxZrSJg_pUb9ETKK';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxtYXpjYmJ1enpqYmRnb2xzYmh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcxNjgxNjIsImV4cCI6MjA4Mjc0NDE2Mn0.5vJ7JwjbYDXEplOeUkdsw78filU_hYWXX5fOhocSv3Y';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {

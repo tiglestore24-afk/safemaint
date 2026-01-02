@@ -33,6 +33,7 @@
               'spin-slow': 'spin 8s linear infinite',
               'spin-reverse-slow': 'spin-reverse 12s linear infinite',
               'spin-reverse': 'spin-reverse 1s linear infinite',
+              'fadeIn': 'fadeIn 0.5s ease-out forwards',
             },
             keyframes: {
               shimmer: {
@@ -42,6 +43,10 @@
               'spin-reverse': {
                 'from': { transform: 'rotate(360deg)' },
                 'to': { transform: 'rotate(0deg)' }
+              },
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' }
               }
             }
           }
@@ -59,14 +64,6 @@
         background-color: #111827;
       }
       
-      @keyframes fadeInUp {
-        from { opacity: 0; transform: translate3d(0, 40px, 0); }
-        to { opacity: 1; transform: translate3d(0, 0, 0); }
-      }
-      .animate-fade-in-up {
-        animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-      }
-
       .custom-scrollbar::-webkit-scrollbar {
         width: 8px;
         height: 8px;

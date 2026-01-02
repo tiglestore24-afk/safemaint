@@ -69,7 +69,7 @@ export const AvailabilityBoard: React.FC = () => {
         const targetDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
         
         // Formatos de data para comparação
-        const dateStrBR = targetDate.toLocaleDateString('pt-BR'); // DD/MM/YYYY (Usado na Programação)
+        const dateStrBR = targetDate.toLocaleDateString('pt-BR'); // DD/MM/YYYY (Usado na Programação - Coluna 8)
         const dateIso = targetDate.toISOString().split('T')[0];   // YYYY-MM-DD (Usado nos Cards/Histórico)
         
         const statuses: Set<AvailabilityStatus> = new Set();
@@ -91,11 +91,12 @@ export const AvailabilityBoard: React.FC = () => {
         }
 
         // 2. PROGRAMAÇÃO (Schedule)
-        // Verifica se existe item na agenda para este TAG e DATA
-        const scheduleItemsForDay = schedule.filter(s => 
-            s.frotaOm.includes(tag) && 
-            s.dateStart === dateStrBR
-        );
+        // Lógica: Extrai a primeira parte da FrotaOm (ex: "CA5302" de "CA5302 / OM123") e compara com o TAG da linha.
+        // Compara a Data de Início (dateStart - Coluna 8) com a data da célula.
+        const scheduleItemsForDay = schedule.filter(s => {
+            const scheduleTag = s.frotaOm.split(/[\/\n\s]/)[0].trim().toUpperCase(); // Pega a primeira parte (CA...)
+            return scheduleTag === tag && s.dateStart === dateStrBR;
+        });
 
         if (scheduleItemsForDay.length > 0) {
             scheduleItemsForDay.forEach(item => {

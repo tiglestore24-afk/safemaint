@@ -1,11 +1,11 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { StorageService } from '../services/storage';
-import { ScheduleItem, ActiveMaintenance } from '../types';
+import { ScheduleItem } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { 
-  PlayCircle, Clock, Maximize2, Trash2, Cloud, X, 
-  ShieldAlert, ChevronLeft, ChevronRight, Activity, CalendarCheck, Search
+  PlayCircle, Maximize2, Trash2, Cloud, 
+  ShieldAlert, ChevronLeft, ChevronRight, CalendarCheck, Search, Lock
 } from 'lucide-react';
 import { TVSchedule } from './TVSchedule';
 import { BackButton } from '../components/BackButton';
@@ -14,8 +14,11 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 export const Schedule: React.FC = () => {
   const navigate = useNavigate();
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
-  // Usando Set para lookup O(1) de itens ativos - Performance Crítica
-  const [activeFrotaOmSet, setActiveFrotaOmSet] = useState<Set<string>>(new Set());
+  
+  // OTIMIZAÇÃO: Armazena apenas os IDs dos itens do agendamento que estão ativos.
+  // Lookup O(1) durante a renderização da tabela.
+  const [activeScheduleIds, setActiveScheduleIds] = useState<Set<string>>(new Set());
+  
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,22 +28,47 @@ export const Schedule: React.FC = () => {
   const itemsPerPage = 30;
 
   const loadData = useCallback(() => {
-      // Pequeno delay para garantir que o LoadingSpinner apareça antes do processamento pesado
+      setIsLoading(true);
+      
+      // Delay minúsculo para permitir que o React renderize o Spinner antes de travar a thread com o processamento
       setTimeout(() => {
-          const sch = StorageService.getSchedule();
-          const active = StorageService.getActiveMaintenances();
-          
-          // Cria um Set com as chaves compostas ou simples para verificação rápida
-          const activeSet = new Set<string>();
-          active.forEach(t => {
-              activeSet.add(t.header.om); // Verifica por OM
-              activeSet.add(t.header.tag); // Verifica por TAG
-              // Adiciona combinações comuns se necessário
-          });
+          try {
+              const sch = StorageService.getSchedule();
+              const active = StorageService.getActiveMaintenances();
+              
+              // 1. Cria um mapa de chaves ativas (OM e TAG) para comparação rápida
+              const activeKeys = new Set<string>();
+              active.forEach(t => {
+                  if (t.header.om) activeKeys.add(t.header.om.trim().toUpperCase());
+                  if (t.header.tag) activeKeys.add(t.header.tag.trim().toUpperCase());
+              });
 
-          setScheduleItems(sch);
-          setActiveFrotaOmSet(activeSet);
-          setIsLoading(false);
+              // 2. Pré-calcula quais itens do agendamento estão ativos
+              // Isso remove a lógica pesada de 'split' e 'find' de dentro do loop de renderização da tabela
+              const activeIds = new Set<string>();
+              
+              sch.forEach(item => {
+                  // Divide a string FrotaOm (ex: "CA5302 / OM123")
+                  const parts = item.frotaOm ? item.frotaOm.split(/[\/\n\s]+/) : [];
+                  
+                  // Verifica se alguma parte coincide com uma tarefa ativa
+                  const isActive = parts.some(part => {
+                      const cleanPart = part.trim().toUpperCase();
+                      return cleanPart && activeKeys.has(cleanPart);
+                  });
+
+                  if (isActive) {
+                      activeIds.add(item.id);
+                  }
+              });
+
+              setScheduleItems(sch);
+              setActiveScheduleIds(activeIds);
+          } catch (error) {
+              console.error("Erro ao processar agendamento:", error);
+          } finally {
+              setIsLoading(false);
+          }
       }, 50);
   }, []);
 
@@ -52,18 +80,8 @@ export const Schedule: React.FC = () => {
     };
   }, [loadData]);
 
-  // Verificação Otimizada (O(1))
-  const isItemActive = (frotaOm: string) => {
-      // Divide a string frotaOm (ex: "TAG123 / OM999") para verificar partes individuais
-      const parts = frotaOm.split(/[\/\n\s]+/).map(p => p.trim());
-      for (const part of parts) {
-          if (part && activeFrotaOmSet.has(part)) return true;
-      }
-      return false;
-  };
-
   const handleStartMaintenance = (item: ScheduleItem) => {
-      if(isItemActive(item.frotaOm)) {
+      if(activeScheduleIds.has(item.id)) {
           alert("ESTA ATIVIDADE JÁ ESTÁ EM EXECUÇÃO NO PAINEL!");
           return;
       }
@@ -90,54 +108,63 @@ export const Schedule: React.FC = () => {
       if(scheduleItems.length === 0) return;
       if (window.confirm("ATENÇÃO: DESEJA LIMPAR TODA A PROGRAMAÇÃO?")) {
           setIsLoading(true);
-          StorageService.archiveAndClearSchedule().then(() => {
-              setScheduleItems([]);
-              setActiveFrotaOmSet(new Set());
-              setIsLoading(false);
-              setCurrentPage(1);
-          });
+          // Pequeno delay para feedback visual
+          setTimeout(() => {
+              StorageService.archiveAndClearSchedule().then(() => {
+                  setScheduleItems([]);
+                  setActiveScheduleIds(new Set());
+                  setIsLoading(false);
+                  setCurrentPage(1);
+              });
+          }, 200);
       }
   };
 
   const handleDeleteItem = (id: string) => {
       if(window.confirm("Remover este item da programação?")) {
           setScheduleItems(prev => prev.filter(item => item.id !== id));
+          // Atualiza o Set localmente para evitar reload completo
+          if (activeScheduleIds.has(id)) {
+              const newSet = new Set(activeScheduleIds);
+              newSet.delete(id);
+              setActiveScheduleIds(newSet);
+          }
           StorageService.deleteScheduleItem(id);
       }
   };
 
   const filteredAndPaginatedItems = useMemo(() => {
-    // 1. Filtragem Inicial (Itens não ativos e busca)
+    // 1. Filtragem Inicial (Busca)
     let list = [];
-    const q = searchQuery.toUpperCase();
+    const q = searchQuery.toUpperCase().trim();
     
-    // Loop único para filtrar por busca E atividade simultaneamente
-    for (const item of scheduleItems) {
-        if (isItemActive(item.frotaOm)) continue; // Pula se ativo
-        
-        if (q) {
-            if (item.frotaOm.includes(q) || item.description.includes(q)) {
+    // Otimização: Se não houver busca, usa o array original diretamente
+    if (!q) {
+        list = scheduleItems;
+    } else {
+        // Loop otimizado para filtrar
+        for (let i = 0; i < scheduleItems.length; i++) {
+            const item = scheduleItems[i];
+            if (item.frotaOm?.includes(q) || item.description?.includes(q)) {
                 list.push(item);
             }
-        } else {
-            list.push(item);
         }
     }
 
     // 2. Paginação
+    const totalItems = list.length;
     const start = (currentPage - 1) * itemsPerPage;
-    return {
-        data: list.slice(start, start + itemsPerPage),
-        totalItems: list.length
-    };
-  }, [scheduleItems, activeFrotaOmSet, currentPage, searchQuery]);
+    const data = list.slice(start, start + itemsPerPage);
+
+    return { data, totalItems };
+  }, [scheduleItems, currentPage, searchQuery]);
 
   const totalPages = Math.ceil(filteredAndPaginatedItems.totalItems / itemsPerPage);
 
   const goToNextPage = () => setCurrentPage(p => Math.min(p + 1, totalPages));
   const goToPrevPage = () => setCurrentPage(p => Math.max(p - 1, 1));
 
-  if (isLoading) return <LoadingSpinner text="Processando Dados..." fullScreen />;
+  if (isLoading) return <LoadingSpinner text="Carregando Agenda..." fullScreen />;
 
   return (
     <>
@@ -213,34 +240,48 @@ export const Schedule: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredAndPaginatedItems.data.map(item => (
-                                    <tr key={item.id} className="transition-colors border-b border-gray-200 hover:bg-blue-50/50 group">
-                                        <td className="px-1 py-1 text-center border-r border-gray-200 align-middle bg-white group-hover:bg-blue-50/50 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
-                                            <div className="flex flex-col gap-1 items-center justify-center">
-                                                <button onClick={() => handleStartMaintenance(item)} className="text-vale-green hover:scale-110 transition-transform p-1" title="Iniciar">
-                                                    <PlayCircle size={18} />
-                                                </button>
-                                                <button onClick={() => handleDeleteItem(item.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Remover">
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                        <td className="px-2 py-1 whitespace-pre-wrap font-black text-gray-800 border-r border-gray-200 align-middle text-[10px]">{item.frotaOm}</td>
-                                        <td className="px-2 py-1 text-gray-700 border-r border-gray-200 align-middle uppercase text-[9px] truncate max-w-[300px]" title={item.description}>{item.description}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px] text-gray-500">{item.dateMin}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px] text-gray-500">{item.dateMax}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.priority}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.peopleCount}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.hours}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle font-bold text-[9px] text-blue-700">{item.dateStart}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.dateEnd}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.workCenter}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.timeStart}</td>
-                                        <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.timeEnd}</td>
-                                        <td className="px-2 py-1 text-center align-middle text-[8px] truncate max-w-[100px] border-r border-gray-200" title={item.resources}>{item.resources}</td>
-                                        <td className="px-2 py-1 text-center align-middle text-[8px] truncate max-w-[100px]" title={item.resources2}>{item.resources2}</td>
-                                    </tr>
-                                ))
+                                filteredAndPaginatedItems.data.map(item => {
+                                    // CHECK RAPIDO O(1) usando o Set pré-calculado
+                                    const isActive = activeScheduleIds.has(item.id);
+                                    
+                                    return (
+                                        <tr key={item.id} className={`transition-colors border-b border-gray-200 group ${isActive ? 'bg-orange-50/50 hover:bg-orange-100/50' : 'hover:bg-blue-50/50'}`}>
+                                            <td className={`px-1 py-1 text-center border-r border-gray-200 align-middle sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isActive ? 'bg-orange-50/80 group-hover:bg-orange-100/80' : 'bg-white group-hover:bg-blue-50/50'}`}>
+                                                <div className="flex flex-col gap-1 items-center justify-center">
+                                                    {isActive ? (
+                                                        <div className="text-orange-500 p-1 cursor-not-allowed flex flex-col items-center" title="Em Execução (Bloqueado)">
+                                                            <Lock size={16} />
+                                                            <span className='text-[6px] font-black'>EXEC</span>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => handleStartMaintenance(item)} className="text-vale-green hover:scale-110 transition-transform p-1" title="Iniciar">
+                                                            <PlayCircle size={18} />
+                                                        </button>
+                                                    )}
+                                                    {!isActive && (
+                                                        <button onClick={() => handleDeleteItem(item.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Remover">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-2 py-1 whitespace-pre-wrap font-black text-gray-800 border-r border-gray-200 align-middle text-[10px]">{item.frotaOm}</td>
+                                            <td className="px-2 py-1 text-gray-700 border-r border-gray-200 align-middle uppercase text-[9px] truncate max-w-[300px]" title={item.description}>{item.description}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px] text-gray-500">{item.dateMin}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px] text-gray-500">{item.dateMax}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.priority}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.peopleCount}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.hours}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle font-bold text-[9px] text-blue-700">{item.dateStart}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.dateEnd}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.workCenter}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.timeStart}</td>
+                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.timeEnd}</td>
+                                            <td className="px-2 py-1 text-center align-middle text-[8px] truncate max-w-[100px] border-r border-gray-200" title={item.resources}>{item.resources}</td>
+                                            <td className="px-2 py-1 text-center align-middle text-[8px] truncate max-w-[100px]" title={item.resources2}>{item.resources2}</td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
