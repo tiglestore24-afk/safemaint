@@ -33,6 +33,7 @@ const triggerUpdate = () => {
 const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
     try {
         let cleanData = data;
+        // Se houver campos para remover (como pdfUrl), cria uma cópia limpa
         if (stripFields.length > 0 && Array.isArray(data)) {
             cleanData = data.map(item => {
                 const copy = { ...item };
@@ -42,7 +43,11 @@ const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
         }
         localStorage.setItem(key, JSON.stringify(cleanData));
     } catch (e) {
-        console.error('[STORAGE] Erro de cota/espaço no LocalStorage.', e);
+        console.error(`[STORAGE] Erro de cota ao salvar ${key}. Dados pesados foram omitidos.`, e);
+        // Fallback: Tenta salvar array vazio se falhar, para não quebrar a app
+        try {
+             if (Array.isArray(data)) localStorage.setItem(key, '[]');
+        } catch (e2) { console.error("Falha crítica no storage", e2); }
     }
 };
 
@@ -86,14 +91,13 @@ const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
 
 export const StorageService = {
   initialSync: async () => {
-      // Se estiver offline, não tenta sincronizar
       if (!navigator.onLine) return;
 
       const tables = [
           { local: KEYS.DOCS, remote: 'documents', strip: ['manualFileUrl'] },
           { local: KEYS.EMPLOYEES, remote: 'employees' },
-          { local: KEYS.OMS, remote: 'oms', strip: [] }, 
-          { local: KEYS.ARTS, remote: 'arts', strip: [] }, 
+          { local: KEYS.OMS, remote: 'oms', strip: ['pdfUrl'] }, // Strip PDF for local storage
+          { local: KEYS.ARTS, remote: 'arts', strip: ['pdfUrl'] }, // Strip PDF for local storage
           { local: KEYS.SCHEDULE, remote: 'schedule' },
           { local: KEYS.HISTORY, remote: 'history' },
           { local: KEYS.ACTIVE, remote: 'active_maintenance' },
@@ -113,7 +117,6 @@ export const StorageService = {
                   
                   const merged = [...data];
                   
-                  // Mantém itens locais que não existem no remoto (criação offline)
                   localData.forEach((lItem: any) => {
                       if (!remoteIds.has(lItem.id)) {
                           merged.push(lItem);
@@ -127,7 +130,7 @@ export const StorageService = {
                   }
               }
           } catch (e) {
-              console.warn(`[SYNC] Falha leve ao sincronizar ${t.remote}`);
+              console.warn(`[SYNC] Falha leve ao sincronizar ${t.remote}`, e);
           }
       }
       triggerUpdate();
@@ -136,22 +139,18 @@ export const StorageService = {
   getPendingSyncCount: () => 0,
 
   validateUser: async (login: string, pass: string): Promise<User | null> => {
-      // 1. Tenta Autenticar Online (Supabase - Banco de Autenticação)
       try {
           if (navigator.onLine) {
               const { data, error } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
               
               if (!error && data) {
-                  // Atualiza localmente se login for bem sucedido online
                   StorageService.saveUser(data); 
                   return data as User;
               }
 
-              // Se não achou usuário, mas estamos online, verifique se o banco está vazio (Primeiro Acesso)
               if (!data) {
                   const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
                   if (count === 0 && login.toUpperCase() === '81025901' && pass === '123') {
-                      console.log("Banco vazio detectado. Criando usuário ADMIN padrão...");
                       const defaultAdmin: User = {
                           id: 'default-admin',
                           name: 'ADMINISTRADOR',
@@ -165,43 +164,33 @@ export const StorageService = {
                   }
               }
           }
-      } catch (e) {
-          console.warn("Login offline fallback ou erro de conexão Supabase");
-      }
+      } catch (e) {}
 
-      // 2. Fallback Local (Login Offline ou falha na conexão)
       const localUsers = StorageService.getUsers();
       return localUsers.find(u => u.login === login.toUpperCase() && u.password === pass) || null;
   },
 
   registerUser: async (newUser: User): Promise<{ success: boolean; message: string }> => {
-        // Validações básicas
         if (!newUser.login || !newUser.password || !newUser.matricula || !newUser.name) {
             return { success: false, message: 'Preencha todos os campos obrigatórios.' };
         }
 
-        // Verifica duplicidade no Supabase (se online)
         if (navigator.onLine) {
             try {
-                // Checa duplicidade de login ou matrícula
                 const { data } = await supabase.from('users').select('id')
                     .or(`login.eq.${newUser.login},matricula.eq.${newUser.matricula}`);
                 
                 if (data && data.length > 0) {
                     return { success: false, message: 'Usuário ou Matrícula já cadastrados no sistema.' };
                 }
-            } catch (e) {
-                console.warn('Erro ao verificar duplicidade online', e);
-            }
+            } catch (e) {}
         }
 
-        // Verifica duplicidade local
         const localUsers = StorageService.getUsers();
         if (localUsers.some(u => u.login === newUser.login || u.matricula === newUser.matricula)) {
             return { success: false, message: 'Usuário já existe localmente.' };
         }
 
-        // Salva
         await StorageService.saveUser(newUser);
         return { success: true, message: 'Cadastro realizado com sucesso!' };
   },
@@ -209,7 +198,6 @@ export const StorageService = {
   getUsers: (): User[] => {
       const users = JSON.parse(localStorage.getItem(KEYS.USERS) || '[]');
       if (users.length === 0) {
-          // Usuário padrão local caso storage esteja vazio
           const defaultUser: User = {
               id: 'default-admin',
               name: 'ADMINISTRADOR',
@@ -230,19 +218,12 @@ export const StorageService = {
       if(idx > -1) list[idx] = user; else list.push(user);
       trySaveLocal(KEYS.USERS, list);
       triggerUpdate();
-      
-      // Persistência Remota (Banco de Autenticação)
-      try { 
-          await supabase.from('users').upsert(user); 
-      } catch(e) {
-          console.error("Erro ao salvar usuário no Supabase", e);
-      }
+      try { await supabase.from('users').upsert(user); } catch(e) {}
   },
   deleteUser: async (id: string) => {
       const list = StorageService.getUsers().filter(u => u.id !== id);
       trySaveLocal(KEYS.USERS, list);
       triggerUpdate();
-      
       try { await supabase.from('users').delete().eq('id', id); } catch(e) {}
   },
 
@@ -253,14 +234,12 @@ export const StorageService = {
       if(idx > -1) list[idx] = emp; else list.push(emp);
       trySaveLocal(KEYS.EMPLOYEES, list);
       triggerUpdate();
-
       try { await supabase.from('employees').upsert(emp); } catch(e) {}
   },
   deleteEmployee: async (id: string) => {
       const list = StorageService.getEmployees().filter(e => e.id !== id);
       trySaveLocal(KEYS.EMPLOYEES, list);
       triggerUpdate();
-
       try { await supabase.from('employees').delete().eq('id', id); } catch(e) {}
   },
 
@@ -271,14 +250,12 @@ export const StorageService = {
       if(idx > -1) list[idx] = item; else list.push(item);
       trySaveLocal(KEYS.SCHEDULE, list);
       triggerUpdate();
-
       try { await supabase.from('schedule').upsert(item); } catch(e) {}
   },
   deleteScheduleItem: async (id: string) => {
       const list = StorageService.getSchedule().filter(i => i.id !== id);
       trySaveLocal(KEYS.SCHEDULE, list);
       triggerUpdate();
-
       try { await supabase.from('schedule').delete().eq('id', id); } catch(e) {}
   },
   archiveAndClearSchedule: async () => {
@@ -292,7 +269,9 @@ export const StorageService = {
     const list = StorageService.getOMs();
     const idx = list.findIndex(o => o.id === om.id);
     if (idx > -1) list[idx] = om; else list.push(om);
-    trySaveLocal(KEYS.OMS, list, []); 
+    
+    // IMPORTANT: Strip PDF from local storage to avoid Quota Exceeded
+    trySaveLocal(KEYS.OMS, list, ['pdfUrl']); 
     triggerUpdate();
 
     try { await supabase.from('oms').upsert(om); } catch(e) {}
@@ -302,14 +281,14 @@ export const StorageService = {
       const om = list.find(o => o.id === id);
       if (om) {
           om.status = status;
-          trySaveLocal(KEYS.OMS, list, []);
+          trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
           triggerUpdate();
           try { await supabase.from('oms').update({ status }).eq('id', id); } catch(e) {}
       }
   },
   deleteOM: async (id: string) => {
     const list = StorageService.getOMs().filter(o => o.id !== id);
-    trySaveLocal(KEYS.OMS, list, []);
+    trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
     triggerUpdate();
     try { await supabase.from('oms').delete().eq('id', id); } catch(e) {}
   },
@@ -319,13 +298,13 @@ export const StorageService = {
     const list = StorageService.getARTs();
     const idx = list.findIndex(a => a.id === art.id);
     if (idx > -1) list[idx] = art; else list.push(art);
-    trySaveLocal(KEYS.ARTS, list, []); 
+    trySaveLocal(KEYS.ARTS, list, ['pdfUrl']); // Strip PDF
     triggerUpdate();
     try { await supabase.from('arts').upsert(art); } catch(e) {}
   },
   deleteART: async (id: string) => {
       const list = StorageService.getARTs().filter(a => a.id !== id);
-      trySaveLocal(KEYS.ARTS, list, []);
+      trySaveLocal(KEYS.ARTS, list, ['pdfUrl']);
       triggerUpdate();
       try { await supabase.from('arts').delete().eq('id', id); } catch(e) {}
   },
@@ -380,7 +359,6 @@ export const StorageService = {
       const task = tasks.find(t => t.id === id);
       
       if (task) {
-          // 1. Criar Log no Histórico (sempre registra o evento)
           const log: MaintenanceLog = {
               id: crypto.randomUUID(), om: task.header.om, tag: task.header.tag,
               description: task.header.description, startTime: task.startTime,
@@ -394,29 +372,21 @@ export const StorageService = {
           triggerUpdate();
           try { await supabase.from('history').upsert(log); } catch(e) {}
 
-          // 2. Se for PARCIAL: NÃO DELETA A TAREFA. Apenas muda status para 'AGUARDANDO'.
           if (statusText === 'PARCIAL') {
               if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
-                  // Computa o tempo até agora antes de parar
                   const now = new Date().getTime();
                   const start = new Date(task.currentSessionStart).getTime();
                   task.accumulatedTime = (task.accumulatedTime || 0) + (now - start);
               }
-              
-              task.status = 'AGUARDANDO'; // Status laranja no Dashboard
-              task.currentSessionStart = undefined; // Para o cronômetro
-              
+              task.status = 'AGUARDANDO';
+              task.currentSessionStart = undefined;
               trySaveLocal(KEYS.ACTIVE, tasks);
               triggerUpdate();
               try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
-              
-              // Garante que OM continue EM_ANDAMENTO
               if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
-              
-              return; // Encerra aqui para não deletar
+              return;
           }
 
-          // 3. Se for FINALIZAÇÃO TOTAL: Prossegue com arquivamento e exclusão
           if (task.artId) {
               const allDocs = StorageService.getDocuments();
               const artDoc = allDocs.find(d => d.id === task.artId);

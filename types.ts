@@ -138,6 +138,7 @@ export interface OMRecord {
   pdfUrl?: string;
   createdBy: string;
   installationLocation?: string;
+  linkedScheduleOm?: string; // Novo campo para vínculo com programação
 }
 
 export interface ChecklistTemplateItem {

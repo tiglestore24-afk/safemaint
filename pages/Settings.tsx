@@ -6,16 +6,17 @@ import { Employee, User, OMRecord, RegisteredART, ScheduleItem, DocumentRecord }
 import { 
   Save, Database, Users, Shield, 
   BrainCircuit, Trash2,
-  Eye, X, FileText, Cloud, Edit2, Calendar, Eraser, CheckCircle2, Sparkles, Loader2, Copy, Zap, Terminal, RefreshCw
+  Eye, X, FileText, Cloud, Edit2, Calendar, Eraser, CheckCircle2, Sparkles, Loader2, Copy, Zap, Terminal, RefreshCw, BookOpen, Table
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
+import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configuração do PDF.js Worker
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
-// --- SQL GENERATOR CONSTANT (VERSÃO DEFINITIVA E COMPLETA V3) ---
+// ... (GENERATED_SQL CONSTANT REMAINS THE SAME - OMITTED FOR BREVITY, ASSUME IT'S THERE) ...
 const GENERATED_SQL = `
 -- --- SCRIPT SETUP TOTAL SAFEMAINT V3 ---
 -- RODE ESTE SCRIPT NO 'SQL EDITOR' DO SUPABASE.
@@ -139,6 +140,12 @@ export const Settings: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   
+  // --- FEEDBACK STATES ---
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [processText, setProcessText] = useState('');
+  const [successText, setSuccessText] = useState('');
+
   // View States
   const [viewingOM, setViewingOM] = useState<OMRecord | null>(null);
   const [viewingART, setViewingART] = useState<RegisteredART | null>(null);
@@ -176,8 +183,7 @@ export const Settings: React.FC = () => {
   const [newOmPdf, setNewOmPdf] = useState<string>('');
   const [isExtracting, setIsExtracting] = useState(false);
   
-  // Forms - Schedule (APENAS MASSA AGORA)
-  const [scheduleText, setScheduleText] = useState('');
+  // Forms - Schedule (APENAS SEMANA)
   const [weekNumber, setWeekNumber] = useState('');
 
   // Forms - Employee
@@ -317,37 +323,57 @@ export const Settings: React.FC = () => {
       setScheduleItems(StorageService.getSchedule());
   };
 
-  // ... (PDF Extraction logic remains same as previous version) ...
+  // ... (PDF Extraction logic) ...
   const extractDataFromPdf = async (file: File, isEditMode = false) => {
     setIsExtracting(true);
+    setProcessText("ANALISANDO PDF..."); // Visual feedback
+    setIsProcessing(true); // Small modal during extraction? Optional, maybe just keep local loader
+    // Actually, keeping the local loader inside the component is better for UX here
+    // So let's disable full modal for extraction only
+    setIsProcessing(false); 
+
     try {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjs.getDocument(arrayBuffer).promise;
         let foundOm = ''; let foundDesc = ''; let foundTag = '';
-        const fullTextParts: string[] = [];
-        const maxPages = Math.min(pdf.numPages, 3); 
+        
+        const maxPages = Math.min(pdf.numPages, 3);
+        let fullText = '';
+        
         for (let i = 1; i <= maxPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             const pageText = textContent.items.map((item: any) => item.str).join(' ');
-            fullTextParts.push(pageText);
+            fullText += ' ' + pageText;
         }
-        const fullText = fullTextParts.join(' ');
+        
         const omRegex = /(?:OM|ORDEM|Nº|NUMERO)[:.\s]*(\d{8,12})/i;
         const omMatch = fullText.match(omRegex);
         if (omMatch) foundOm = omMatch[1];
         else { const fallbackOm = fullText.match(/(\d{12})/); if (fallbackOm) foundOm = fallbackOm[1]; }
+        
         const descRegex = /(?:DESCRIÇÃO|TEXTO BREVE)[:.\s]*(.*?)(?:OBSERVAÇÕES|NOTA|EQUIPAMENTO|LOCAL|PERMISSÕES|$)/i;
         const descMatch = fullText.match(descRegex);
         if (descMatch) foundDesc = descMatch[1].trim().replace(/_+/g, ' '); 
-        const tagRegex = /([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
-        const labeledTagMatch = fullText.match(/(?:TAG|EQUIPAMENTO|ITEM TÉCNICO)[:.\s]*([A-Z0-9-]{5,})/i);
-        if (labeledTagMatch) { foundTag = labeledTagMatch[1]; } else { const genericTagMatch = fullText.match(tagRegex); if (genericTagMatch) foundTag = genericTagMatch[1]; }
+        
+        const localInstRegex = /(?:LOCAL DE INSTALAÇÃO|LOCAL INSTALAÇÃO)(?:[\s\S]{0,100}?)([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
+        const labeledTagRegex = /(?:TAG|EQUIPAMENTO|ITEM TÉCNICO)[:.\s]*([A-Z0-9-]{5,})/i;
+        const genericTagRegex = /([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
+
+        const localMatch = fullText.match(localInstRegex);
+        const labeledMatch = fullText.match(labeledTagRegex);
+        const genericMatch = fullText.match(genericTagRegex);
+
+        if (localMatch) foundTag = localMatch[1];
+        else if (labeledMatch) foundTag = labeledMatch[1];
+        else if (genericMatch) foundTag = genericMatch[1];
 
         if (isEditMode) {
             setEditingOmData(prev => ({ ...prev, omNumber: foundOm || prev.omNumber, tag: foundTag || prev.tag, description: foundDesc || prev.description }));
         } else {
-            if (foundOm) setNewOmNumber(foundOm); if (foundTag) setNewOmTag(foundTag); if (foundDesc) setNewOmDesc(foundDesc);
+            if (foundOm) setNewOmNumber(foundOm); 
+            if (foundTag) setNewOmTag(foundTag); 
+            if (foundDesc) setNewOmDesc(foundDesc);
             if (foundDesc.toUpperCase().includes('PREVENTIVA') || foundDesc.toUpperCase().includes('SISTEMÁTICA')) { setNewOmType('PREVENTIVA'); } else if (foundDesc.toUpperCase().includes('CORRETIVA') || foundDesc.toUpperCase().includes('FALHA')) { setNewOmType('CORRETIVA'); }
         }
     } catch (error) { console.error("Erro no parser:", error); } finally { setIsExtracting(false); }
@@ -364,10 +390,26 @@ export const Settings: React.FC = () => {
             const textContent = await page.getTextContent();
             const textItems = textContent.items.map((item: any) => item.str);
             const text = textItems.join(' ');
-            const codePatterns = [/(?:ART|PT|PET|PERMISSÃO)[\s.Nnº°]*([0-9A-Z.-]{4,})/i, /(?:DOC|DOCUMENTO)[:\s]*([0-9A-Z.-]+)/i];
+            
+            const codePatterns = [
+                /(?:CÓDIGO DA ART|CODIGO DA ART|ART|PT|PET|PERMISSÃO)[\s.Nnº°]*([0-9A-Z.-]{4,})/i, 
+                /(?:DOC|DOCUMENTO)[:\s]*([0-9A-Z.-]+)/i
+            ];
             for (const pattern of codePatterns) { const match = text.match(pattern); if (match) { foundCode = match[1]; break; } }
-            const taskPatterns = [/(?:ATIVIDADE|TAREFA|DESCRIÇÃO|OBJETIVO)[:\s.]+(.*?)(?:LOCAL|ÁREA|EXECUTANTE|DATA|$)/i, /(?:SERVIÇO A EXECUTAR)[:\s.]+(.*?)(?:$|\.)/i];
-            for (const pattern of taskPatterns) { const match = text.match(pattern); if (match) { foundTask = match[1].trim(); foundTask = foundTask.replace(/^[_.-]+/, '').trim(); break; } }
+            
+            const taskPatterns = [
+                /(?:TAREFA A SER EXECUTADA)[:\s]*(.*?)(?:GERÊNCIA|GERENCIA|CÓDIGO|CODIGO|LOCAL|DATA|OMVE|$)/i,
+                /(?:ATIVIDADE|TAREFA|DESCRIÇÃO|OBJETIVO)[:\s.]+(.*?)(?:LOCAL|ÁREA|EXECUTANTE|DATA|$)/i, 
+                /(?:SERVIÇO A EXECUTAR)[:\s.]+(.*?)(?:$|\.)/i
+            ];
+            for (const pattern of taskPatterns) { 
+                const match = text.match(pattern); 
+                if (match) { 
+                    foundTask = match[1].trim(); 
+                    foundTask = foundTask.replace(/^[_.-]+/, '').trim(); 
+                    break; 
+                } 
+            }
         }
         if (foundCode) setArtCode(foundCode); if (foundTask) setArtTask(foundTask);
     } catch (error) { console.error("Erro na leitura do arquivo:", error); } finally { setIsExtracting(false); }
@@ -392,26 +434,47 @@ export const Settings: React.FC = () => {
       setEmpName(''); setEmpMatricula(''); setEmpFunction('');
       setUserName(''); setUserLogin(''); setUserPass('');
       setArtCode(''); setArtTask(''); setArtPdf('');
-      setScheduleText(''); setWeekNumber('');
+      setWeekNumber('');
   };
   
+  // --- HELPER FUNCTION FOR FEEDBACK ---
+  const withFeedback = async (action: () => Promise<void>, processingMsg: string, successMsg: string) => {
+      setProcessText(processingMsg);
+      setIsProcessing(true);
+      try {
+          await new Promise(r => setTimeout(r, 800)); // Visual delay
+          await action();
+          setIsProcessing(false);
+          setSuccessText(successMsg);
+          setIsSuccess(true);
+          setTimeout(() => {
+              setIsSuccess(false);
+          }, 1500);
+      } catch (e) {
+          setIsProcessing(false);
+          alert('Erro na operação.');
+          console.error(e);
+      }
+  };
+
   // --- OM ACTIONS ---
-  const handleAddOM = async () => {
+  const handleAddOM = () => {
     if(!newOmNumber || !newOmTag) { alert("Preencha Número e Tag"); return; }
-    const om: OMRecord = {
-        id: crypto.randomUUID(),
-        omNumber: newOmNumber,
-        tag: newOmTag.toUpperCase(),
-        description: newOmDesc.toUpperCase() || 'MANUTENÇÃO INDUSTRIAL',
-        type: newOmType,
-        status: 'PENDENTE',
-        createdAt: new Date().toISOString(),
-        pdfUrl: newOmPdf,
-        createdBy: localStorage.getItem('safemaint_user') || 'ADMIN'
-    };
-    await StorageService.saveOM(om);
-    alert('OM Cadastrada!');
-    resetForms();
+    withFeedback(async () => {
+        const om: OMRecord = {
+            id: crypto.randomUUID(),
+            omNumber: newOmNumber,
+            tag: newOmTag.toUpperCase(),
+            description: newOmDesc.toUpperCase() || 'MANUTENÇÃO INDUSTRIAL',
+            type: newOmType,
+            status: 'PENDENTE',
+            createdAt: new Date().toISOString(),
+            pdfUrl: newOmPdf,
+            createdBy: localStorage.getItem('safemaint_user') || 'ADMIN'
+        };
+        await StorageService.saveOM(om);
+        resetForms();
+    }, "SALVANDO OM...", "OM CADASTRADA!");
   };
 
   const handleOpenEditOM = (om: OMRecord) => {
@@ -419,87 +482,61 @@ export const Settings: React.FC = () => {
       setIsEditOmModalOpen(true);
   };
 
-  const handleSaveEditOM = async () => {
+  const handleSaveEditOM = () => {
       if (!editingOmData.id || !editingOmData.omNumber || !editingOmData.tag) return;
-      
-      const updatedOM = {
-          ...editingOmData,
-          omNumber: editingOmData.omNumber,
-          tag: editingOmData.tag.toUpperCase(),
-          description: editingOmData.description?.toUpperCase() || '',
-          type: editingOmData.type || 'PREVENTIVA'
-      } as OMRecord;
+      withFeedback(async () => {
+          const updatedOM = {
+              ...editingOmData,
+              omNumber: editingOmData.omNumber,
+              tag: editingOmData.tag.toUpperCase(),
+              description: editingOmData.description?.toUpperCase() || '',
+              type: editingOmData.type || 'PREVENTIVA'
+          } as OMRecord;
 
-      await StorageService.saveOM(updatedOM); 
-      setIsEditOmModalOpen(false);
-      setEditingOmData({});
-      refresh();
-      alert('OM Atualizada com sucesso!');
+          await StorageService.saveOM(updatedOM); 
+          setIsEditOmModalOpen(false);
+          setEditingOmData({});
+          refresh();
+      }, "ATUALIZANDO...", "OM ATUALIZADA!");
   };
 
-  // --- SCHEDULE ACTIONS (SMART IMPORT) ---
-  const handleImportSchedule = async () => {
-      if (!scheduleText || !weekNumber) {
-          alert('Preencha o Número da Semana e cole a tabela.');
+  // --- SCHEDULE ACTIONS (INITIALIZE WEEK) ---
+  const handleInitializeSchedule = () => {
+      if (!weekNumber) {
+          alert('Digite o número da semana.');
           return;
       }
       
-      const rows = scheduleText.split('\n');
-      let count = 0;
-      const importedItems: ScheduleItem[] = [];
+      withFeedback(async () => {
+          // 1. Limpar (Arquivar) programação anterior
+          await StorageService.archiveAndClearSchedule();
 
-      for (const row of rows) {
-          if (!row.trim()) continue;
-          if (row.toUpperCase().includes('FROTA') && row.toUpperCase().includes('DESCRIÇÃO')) continue; 
-
-          const cols = row.split('\t');
-          // Precisamos de pelo menos 2 colunas para fazer sentido
-          if (cols.length < 2) continue;
-          
-          const frotaOm = cols[0]?.trim().toUpperCase() || 'N/D';
-          const description = cols[1]?.trim().toUpperCase() || 'MANUTENÇÃO PROGRAMADA';
-          const dateMin = cols[2]?.trim() || '';
-          const dateMax = cols[3]?.trim() || '';
-          const priority = cols[4]?.trim() || 'NORMAL';
-          const peopleCount = parseInt(cols[5]?.trim() || '1');
-          const hours = parseFloat(cols[6]?.trim().replace(',','.') || '1');
-          const dateStart = cols[7]?.trim() || new Date().toLocaleDateString('pt-BR');
-          const dateEnd = cols[8]?.trim() || dateStart;
-          const workCenter = cols[9]?.trim().toUpperCase() || 'MANUTENÇÃO';
-          const timeStart = cols[10]?.trim() || '07:00';
-          const timeEnd = cols[11]?.trim() || '17:00';
-          const resources = cols[12]?.trim().toUpperCase() || '';
-          const resources2 = cols[13]?.trim().toUpperCase() || '';
-
-          const item: ScheduleItem = {
+          // 2. Criar um item placeholder para a semana (Header)
+          // Isso serve para a tabela de programação não ficar vazia e mostrar a semana ativa
+          const placeholderItem: ScheduleItem = {
               id: crypto.randomUUID(),
-              frotaOm,
-              description,
-              dateMin,
-              dateMax,
-              priority,
-              peopleCount,
-              hours,
-              dateStart,
-              dateEnd,
-              workCenter,
-              timeStart,
-              timeEnd,
-              resources,
-              resources2,
-              status: 'PROGRAMADO',
+              frotaOm: `SEM-${weekNumber}`,
+              description: `INÍCIO DA PROGRAMAÇÃO - SEMANA ${weekNumber}`,
+              dateMin: '',
+              dateMax: '',
+              priority: 'INFO',
+              peopleCount: 0,
+              hours: 0,
+              dateStart: new Date().toLocaleDateString('pt-BR'),
+              dateEnd: '',
+              workCenter: 'GERAL',
+              timeStart: '08:00',
+              timeEnd: '17:00',
+              resources: '',
+              resources2: '',
+              status: 'ABERTO',
               weekNumber: weekNumber 
           };
           
-          await StorageService.saveScheduleItem(item);
-          importedItems.push(item);
-          count++;
-      }
+          await StorageService.saveScheduleItem(placeholderItem);
 
-      if (importedItems.length > 0) {
+          // 3. Criar Documento de Relatório (Estrutura)
           const now = new Date().toISOString();
-          
-          // CRIAÇÃO DO DOCUMENTO UNIFICADO DA SEMANA
           const doc: DocumentRecord = {
               id: crypto.randomUUID(),
               type: 'RELATORIO',
@@ -514,22 +551,20 @@ export const Settings: React.FC = () => {
               createdAt: now,
               status: 'ATIVO',
               content: {
-                  rawText: "Importação via Sistema",
+                  rawText: "Semana Inicializada",
                   stopReason: 'PLANEJAMENTO SEMANAL',
-                  activities: `Importação de ${count} itens para a Semana ${weekNumber}`,
+                  activities: `Semana ${weekNumber} aberta.`,
                   startTime: '08:00',
                   endTime: '17:00',
                   weekNumber: weekNumber,
-                  scheduleItems: importedItems // Salva todos os itens no conteúdo para gerar a tabela no Arquivo
+                  scheduleItems: [placeholderItem] 
               },
               signatures: []
           };
           await StorageService.saveDocument(doc);
-      }
-
-      alert(`${count} itens importados para a Semana ${weekNumber}!\nUm único documento consolidado foi salvo no Arquivo.`);
-      setScheduleText('');
-      setWeekNumber('');
+          
+          setWeekNumber('');
+      }, "INICIALIZANDO SEMANA...", "SEMANA CRIADA!");
   };
 
   // --- EMPLOYEE ACTIONS (EDIT/SAVE) ---
@@ -540,18 +575,19 @@ export const Settings: React.FC = () => {
       setEmpFunction(emp.function);
   };
 
-  const handleAddEmployee = async () => {
+  const handleAddEmployee = () => {
       if(!empName || !empMatricula) return;
-      const emp: Employee = { 
-          id: editingId || crypto.randomUUID(), 
-          name: empName.toUpperCase(), 
-          matricula: empMatricula.toUpperCase(), 
-          function: empFunction.toUpperCase(), 
-          status: 'ACTIVE' 
-      };
-      await StorageService.saveEmployee(emp);
-      resetForms();
-      alert(editingId ? 'Colaborador Atualizado!' : 'Colaborador Adicionado!');
+      withFeedback(async () => {
+          const emp: Employee = { 
+              id: editingId || crypto.randomUUID(), 
+              name: empName.toUpperCase(), 
+              matricula: empMatricula.toUpperCase(), 
+              function: empFunction.toUpperCase(), 
+              status: 'ACTIVE' 
+          };
+          await StorageService.saveEmployee(emp);
+          resetForms();
+      }, "SALVANDO COLABORADOR...", "DADOS SALVOS!");
   };
 
   // --- USER ACTIONS (EDIT/SAVE) ---
@@ -563,39 +599,49 @@ export const Settings: React.FC = () => {
       setUserRole(user.role);
   };
 
-  const handleAddUser = async () => {
+  const handleAddUser = () => {
       if(!userLogin || !userPass) return;
-      const user: User = { 
-          id: editingId || crypto.randomUUID(), 
-          name: userName.toUpperCase(), 
-          login: userLogin.toUpperCase(), 
-          password: userPass, 
-          matricula: userLogin.toUpperCase(), 
-          role: userRole 
-      };
-      await StorageService.saveUser(user);
-      resetForms();
-      alert(editingId ? 'Usuário Atualizado!' : 'Usuário Criado!');
+      withFeedback(async () => {
+          const user: User = { 
+              id: editingId || crypto.randomUUID(), 
+              name: userName.toUpperCase(), 
+              login: userLogin.toUpperCase(), 
+              password: userPass, 
+              matricula: userLogin.toUpperCase(), 
+              role: userRole 
+          };
+          await StorageService.saveUser(user);
+          resetForms();
+      }, "PROCESSANDO ACESSO...", "USUÁRIO SALVO!");
   };
 
   // --- ART ACTIONS ---
-  const handleAddART = async () => {
+  const handleAddART = () => {
       if(!artCode || !artTask || !artPdf) return;
-      await StorageService.saveART({ 
-          id: crypto.randomUUID(), 
-          code: artCode, 
-          company: 'VALE', 
-          taskName: artTask.toUpperCase(), 
-          area: 'GERAL', 
-          controlMeasures: 'VER PDF', 
-          pdfUrl: artPdf 
-      });
-      resetForms();
-      alert('ART Cadastrada na Biblioteca!');
+      withFeedback(async () => {
+          await StorageService.saveART({ 
+              id: crypto.randomUUID(), 
+              code: artCode, 
+              company: 'VALE', 
+              taskName: artTask.toUpperCase(), 
+              area: 'GERAL', 
+              controlMeasures: 'VER PDF', 
+              pdfUrl: artPdf 
+          });
+          resetForms();
+      }, "CADASTRANDO MODELO...", "ART NA BIBLIOTECA!");
   };
 
   return (
     <div className="max-w-7xl mx-auto pb-10 px-4">
+      {/* GLOBAL FEEDBACK MODAL */}
+      <FeedbackModal 
+        isOpen={isProcessing || isSuccess} 
+        isSuccess={isSuccess} 
+        loadingText={processText}
+        successText={successText}
+      />
+
       <header className="flex flex-col md:flex-row items-center justify-between py-4 mb-4 bg-white px-4 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center gap-3">
               <BackButton />
@@ -625,7 +671,7 @@ export const Settings: React.FC = () => {
       <nav className="flex bg-white p-1 rounded-lg mb-6 shadow-sm border border-gray-200 gap-1 overflow-x-auto">
         {[
           {id: 'OMS', label: 'Cadastro OM', icon: <BrainCircuit size={14}/>},
-          {id: 'PROCEDURES', label: 'Manual ARTs', icon: <FileText size={14}/>},
+          {id: 'PROCEDURES', label: 'Biblioteca ARTs (Modelos)', icon: <BookOpen size={14}/>}, 
           {id: 'SCHEDULE', label: 'Programação (Massa)', icon: <Calendar size={14}/>},
           {id: 'EMPLOYEES', label: 'Equipe', icon: <Users size={14}/>},
           {id: 'USERS', label: 'Acessos', icon: <Shield size={14}/>},
@@ -640,7 +686,6 @@ export const Settings: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4 space-y-4">
               <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
-                  {/* ... (Existing Tabs Content for OMS, SCHEDULE, PROCEDURES, EMPLOYEES, USERS) ... */}
                   {activeTab === 'OMS' && (
                     <div className="space-y-3 animate-fadeIn">
                         <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Nova Ordem (OM)</h3>
@@ -680,28 +725,39 @@ export const Settings: React.FC = () => {
                   {activeTab === 'SCHEDULE' && (
                     <div className="space-y-4">
                         <div className="space-y-3">
-                            <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Importação em Massa (Excel)</h3>
-                            <input value={weekNumber} onChange={e => setWeekNumber(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="NÚMERO DA SEMANA (EX: 42)" />
-                            <div className="bg-blue-50 p-2 rounded text-[9px] text-blue-800">
-                                <strong>COLE AS COLUNAS DO EXCEL (14 COLUNAS):</strong><br/>
-                                FROTA/OM | DESC | D.MIN | D.MAX | PRIOR | PESSOAS | H | D.INI | D.FIM | CENTRO | H.INI | H.FIM | REC | REC2
+                            <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Iniciar Programação Semanal</h3>
+                            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-center">
+                                <Table className="mx-auto text-blue-600 mb-2" size={32} />
+                                <p className="text-[10px] text-blue-800 font-bold uppercase mb-2">
+                                    APENAS INFORME O NÚMERO DA SEMANA PARA GERAR A ESTRUTURA DA TABELA.
+                                </p>
+                                <input 
+                                    value={weekNumber} 
+                                    onChange={e => setWeekNumber(e.target.value.toUpperCase())} 
+                                    className="w-full bg-white border-2 border-blue-200 p-3 rounded-lg text-lg font-black uppercase text-center focus:border-blue-500 outline-none" 
+                                    placeholder="Nº SEMANA (EX: 42)" 
+                                />
                             </div>
-                            <textarea value={scheduleText} onChange={e => setScheduleText(e.target.value)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-xs font-mono h-64 resize-none" placeholder="Cole aqui os dados copiados do Excel..." />
-                            <button onClick={handleImportSchedule} className="w-full bg-green-600 text-white py-3 rounded font-bold text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg"><Cloud size={14}/> Importar & Arquivar PDF</button>
+                            <button 
+                                onClick={handleInitializeSchedule} 
+                                className="w-full bg-green-600 text-white py-4 rounded-xl font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg hover:shadow-green-200 transition-all active:scale-95"
+                            >
+                                <Cloud size={16}/> INICIALIZAR SEMANA
+                            </button>
                         </div>
                     </div>
                   )}
 
                   {activeTab === 'PROCEDURES' && (
                     <div className="space-y-3">
-                        <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Novo Procedimento ART</h3>
+                        <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Novo Modelo de ART (Padrão)</h3>
                         <div className="border border-dashed border-blue-300 bg-blue-50/50 rounded p-4 text-center cursor-pointer relative hover:bg-blue-50 transition-colors">
                             <input type="file" accept=".pdf" onChange={(e) => handlePdfUpload(e, 'ART')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                             {isExtracting ? <span className="text-[10px] font-bold text-blue-600">ANALISANDO ARQUIVO...</span> : <span className="text-[10px] font-bold text-blue-500 uppercase">Upload PDF ART</span>}
                         </div>
-                        <input value={artCode} onChange={e => setArtCode(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="Código ART" />
-                        <input value={artTask} onChange={e => setArtTask(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="Tarefa" />
-                        <button onClick={handleAddART} disabled={isExtracting} className="w-full bg-blue-600 text-white py-3 rounded font-bold text-xs uppercase hover:bg-blue-700 flex items-center justify-center gap-2"><Save size={14}/> Cadastrar ART</button>
+                        <input value={artCode} onChange={e => setArtCode(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="Código ART (Ex: 33854)" />
+                        <input value={artTask} onChange={e => setArtTask(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="Tarefa Padrão" />
+                        <button onClick={handleAddART} disabled={isExtracting} className="w-full bg-blue-600 text-white py-3 rounded font-bold text-xs uppercase hover:bg-blue-700 flex items-center justify-center gap-2"><Save size={14}/> Cadastrar Modelo</button>
                     </div>
                   )}
 
@@ -729,7 +785,6 @@ export const Settings: React.FC = () => {
                     </div>
                   )}
 
-                  {/* NEW LIVE DB PANEL */}
                   {activeTab === 'DB_LIVE' && (
                       <div className="space-y-4">
                           <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Banco de Dados (Online)</h3>
@@ -777,13 +832,11 @@ export const Settings: React.FC = () => {
 
           <div className="lg:col-span-8">
               <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-[500px]">
-                  
-                  {/* ... (Existing List View for local data) ... */}
                   {activeTab !== 'DB_LIVE' && (
                       <>
                         <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                             <h4 className="text-sm font-bold text-gray-700 uppercase">
-                                {activeTab === 'OMS' ? 'Biblioteca de OMs' : 'Registros Cadastrados'}
+                                {activeTab === 'OMS' ? 'Biblioteca de OMs' : activeTab === 'PROCEDURES' ? 'CADASTRO DE MODELOS (BIBLIOTECA)' : 'Registros Cadastrados'}
                             </h4>
                             <div className="relative w-64">
                                 <input type="text" placeholder="Filtrar..." value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-3 pr-3 py-2 bg-white border border-gray-300 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a]" />
@@ -794,14 +847,24 @@ export const Settings: React.FC = () => {
                             <table className="w-full text-left border-collapse">
                                 <thead className="bg-gray-100 sticky top-0 z-10 border-b border-gray-200">
                                     <tr>
-                                        <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Chave</th>
-                                        <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Detalhes</th>
-                                        {activeTab !== 'OMS' && <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Info Adicional</th>}
-                                        <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">Ações</th>
+                                        {activeTab === 'PROCEDURES' ? (
+                                            <>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">CÓDIGO (MODELO)</th>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">TAREFA PADRÃO</th>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">ANEXO</th>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">AÇÕES</th>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Chave</th>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Detalhes</th>
+                                                {activeTab !== 'OMS' && <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Info Adicional</th>}
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">Ações</th>
+                                            </>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {/* ... (Existing Maps for OMS, EMPLOYEES, USERS, PROCEDURES, SCHEDULE) ... */}
                                     {activeTab === 'OMS' && oms.filter(om => om.omNumber.includes(searchQuery) || om.tag.includes(searchQuery)).map(om => (
                                         <tr key={om.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                             <td className="p-3"><div className="font-bold text-sm text-gray-800">{om.omNumber}</div><div className={`text-[9px] font-bold px-1.5 py-0.5 rounded inline-block mt-1 ${om.type === 'CORRETIVA' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{om.type}</div></td>
@@ -809,7 +872,6 @@ export const Settings: React.FC = () => {
                                             <td className="p-3 text-right"><div className="flex justify-end gap-2">{om.pdfUrl && <button onClick={() => setViewingOM(om)} className="p-1.5 text-[#007e7a] hover:bg-teal-50 rounded" title="Ver PDF"><Eye size={14}/></button>}<button onClick={() => handleOpenEditOM(om)} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded" title="Editar"><Edit2 size={14}/></button><button onClick={() => { if(window.confirm('Excluir esta OM?')) StorageService.deleteOM(om.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
                                         </tr>
                                     ))}
-                                    {/* ... (Keep other maps exactly as they were in previous version) ... */}
                                     {activeTab === 'USERS' && users.filter(u => u.name.includes(searchQuery)).map(user => (
                                         <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
                                             <td className="p-3 font-bold text-xs">{user.login}</td>
@@ -828,10 +890,16 @@ export const Settings: React.FC = () => {
                                     ))}
                                     {activeTab === 'PROCEDURES' && arts.filter(a => a.code.includes(searchQuery)).map(art => (
                                         <tr key={art.id} className="border-b border-gray-100 hover:bg-gray-50">
-                                            <td className="p-3 font-bold text-xs text-blue-600">{art.code}</td>
+                                            <td className="p-3 font-black text-xs text-blue-600">{art.code}</td>
                                             <td className="p-3 font-bold text-xs text-gray-700">{art.taskName}</td>
-                                            <td className="p-3 text-xs text-gray-500">{art.pdfUrl ? 'PDF Anexado' : 'Sem PDF'}</td>
-                                            <td className="p-3 text-right"><div className="flex justify-end gap-2">{art.pdfUrl && (<button onClick={() => setViewingART(art)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Ver PDF Original"><Eye size={14}/></button>)}<button onClick={() => { if(window.confirm('Excluir ART?')) StorageService.deleteART(art.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
+                                            <td className="p-3 text-xs text-gray-500">
+                                                {art.pdfUrl ? (
+                                                    <span className="flex items-center gap-1 text-[9px] font-black bg-green-50 text-green-600 px-2 py-0.5 rounded border border-green-100 w-fit">
+                                                        <CheckCircle2 size={10}/> PDF OK
+                                                    </span>
+                                                ) : <span className="text-[9px] text-gray-400">PENDENTE</span>}
+                                            </td>
+                                            <td className="p-3 text-right"><div className="flex justify-end gap-2">{art.pdfUrl && (<button onClick={() => setViewingART(art)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Ver Modelo Original"><Eye size={14}/></button>)}<button onClick={() => { if(window.confirm('Excluir ART?')) StorageService.deleteART(art.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
                                         </tr>
                                     ))}
                                     {activeTab === 'SCHEDULE' && scheduleItems.filter(i => i.frotaOm.includes(searchQuery)).slice(0, 50).map(item => (
@@ -848,7 +916,6 @@ export const Settings: React.FC = () => {
                       </>
                   )}
 
-                  {/* NEW LIVE TABLE VIEWER */}
                   {activeTab === 'DB_LIVE' && (
                       <>
                         <div className="p-4 border-b border-gray-200 bg-indigo-50 flex justify-between items-center">
@@ -897,7 +964,6 @@ export const Settings: React.FC = () => {
           </div>
       </div>
 
-      {/* MODAL SQL GENERATOR */}
       {showSqlModal && (
           <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden border-t-8 border-indigo-600">
@@ -937,11 +1003,9 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
-      {/* EDIT MODAL AND PDF MODAL KEPT SAME AS BEFORE */}
       {isEditOmModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6 border-b-4 border-orange-500">
-                {/* ... (Existing Edit Modal Content) ... */}
                 <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold text-gray-800 uppercase">Editar Ordem</h3><button onClick={() => setIsEditOmModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={20}/></button></div>
                 <div className="mb-4"><div className="border border-dashed border-gray-300 bg-gray-50 rounded p-2 text-center cursor-pointer relative group transition-colors hover:bg-gray-100"><input type="file" accept=".pdf" onChange={(e) => handlePdfUpload(e, 'EDIT_OM')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />{isExtracting ? (<span className="text-[10px] font-bold text-orange-500 animate-pulse">REPROCESSANDO DOCUMENTO...</span>) : (<span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-orange-500">Trocar PDF (Re-extrair)</span>)}</div></div>
                 <div className="space-y-3">

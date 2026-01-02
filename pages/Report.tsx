@@ -5,6 +5,7 @@ import { DocumentRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock } from 'lucide-react';
 import { Logo } from '../components/Logo';
+import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -22,6 +23,10 @@ export const Report: React.FC = () => {
     // Tab State
     const [activeTab, setActiveTab] = useState<'DIGITAL' | 'MANUAL'>('DIGITAL');
 
+    // Feedback State
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [isSuccess, setIsSuccess] = useState(false);
+
     // Form State (Digital)
     const [om, setOm] = useState('');
     const [type, setType] = useState('');
@@ -30,9 +35,8 @@ export const Report: React.FC = () => {
     const [executors, setExecutors] = useState('');
     const [timeStart, setTimeStart] = useState('');
     const [timeEnd, setTimeEnd] = useState('');
-    const [duration, setDuration] = useState(''); // Novo state para duração
+    const [duration, setDuration] = useState(''); 
     
-    // Fields to be edited by user
     const [stopReason, setStopReason] = useState('');
     const [activities, setActivities] = useState('');
     const [pendings, setPendings] = useState('');
@@ -41,7 +45,6 @@ export const Report: React.FC = () => {
     // Manual State
     const [manualFile, setManualFile] = useState<string | null>(null);
 
-    // Helper para calcular duração entre duas strings de hora (HH:mm)
     const calculateDuration = (start: string, end: string) => {
         if (!start || !end) return '';
         try {
@@ -49,7 +52,7 @@ export const Report: React.FC = () => {
             const [h2, m2] = end.split(':').map(Number);
             
             let diffMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
-            if (diffMinutes < 0) diffMinutes += 24 * 60; // Caso vire o dia (simplificado)
+            if (diffMinutes < 0) diffMinutes += 24 * 60; 
 
             const h = Math.floor(diffMinutes / 60);
             const m = diffMinutes % 60;
@@ -60,7 +63,6 @@ export const Report: React.FC = () => {
     };
 
     useEffect(() => {
-        // Load data passed from Checklist/Dashboard
         if (location.state) {
             const data = location.state as any;
             setOm(data.om || '');
@@ -68,7 +70,6 @@ export const Report: React.FC = () => {
             setEquipment(data.tag || '');
             setDate(data.date || new Date().toLocaleDateString('pt-BR'));
             
-            // Format executors if array
             if(Array.isArray(data.executors)) {
                 setExecutors(data.executors.join(', '));
             } else {
@@ -81,26 +82,22 @@ export const Report: React.FC = () => {
             setStopReason(data.stopReason || '');
             setStatus(data.status || 'FINALIZADO');
 
-            // Calcular ou usar duração vinda do estado
             if (data.duration) {
                 setDuration(data.duration);
             } else if (data.startTime && data.endTime) {
                 setDuration(calculateDuration(data.startTime, data.endTime));
             }
         } else {
-             // Fallback: Just load date
              setDate(new Date().toLocaleDateString('pt-BR'));
         }
     }, [location]);
 
     useEffect(() => {
-        // Recalcular duração se o usuário editar as horas manualmente
         if(timeStart && timeEnd) {
             setDuration(calculateDuration(timeStart, timeEnd));
         }
     }, [timeStart, timeEnd]);
 
-    // Template exato solicitado
     const generateText = () => {
         return `—————————————————
 📝RETORNO OM ${om}
@@ -131,34 +128,49 @@ export const Report: React.FC = () => {
         });
     };
 
-    const handleSave = () => {
-        const isManual = activeTab === 'MANUAL';
-        
-        const doc: DocumentRecord = {
-            id: crypto.randomUUID(),
-            type: 'RELATORIO',
-            header: {
-                om, tag: equipment, date, time: timeEnd, type: isManual ? 'OUTROS' : 'OUTROS', description: activities.substring(0, 50) || 'Relatório Manual'
-            },
-            createdAt: new Date().toISOString(),
-            status: 'ATIVO',
-            content: {
-                finalStatus: status,
-                stopReason,
-                activities,
-                pendings,
-                duration, // Salva a duração
-                startTime: timeStart,
-                endTime: timeEnd,
-                rawText: isManual ? 'Relatório em Anexo (Manual)' : generateText(),
-                manualFileUrl: manualFile,
-                isManualUpload: isManual
-            },
-            signatures: []
-        };
-        StorageService.saveDocument(doc);
-        alert('Relatório arquivado com sucesso!');
-        navigate('/archive');
+    const handleSave = async () => {
+        setIsProcessing(true);
+
+        try {
+            await new Promise(r => setTimeout(r, 1000)); // Visual delay
+
+            const isManual = activeTab === 'MANUAL';
+            
+            const doc: DocumentRecord = {
+                id: crypto.randomUUID(),
+                type: 'RELATORIO',
+                header: {
+                    om, tag: equipment, date, time: timeEnd, type: isManual ? 'OUTROS' : 'OUTROS', description: activities.substring(0, 50) || 'Relatório Manual'
+                },
+                createdAt: new Date().toISOString(),
+                status: 'ATIVO',
+                content: {
+                    finalStatus: status,
+                    stopReason,
+                    activities,
+                    pendings,
+                    duration, 
+                    startTime: timeStart,
+                    endTime: timeEnd,
+                    rawText: isManual ? 'Relatório em Anexo (Manual)' : generateText(),
+                    manualFileUrl: manualFile,
+                    isManualUpload: isManual
+                },
+                signatures: []
+            };
+            StorageService.saveDocument(doc);
+            
+            setIsProcessing(false);
+            setIsSuccess(true);
+
+            setTimeout(() => {
+                navigate('/archive');
+            }, 1500);
+
+        } catch (e) {
+            setIsProcessing(false);
+            alert("Erro ao arquivar relatório.");
+        }
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,6 +187,13 @@ export const Report: React.FC = () => {
     return (
         <div className="flex flex-col items-center bg-gray-100 min-h-screen py-8 px-4 print:bg-white print:p-0">
             
+            <FeedbackModal 
+                isOpen={isProcessing || isSuccess} 
+                isSuccess={isSuccess} 
+                loadingText="ARQUIVANDO RELATÓRIO..." 
+                successText="ARQUIVADO NA BIBLIOTECA!"
+            />
+
             {/* TABS HEADER */}
             <div className="bg-white rounded-full p-1 shadow-lg mb-6 flex w-full max-w-md print:hidden">
                 <button 

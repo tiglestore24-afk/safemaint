@@ -14,12 +14,12 @@ const STATUS_OPTIONS: { id: AvailabilityStatus; label: string; icon: React.React
     { id: 'PREV', label: 'PREVENTIVA (PROG)', icon: <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-black" title="Preventiva"></div>, color: 'text-black' },
     { id: 'CORRETIVA', label: 'CORRETIVA (CARD)', icon: <div className="w-4 h-4 rounded-full bg-red-600 shadow-sm border border-red-800" title="Corretiva"></div>, color: 'text-red-600' },
     { id: 'SEM_FALHA', label: 'SEM FALHA', icon: <div className="w-3 h-3 rounded-full bg-green-500/50" title="Disponível"></div>, color: 'text-[#007e7a]' },
-    { id: 'META', label: 'META PÓS PREV.', icon: <Star size={16} fill="#007e7a" className="text-[#007e7a]" title="Meta Atingida"/>, color: 'text-[#007e7a]' },
+    { id: 'META', label: 'META PÓS PREV.', icon: <Star size={16} fill="#007e7a" className="text-[#007e7a]" />, color: 'text-[#007e7a]' },
     { id: 'DEMANDA_EXTRA', label: 'DEMANDA EXTRA', icon: <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-red-600" title="Demanda Extra"></div>, color: 'text-red-600' },
     { id: 'PR', label: 'PARADA RELEVANTE', icon: <span className="text-red-600 font-black text-[9px] tracking-tighter border border-red-200 px-0.5 rounded bg-red-50">PR</span>, color: 'text-red-600' },
     { id: 'LS', label: 'LUB. SEMANAL', icon: <span className="text-blue-600 font-black text-[9px] tracking-tighter border border-blue-200 px-0.5 rounded bg-blue-50">LS</span>, color: 'text-blue-600' },
     { id: 'PNEUS', label: 'PNEUS', icon: <div className="w-4 h-4 rounded-full border-2 border-black flex items-center justify-center text-[8px] font-black bg-white" title="Pneus">P</div>, color: 'text-black' },
-    { id: 'INSPECAO', label: 'INSPEÇÃO', icon: <Eye size={16} className="text-purple-600" title="Inspeção"/>, color: 'text-purple-600' },
+    { id: 'INSPECAO', label: 'INSPEÇÃO', icon: <Eye size={16} className="text-purple-600" />, color: 'text-purple-600' },
     { id: 'EMPTY', label: 'LIMPAR MANUAL', icon: <X size={16} className="text-gray-400"/>, color: 'text-gray-400' },
 ];
 

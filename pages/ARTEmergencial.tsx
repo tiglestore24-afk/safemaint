@@ -7,6 +7,7 @@ import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord } from '
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ShieldCheck, CheckCircle, AlertTriangle, MapPin, List, ArrowRight } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
+import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 
 export const ARTEmergencial: React.FC = () => {
   const navigate = useNavigate();
@@ -15,6 +16,10 @@ export const ARTEmergencial: React.FC = () => {
     om: '', tag: '', date: new Date().toISOString().split('T')[0], time: '', type: 'MECANICA', description: ''
   });
   
+  // Feedback States
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
   const [omId, setOmId] = useState<string | undefined>(undefined);
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
 
@@ -73,42 +78,56 @@ export const ARTEmergencial: React.FC = () => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if(!header.om || !header.tag) { alert("PREENCHA OM E TAG."); return; }
     if(signatures.length === 0) { alert("ASSINATURA OBRIGATÓRIA."); return; }
 
-    const artId = crypto.randomUUID();
-    const doc: DocumentRecord = {
-      id: artId,
-      type: 'ART_EMERGENCIAL',
-      header,
-      createdAt: new Date().toISOString(),
-      status: 'RASCUNHO',
-      content: { quadrantRisks, checklistRisks },
-      signatures
-    };
-    
-    StorageService.saveDocument(doc);
-    
-    const nowIso = new Date().toISOString();
-    const currentUser = localStorage.getItem('safemaint_user') || 'ADMIN';
+    setIsProcessing(true);
 
-    const activeTask: ActiveMaintenance = {
-        id: crypto.randomUUID(),
-        omId: omId,
-        header,
-        startTime: nowIso,
-        artId: artId,
-        artType: 'ART_EMERGENCIAL',
-        origin: 'CORRETIVA',
-        status: 'ANDAMENTO',
-        currentSessionStart: nowIso,
-        openedBy: currentUser
-    };
-    StorageService.startMaintenance(activeTask);
+    try {
+        await new Promise(r => setTimeout(r, 1000)); // Delay para UX
 
-    alert('ART SALVA E MANUTENÇÃO CORRETIVA INICIADA!');
-    navigate('/dashboard');
+        const artId = crypto.randomUUID();
+        const doc: DocumentRecord = {
+          id: artId,
+          type: 'ART_EMERGENCIAL',
+          header,
+          createdAt: new Date().toISOString(),
+          status: 'RASCUNHO',
+          content: { quadrantRisks, checklistRisks },
+          signatures
+        };
+        
+        StorageService.saveDocument(doc);
+        
+        const nowIso = new Date().toISOString();
+        const currentUser = localStorage.getItem('safemaint_user') || 'ADMIN';
+
+        const activeTask: ActiveMaintenance = {
+            id: crypto.randomUUID(),
+            omId: omId,
+            header,
+            startTime: nowIso,
+            artId: artId,
+            artType: 'ART_EMERGENCIAL',
+            origin: 'CORRETIVA',
+            status: 'ANDAMENTO',
+            currentSessionStart: nowIso,
+            openedBy: currentUser
+        };
+        StorageService.startMaintenance(activeTask);
+
+        setIsProcessing(false);
+        setIsSuccess(true);
+
+        setTimeout(() => {
+            navigate('/dashboard');
+        }, 1500);
+
+    } catch (e) {
+        setIsProcessing(false);
+        alert('Erro ao processar liberação.');
+    }
   };
 
   const riskList = [
@@ -126,6 +145,13 @@ export const ARTEmergencial: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto pb-32 px-4 relative">
+      <FeedbackModal 
+        isOpen={isProcessing || isSuccess} 
+        isSuccess={isSuccess} 
+        loadingText="LIBERANDO ATIVIDADE..." 
+        successText="EMERGÊNCIA LIBERADA!"
+      />
+
       {/* Title Header */}
       <div className="flex items-center gap-4 mb-8 border-b border-gray-200 pb-6 pt-6">
         <BackButton />
@@ -308,7 +334,7 @@ export const ARTEmergencial: React.FC = () => {
                       <div className="mt-8">
                           <button 
                             onClick={handleSave}
-                            disabled={!hasSignatures}
+                            disabled={!hasSignatures || isProcessing}
                             className={`
                                 w-full py-4 rounded-xl font-black uppercase text-sm tracking-widest flex items-center justify-center gap-3 shadow-lg transition-all
                                 ${hasSignatures ? 'bg-red-600 text-white hover:bg-red-700 hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}

@@ -8,6 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 
 export const Checklist: React.FC = () => {
   const navigate = useNavigate();
@@ -22,6 +23,10 @@ export const Checklist: React.FC = () => {
   const [checklistItems, setChecklistItems] = useState<ChecklistTemplateItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [checks, setChecks] = useState<Record<string, { status: 'ATENDE' | 'NAO_ATENDE' | null; obs: string }>>({});
+
+  // Feedback States
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
     if (maintenanceId) {
@@ -59,47 +64,63 @@ export const Checklist: React.FC = () => {
         return;
     }
 
-    let startTimeFormatted = '';
-    let endTimeFormatted = new Date().toLocaleTimeString().slice(0,5);
+    setIsProcessing(true);
 
-    if (maintenanceId) {
-        const activeTask = StorageService.getActiveMaintenanceById(maintenanceId);
-        if(activeTask) startTimeFormatted = new Date(activeTask.startTime).toLocaleTimeString().slice(0,5);
-    } else {
-        startTimeFormatted = new Date().toLocaleTimeString().slice(0,5);
-    }
+    try {
+        await new Promise(r => setTimeout(r, 1000)); // Delay para feedback visual
 
-    const fullContent = checklistItems.map(item => ({
-        id: item.legacyId,
-        section: item.section,
-        desc: item.description,
-        status: checks[item.id]?.status || 'NAO_AVALIADO',
-        obs: checks[item.id]?.obs || ''
-    }));
+        let startTimeFormatted = '';
+        let endTimeFormatted = new Date().toLocaleTimeString().slice(0,5);
 
-    const doc: DocumentRecord = {
-      id: crypto.randomUUID(),
-      type: 'CHECKLIST',
-      header,
-      createdAt: new Date().toISOString(),
-      status: 'ATIVO',
-      content: { checklistItems: fullContent },
-      signatures
-    };
-    await StorageService.saveDocument(doc);
+        if (maintenanceId) {
+            const activeTask = StorageService.getActiveMaintenanceById(maintenanceId);
+            if(activeTask) startTimeFormatted = new Date(activeTask.startTime).toLocaleTimeString().slice(0,5);
+        } else {
+            startTimeFormatted = new Date().toLocaleTimeString().slice(0,5);
+        }
 
-    if (maintenanceId) {
-        await StorageService.completeMaintenance(maintenanceId, 'CONCLUÍDO VIA CHECKLIST', true);
-        const reportData = {
-            om: header.om, tag: header.tag, type: header.type,
-            date: new Date().toLocaleDateString('pt-BR'),
-            startTime: startTimeFormatted, endTime: endTimeFormatted,
-            executors: signatures.map(s => s.name), activities: header.description,
-            status: 'FINALIZADO', stopReason: 'CONFORMIDADE TÉCNICA'
+        const fullContent = checklistItems.map(item => ({
+            id: item.legacyId,
+            section: item.section,
+            desc: item.description,
+            status: checks[item.id]?.status || 'NAO_AVALIADO',
+            obs: checks[item.id]?.obs || ''
+        }));
+
+        const doc: DocumentRecord = {
+          id: crypto.randomUUID(),
+          type: 'CHECKLIST',
+          header,
+          createdAt: new Date().toISOString(),
+          status: 'ATIVO',
+          content: { checklistItems: fullContent },
+          signatures
         };
-        navigate('/report', { state: reportData });
-    } else {
-        navigate('/archive');
+        await StorageService.saveDocument(doc);
+
+        setIsProcessing(false);
+        setIsSuccess(true);
+
+        setTimeout(async () => {
+            setIsSuccess(false);
+            if (maintenanceId) {
+                await StorageService.completeMaintenance(maintenanceId, 'CONCLUÍDO VIA CHECKLIST', true);
+                const reportData = {
+                    om: header.om, tag: header.tag, type: header.type,
+                    date: new Date().toLocaleDateString('pt-BR'),
+                    startTime: startTimeFormatted, endTime: endTimeFormatted,
+                    executors: signatures.map(s => s.name), activities: header.description,
+                    status: 'FINALIZADO', stopReason: 'CONFORMIDADE TÉCNICA'
+                };
+                navigate('/report', { state: reportData });
+            } else {
+                navigate('/archive');
+            }
+        }, 1500);
+
+    } catch (e) {
+        setIsProcessing(false);
+        alert('Erro ao salvar checklist.');
     }
   };
 
@@ -107,6 +128,13 @@ export const Checklist: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto pb-24 px-4">
+      <FeedbackModal 
+        isOpen={isProcessing || isSuccess} 
+        isSuccess={isSuccess} 
+        loadingText="PROCESSANDO INSPEÇÃO..." 
+        successText="CHECKLIST SALVO COM SUCESSO!"
+      />
+
       <div className="flex items-center gap-3 mb-6 border-b pb-4">
         <BackButton />
         <h2 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter">Checklist de Campo</h2>
@@ -121,7 +149,6 @@ export const Checklist: React.FC = () => {
                     <h3 className="text-xs font-black text-white uppercase tracking-widest">{section}</h3>
                 </div>
                 <div className="divide-y divide-gray-100">
-                    {/* Explicitly cast items to ChecklistTemplateItem[] to fix 'unknown' type inference error on .map() */}
                     {(items as ChecklistTemplateItem[]).map(item => (
                         <div key={item.id} className="p-4 flex flex-col md:flex-row gap-4 items-center">
                             <div className="flex-1">

@@ -7,6 +7,7 @@ import { HeaderData, DocumentRecord, RegisteredART, SignatureRecord, ActiveMaint
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { FileText, Eye, CheckCircle, X, ShieldCheck, Save, Download, ShieldAlert, ArrowRight, BookOpen, Loader2 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
+import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 
 export const ARTAtividade: React.FC = () => {
   const navigate = useNavigate();
@@ -25,9 +26,9 @@ export const ARTAtividade: React.FC = () => {
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   
-  // Feedback States
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  // Feedback States (Replaced custom overlay with standard modal logic)
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
     setRegisteredARTs(StorageService.getARTs());
@@ -91,50 +92,63 @@ export const ARTAtividade: React.FC = () => {
         return;
     }
 
-    setIsSaving(true);
+    setIsProcessing(true);
 
-    // Simulate minimal delay for UX
-    await new Promise(resolve => setTimeout(resolve, 800));
+    try {
+        // Simulate minimal delay for UX
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-    const artId = crypto.randomUUID();
-    const doc: DocumentRecord = {
-      id: artId,
-      type: 'ART_ATIVIDADE',
-      header,
-      createdAt: new Date().toISOString(),
-      status: 'RASCUNHO',
-      content: { 
-          artId: selectedART.id, 
-          artNumber: selectedART.code, 
-          artName: selectedART.taskName,
-          manualFileUrl: selectedART.pdfUrl // CRUCIAL: Salva o PDF Original da ART no Documento
-      },
-      signatures
-    };
-    await StorageService.saveDocument(doc);
-    
-    const nowIso = new Date().toISOString();
-    await StorageService.startMaintenance({
-        id: crypto.randomUUID(),
-        omId: omId,
-        header,
-        startTime: nowIso,
-        artId: artId,
-        artType: 'ART_ATIVIDADE',
-        origin: 'PREVENTIVA',
-        status: 'ANDAMENTO',
-        currentSessionStart: nowIso,
-        openedBy: localStorage.getItem('safemaint_user') || 'ANONIMO'
-    });
-    
-    setSaveSuccess(true);
-    setTimeout(() => {
-        navigate('/dashboard');
-    }, 1500);
+        const artId = crypto.randomUUID();
+        const doc: DocumentRecord = {
+          id: artId,
+          type: 'ART_ATIVIDADE',
+          header,
+          createdAt: new Date().toISOString(),
+          status: 'RASCUNHO',
+          content: { 
+              artId: selectedART.id, 
+              artNumber: selectedART.code, 
+              artName: selectedART.taskName,
+              manualFileUrl: selectedART.pdfUrl // CRUCIAL: Salva o PDF Original da ART no Documento
+          },
+          signatures
+        };
+        await StorageService.saveDocument(doc);
+        
+        const nowIso = new Date().toISOString();
+        await StorageService.startMaintenance({
+            id: crypto.randomUUID(),
+            omId: omId,
+            header,
+            startTime: nowIso,
+            artId: artId,
+            artType: 'ART_ATIVIDADE',
+            origin: 'PREVENTIVA',
+            status: 'ANDAMENTO',
+            currentSessionStart: nowIso,
+            openedBy: localStorage.getItem('safemaint_user') || 'ANONIMO'
+        });
+        
+        setIsProcessing(false);
+        setIsSuccess(true);
+        setTimeout(() => {
+            navigate('/dashboard');
+        }, 1500);
+    } catch (e) {
+        setIsProcessing(false);
+        alert("Erro ao salvar.");
+    }
   };
 
   return (
     <div className="max-w-7xl mx-auto pb-32 px-4 relative animate-fadeIn">
+      <FeedbackModal 
+        isOpen={isProcessing || isSuccess} 
+        isSuccess={isSuccess} 
+        loadingText="PROCESSANDO LIBERAÇÃO..." 
+        successText="ATIVIDADE LIBERADA!"
+      />
+
       {/* Title Bar */}
       <div className="flex items-center gap-4 mb-8 border-b border-gray-200 pb-6 pt-6">
         <BackButton />
@@ -310,10 +324,10 @@ export const ARTAtividade: React.FC = () => {
                       <div className="mt-8 pt-6 border-t border-gray-700/50">
                            <button 
                                 onClick={handleSave} 
-                                disabled={!isConfirmed || signatures.length === 0 || isSaving} 
+                                disabled={!isConfirmed || signatures.length === 0 || isProcessing} 
                                 className={`w-full py-4 rounded-xl shadow-lg font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all ${isConfirmed && signatures.length > 0 ? 'bg-vale-green hover:bg-[#00605d] text-white hover:scale-105' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
                             >
-                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                                 Liberar Atividade
                             </button>
                       </div>
@@ -321,29 +335,6 @@ export const ARTAtividade: React.FC = () => {
               </div>
           </div>
       </div>
-
-      {/* FEEDBACK OVERLAY */}
-      {(isSaving || saveSuccess) && (
-          <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-sm flex items-center justify-center animate-fadeIn">
-              <div className="bg-white rounded-2xl p-8 flex flex-col items-center justify-center max-w-sm w-full shadow-2xl text-center">
-                  {saveSuccess ? (
-                      <>
-                          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4 animate-bounce">
-                              <CheckCircle size={32} className="text-green-600" />
-                          </div>
-                          <h3 className="text-xl font-black text-gray-800 uppercase mb-1">Atividade Liberada!</h3>
-                          <p className="text-xs font-bold text-gray-400 uppercase">Redirecionando para o painel...</p>
-                      </>
-                  ) : (
-                      <>
-                          <Loader2 size={48} className="text-vale-green animate-spin mb-4" />
-                          <h3 className="text-lg font-black text-gray-800 uppercase mb-1">Processando Liberação...</h3>
-                          <p className="text-xs font-bold text-gray-400 uppercase">Arquivando documentos e iniciando cronômetro.</p>
-                      </>
-                  )}
-              </div>
-          </div>
-      )}
 
       {/* PREVIEW MODAL */}
       {showPreviewModal && selectedART && (

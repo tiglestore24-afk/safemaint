@@ -1,14 +1,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { StorageService } from '../services/storage';
-import { OMRecord, DocumentRecord } from '../types';
+import { OMRecord, DocumentRecord, ScheduleItem } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { 
   FileInput, PlayCircle, Trash2, Search, CalendarDays, User,
   Wrench, AlertOctagon, Clock, CheckCircle2, Eye, X, Info, FileText,
-  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download
+  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download, Link
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
+import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Fix for "Cannot set properties of undefined (setting 'workerSrc')"
@@ -19,7 +20,13 @@ export const OMManagement: React.FC = () => {
   const navigate = useNavigate();
   const [oms, setOms] = useState<OMRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'PENDENTE' | 'CONCLUIDA'>('PENDENTE');
+  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   
+  // --- FEEDBACK STATES ---
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [processText, setProcessText] = useState('');
+
   // --- STATE DOS FILTROS ---
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'CORRETIVA' | 'PREVENTIVA'>('ALL');
@@ -37,11 +44,13 @@ export const OMManagement: React.FC = () => {
   const [newOmDesc, setNewOmDesc] = useState('');
   const [newOmType, setNewOmType] = useState<'PREVENTIVA' | 'CORRETIVA'>('PREVENTIVA');
   const [newOmPdf, setNewOmPdf] = useState<string>('');
+  const [linkedScheduleOm, setLinkedScheduleOm] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   
   const refreshData = useCallback(() => {
     const allOms = StorageService.getOMs();
     setOms(allOms);
+    setScheduleItems(StorageService.getSchedule());
   }, []);
 
   useEffect(() => {
@@ -99,12 +108,13 @@ export const OMManagement: React.FC = () => {
 
   const extractDataFromPdf = async (file: File) => {
     setIsExtracting(true);
+    setProcessText('LENDO PDF...');
     try {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjs.getDocument(arrayBuffer).promise;
         let foundOm = ''; let foundDesc = ''; let foundTag = '';
         let fullText = '';
-        const pagesToRead = Math.min(pdf.numPages, 2);
+        const pagesToRead = Math.min(pdf.numPages, 3); // Read 3 pages to be safe
         
         for (let i = 1; i <= pagesToRead; i++) {
             const page = await pdf.getPage(i);
@@ -120,9 +130,23 @@ export const OMManagement: React.FC = () => {
         const descMatch = fullText.match(/(?:DESCRIÇÃO|TEXTO BREVE)[:\s]*(.*?)(?:OBSERVAÇÕES|PERMISSÕES|NOTA|LOCAL|$)/i);
         if (descMatch) foundDesc = descMatch[1].trim().replace(/_+/g, ' ');
 
-        const labeledTag = fullText.match(/(?:TAG|EQUIPAMENTO|ITEM TÉCNICO)[:\s]*([A-Z0-9-]{5,})/i);
-        if (labeledTag) foundTag = labeledTag[1];
-        else { const genericTag = fullText.match(/([A-Z]{3,4}-[A-Z0-9]{2,}-[A-Z0-9-]{3,})/i); if (genericTag) foundTag = genericTag[1]; }
+        // --- TAG EXTRACTION LOGIC UPDATE (FIXED FOR LOCAL DE INSTALAÇÃO) ---
+        // 1. Try finding "Local de Instalação" followed closely by a TAG pattern
+        const localInstRegex = /(?:LOCAL DE INSTALAÇÃO|LOCAL INSTALAÇÃO)(?:[\s\S]{0,100}?)([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
+        
+        // 2. Try explicit tags
+        const labeledTagRegex = /(?:TAG|EQUIPAMENTO|ITEM TÉCNICO)[:.\s]*([A-Z0-9-]{5,})/i;
+        
+        // 3. Fallback generic tag
+        const genericTagRegex = /([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
+
+        const localMatch = fullText.match(localInstRegex);
+        const labeledMatch = fullText.match(labeledTagRegex);
+        const genericMatch = fullText.match(genericTagRegex);
+
+        if (localMatch) foundTag = localMatch[1];
+        else if (labeledMatch) foundTag = labeledMatch[1];
+        else if (genericMatch) foundTag = genericMatch[1];
 
         if (foundOm) setNewOmNumber(foundOm);
         if (foundTag) setNewOmTag(foundTag);
@@ -153,50 +177,72 @@ export const OMManagement: React.FC = () => {
 
   const handleSaveNewOM = async () => {
     if(!newOmNumber || !newOmTag) { alert("Preencha Número e Tag"); return; }
-    const now = new Date().toISOString();
-    const user = localStorage.getItem('safemaint_user') || 'ADMIN';
-
-    const om: OMRecord = {
-        id: crypto.randomUUID(),
-        omNumber: newOmNumber,
-        tag: newOmTag.toUpperCase(),
-        description: newOmDesc.toUpperCase() || 'MANUTENÇÃO',
-        type: newOmType,
-        status: 'PENDENTE',
-        createdAt: now,
-        pdfUrl: newOmPdf,
-        createdBy: user
-    };
     
-    await StorageService.saveOM(om);
+    // START PROCESSING
+    setProcessText('SALVANDO ORDEM...');
+    setIsProcessing(true);
+    
+    try {
+        // Artificial delay for UX
+        await new Promise(r => setTimeout(r, 1000));
 
-    if (newOmPdf) {
-        const docRecord: DocumentRecord = {
+        const now = new Date().toISOString();
+        const user = localStorage.getItem('safemaint_user') || 'ADMIN';
+
+        const om: OMRecord = {
             id: crypto.randomUUID(),
-            type: 'RELATORIO',
-            header: {
-                om: newOmNumber,
-                tag: newOmTag.toUpperCase(),
-                date: now.split('T')[0],
-                time: now.split('T')[1].slice(0,5),
-                type: 'OUTROS',
-                description: `CADASTRO INICIAL DE OM - ${newOmDesc.toUpperCase()}`
-            },
+            omNumber: newOmNumber,
+            tag: newOmTag.toUpperCase(),
+            description: newOmDesc.toUpperCase() || 'MANUTENÇÃO',
+            type: newOmType,
+            status: 'PENDENTE',
             createdAt: now,
-            status: 'ATIVO',
-            content: {
-                rawText: `REGISTRO DE ABERTURA DE OM.\nOM: ${newOmNumber}\nTAG: ${newOmTag}\nTIPO: ${newOmType}\nRESPONSÁVEL: ${user}`,
-                manualFileUrl: newOmPdf,
-                isManualUpload: true
-            },
-            signatures: []
+            pdfUrl: newOmPdf,
+            createdBy: user,
+            linkedScheduleOm: linkedScheduleOm || undefined
         };
-        await StorageService.saveDocument(docRecord);
+        
+        await StorageService.saveOM(om);
+
+        if (newOmPdf) {
+            const docRecord: DocumentRecord = {
+                id: crypto.randomUUID(),
+                type: 'RELATORIO',
+                header: {
+                    om: newOmNumber,
+                    tag: newOmTag.toUpperCase(),
+                    date: now.split('T')[0],
+                    time: now.split('T')[1].slice(0,5),
+                    type: 'OUTROS',
+                    description: `CADASTRO INICIAL DE OM - ${newOmDesc.toUpperCase()}`
+                },
+                createdAt: now,
+                status: 'ATIVO',
+                content: {
+                    rawText: `REGISTRO DE ABERTURA DE OM.\nOM: ${newOmNumber}\nTAG: ${newOmTag}\nTIPO: ${newOmType}\nRESPONSÁVEL: ${user}\nVÍNCULO PROGRAMAÇÃO: ${linkedScheduleOm || 'NÃO'}`,
+                    manualFileUrl: newOmPdf,
+                    isManualUpload: true
+                },
+                signatures: []
+            };
+            await StorageService.saveDocument(docRecord);
+        }
+        
+        // SHOW SUCCESS
+        setIsProcessing(false);
+        setIsSuccess(true);
+
+        setTimeout(() => {
+            setIsSuccess(false);
+            setNewOmNumber(''); setNewOmTag(''); setNewOmDesc(''); setNewOmPdf(''); setLinkedScheduleOm('');
+            setIsAddModalOpen(false);
+            refreshData();
+        }, 1500);
+
+    } catch (e) {
+        setIsProcessing(false);
+        alert("Erro ao salvar OM.");
     }
-    
-    setNewOmNumber(''); setNewOmTag(''); setNewOmDesc(''); setNewOmPdf(''); setIsAddModalOpen(false);
-    refreshData();
-    alert("OM Cadastrada e salva na Biblioteca!");
   };
 
   const clearFilters = () => {
@@ -237,6 +283,15 @@ export const OMManagement: React.FC = () => {
 
   return (
     <div className="max-w-[1600px] mx-auto pb-20 px-4">
+      
+      {/* GLOBAL FEEDBACK MODAL */}
+      <FeedbackModal 
+        isOpen={isProcessing || isSuccess} 
+        isSuccess={isSuccess} 
+        loadingText={processText || "PROCESSANDO..."}
+        successText="ORDEM CADASTRADA NA CARTEIRA!"
+      />
+
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-center py-4 mb-4 gap-4">
           <div className="flex items-center gap-3">
@@ -337,6 +392,12 @@ export const OMManagement: React.FC = () => {
                             {isStarted && <span className="text-[9px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 animate-pulse">EM EXECUÇÃO</span>}
                         </div>
                         <p className="text-xs font-bold text-vale-green uppercase mt-1 tracking-wide">{om.tag}</p>
+                        
+                        {om.linkedScheduleOm && (
+                            <div className="mt-2 text-[8px] bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded inline-flex items-center gap-1 font-bold">
+                                <Link size={8} /> VINC: {om.linkedScheduleOm.slice(0, 15)}...
+                            </div>
+                        )}
                     </div>
 
                     {/* Descrição */}
@@ -438,6 +499,24 @@ export const OMManagement: React.FC = () => {
                             <button onClick={() => setNewOmType('CORRETIVA')} className={`flex-1 py-2 text-[10px] font-black rounded-md uppercase transition-all ${newOmType === 'CORRETIVA' ? 'bg-white shadow text-red-600' : 'text-gray-400 hover:text-gray-600'}`}>Corretiva</button>
                         </div>
                     </div>
+
+                    {newOmType === 'PREVENTIVA' && (
+                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                            <label className="text-[9px] font-black text-blue-800 uppercase mb-1 block flex items-center gap-1"><Link size={10}/> Vincular OM da Programação</label>
+                            <select 
+                                value={linkedScheduleOm} 
+                                onChange={(e) => setLinkedScheduleOm(e.target.value)} 
+                                className="w-full bg-white border border-blue-200 rounded p-2 text-[10px] font-bold uppercase outline-none text-gray-700 focus:border-blue-400"
+                            >
+                                <option value="">-- SELECIONAR VÍNCULO --</option>
+                                {scheduleItems.map(item => (
+                                    <option key={item.id} value={item.frotaOm}>
+                                        {item.frotaOm} - {item.description?.slice(0, 30)}...
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     
                     <div>
                         <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Descrição</label>
