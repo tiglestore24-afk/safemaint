@@ -182,6 +182,7 @@ export const Settings: React.FC = () => {
   const [viewingOM, setViewingOM] = useState<OMRecord | null>(null);
   const [viewingART, setViewingART] = useState<RegisteredART | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
   // SQL Modal State
   const [showSqlModal, setShowSqlModal] = useState(false);
@@ -199,12 +200,17 @@ export const Settings: React.FC = () => {
   const [isEditOmModalOpen, setIsEditOmModalOpen] = useState(false);
   const [editingOmData, setEditingOmData] = useState<Partial<OMRecord>>({});
 
+  // Edit State (Demand)
+  const [isEditDemandModalOpen, setIsEditDemandModalOpen] = useState(false);
+  const [editingDemandData, setEditingDemandData] = useState<Partial<PendingExtraDemand>>({});
+
   // Data States
   const [users, setUsers] = useState<User[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [oms, setOms] = useState<OMRecord[]>([]);
   const [arts, setArts] = useState<RegisteredART[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [pendingDemands, setPendingDemands] = useState<PendingExtraDemand[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Forms - OM
@@ -275,23 +281,55 @@ export const Settings: React.FC = () => {
   }, [activeTab, liveTable]);
 
   useEffect(() => {
-    const target = viewingOM || viewingART;
-    if (target?.pdfUrl) {
-        try {
-            if (target.pdfUrl.startsWith('data:application/pdf;base64,')) {
-                const parts = target.pdfUrl.split(',');
-                if (parts.length > 1) {
-                    const byteCharacters = atob(parts[1]);
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                    const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-                    const url = URL.createObjectURL(blob);
-                    setPdfBlobUrl(url);
-                    return () => URL.revokeObjectURL(url);
-                }
-            } else setPdfBlobUrl(target.pdfUrl);
-        } catch (e) { setPdfBlobUrl(target.pdfUrl); }
-    } else setPdfBlobUrl(null);
+    let activeUrl: string | null = null;
+
+    const loadPdf = async () => {
+        const target = viewingOM || viewingART;
+        if (!target) {
+            setPdfBlobUrl(null);
+            return;
+        }
+
+        let pdfData = target.pdfUrl;
+
+        // SE NÃO TIVER PDF LOCAL (FOI REMOVIDO PELA LIMPEZA) OU FOR MARCADOR 'TRUE'
+        if (!pdfData || pdfData === 'TRUE') {
+            setIsLoadingPdf(true);
+            const table = viewingOM ? 'oms' : 'arts';
+            const remotePdf = await StorageService.getRecordPdf(table, target.id);
+            if (remotePdf) {
+                pdfData = remotePdf;
+            }
+            setIsLoadingPdf(false);
+        }
+
+        if (pdfData && pdfData !== 'TRUE') {
+            try {
+                if (pdfData.startsWith('data:application/pdf;base64,')) {
+                    const parts = pdfData.split(',');
+                    if (parts.length > 1) {
+                        const byteCharacters = atob(parts[1]);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+                        const url = URL.createObjectURL(blob);
+                        activeUrl = url;
+                        setPdfBlobUrl(url);
+                    }
+                } else setPdfBlobUrl(pdfData);
+            } catch (e) { setPdfBlobUrl(pdfData); }
+        } else {
+            setPdfBlobUrl(null);
+        }
+    };
+
+    loadPdf();
+
+    return () => {
+        if (activeUrl) {
+            URL.revokeObjectURL(activeUrl);
+        }
+    };
   }, [viewingOM, viewingART]);
 
   const checkConn = async () => {
@@ -358,6 +396,7 @@ export const Settings: React.FC = () => {
       setOms(StorageService.getOMs());
       setArts(StorageService.getARTs());
       setScheduleItems(StorageService.getSchedule());
+      setPendingDemands(StorageService.getPendingExtraDemands());
   };
 
   // ... (PDF Extraction logic) ...
@@ -732,7 +771,29 @@ export const Settings: React.FC = () => {
               await StorageService.savePendingExtraDemand(demand);
           }
           resetForms();
+          refresh(); // Update the list
       }, "SALVANDO DEMANDAS...", "DEMANDAS EXPORTADAS!");
+  };
+
+  const handleOpenEditDemand = (demand: PendingExtraDemand) => {
+      setEditingDemandData({ ...demand });
+      setIsEditDemandModalOpen(true);
+  };
+
+  const handleSaveEditDemand = () => {
+      if (!editingDemandData.id || !editingDemandData.tag || !editingDemandData.description) return;
+      withFeedback(async () => {
+          const updatedDemand = {
+              ...editingDemandData,
+              tag: editingDemandData.tag.toUpperCase(),
+              description: editingDemandData.description.toUpperCase(),
+              status: 'PENDENTE'
+          } as PendingExtraDemand;
+          await StorageService.savePendingExtraDemand(updatedDemand);
+          setIsEditDemandModalOpen(false);
+          setEditingDemandData({});
+          refresh();
+      }, "ATUALIZANDO DEMANDA...", "DEMANDA ATUALIZADA!");
   };
 
   return (
@@ -964,20 +1025,11 @@ export const Settings: React.FC = () => {
                               <br/>Esta visualização é exclusiva para inserção de dados em massa.
                           </p>
                       </div>
-                  ) : activeTab === 'DEMANDS_REGISTER' ? (
-                      <div className="flex flex-col items-center justify-center h-full text-gray-400 p-10 animate-fadeIn">
-                          <ClipboardList size={64} className="mb-4 opacity-20 text-orange-500"/>
-                          <p className="font-black text-sm uppercase tracking-widest text-gray-500">Cadastro de Demandas</p>
-                          <p className="text-[10px] font-bold mt-2 max-w-sm text-center">
-                              Use o formulário à esquerda para registrar demandas extras.
-                              <br/>Cada item na lista criará um card separado na página de Demandas.
-                          </p>
-                      </div>
-                  ) : activeTab !== 'DB_LIVE' && (
+                  ) : activeTab !== 'DB_LIVE' ? (
                       <>
                         <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                             <h4 className="text-sm font-bold text-gray-700 uppercase">
-                                {activeTab === 'OMS' ? 'Biblioteca de OMs' : activeTab === 'PROCEDURES' ? 'CADASTRO DE MODELOS (BIBLIOTECA)' : 'Registros Cadastrados'}
+                                {activeTab === 'OMS' ? 'Biblioteca de OMs' : activeTab === 'PROCEDURES' ? 'CADASTRO DE MODELOS (BIBLIOTECA)' : activeTab === 'DEMANDS_REGISTER' ? 'Demandas Pendentes' : 'Registros Cadastrados'}
                             </h4>
                             <div className="relative w-64">
                                 <input type="text" placeholder="FILTRAR..." value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-3 pr-3 py-2 bg-white border border-gray-300 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a]" />
@@ -993,6 +1045,13 @@ export const Settings: React.FC = () => {
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">CÓDIGO (MODELO)</th>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">TAREFA PADRÃO</th>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">ANEXO</th>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">AÇÕES</th>
+                                            </>
+                                        ) : activeTab === 'DEMANDS_REGISTER' ? (
+                                            <>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">TAG</th>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">ATIVIDADE PENDENTE</th>
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">DATA REGISTRO</th>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">AÇÕES</th>
                                             </>
                                         ) : (
@@ -1011,6 +1070,14 @@ export const Settings: React.FC = () => {
                                             <td className="p-3"><div className="font-bold text-sm text-gray-800">{om.omNumber}</div><div className={`text-[9px] font-bold px-1.5 py-0.5 rounded inline-block mt-1 ${om.type === 'CORRETIVA' ? 'bg-red-50 text-red-600' : om.type === 'DEMANDA' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>{om.type}</div></td>
                                             <td className="p-3"><div className="font-bold text-xs text-[#007e7a]">{om.tag}</div><div className="text-[10px] text-gray-500 truncate max-w-[200px]">{om.description}</div></td>
                                             <td className="p-3 text-right"><div className="flex justify-end gap-2">{om.pdfUrl && <button onClick={() => setViewingOM(om)} className="p-1.5 text-[#007e7a] hover:bg-teal-50 rounded" title="Ver PDF"><Eye size={14}/></button>}<button onClick={() => handleOpenEditOM(om)} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded" title="Editar"><Edit2 size={14}/></button><button onClick={() => { if(window.confirm('Excluir esta OM?')) StorageService.deleteOM(om.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
+                                        </tr>
+                                    ))}
+                                    {activeTab === 'DEMANDS_REGISTER' && pendingDemands.filter(d => d.tag.includes(searchQuery) || d.description.includes(searchQuery)).map(demand => (
+                                        <tr key={demand.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                                            <td className="p-3 font-black text-xs text-orange-600">{demand.tag}</td>
+                                            <td className="p-3 font-bold text-xs text-gray-600 uppercase truncate max-w-[300px]">{demand.description}</td>
+                                            <td className="p-3 text-[10px] font-bold text-gray-400">{new Date(demand.createdAt).toLocaleDateString()}</td>
+                                            <td className="p-3 text-right"><div className="flex justify-end gap-2"><button onClick={() => handleOpenEditDemand(demand)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Editar"><Edit2 size={14}/></button><button onClick={() => { if(window.confirm('Excluir esta demanda?')) StorageService.deletePendingExtraDemand(demand.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
                                         </tr>
                                     ))}
                                     {activeTab === 'USERS' && users.filter(u => u.name.includes(searchQuery)).map(user => (
@@ -1047,9 +1114,7 @@ export const Settings: React.FC = () => {
                             </table>
                         </div>
                       </>
-                  )}
-
-                  {activeTab === 'DB_LIVE' && (
+                  ) : (
                       <>
                         <div className="p-4 border-b border-gray-200 bg-indigo-50 flex justify-between items-center">
                             <h4 className="text-sm font-black text-indigo-900 uppercase">
@@ -1097,6 +1162,7 @@ export const Settings: React.FC = () => {
           </div>
       </div>
 
+      {/* SQL Modal */}
       {showSqlModal && (
           <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] h-[95vh] flex flex-col overflow-hidden border-t-8 border-indigo-600">
@@ -1136,6 +1202,7 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
+      {/* Edit OM Modal */}
       {isEditOmModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 border-b-4 border-orange-500">
@@ -1152,17 +1219,51 @@ export const Settings: React.FC = () => {
         </div>
       )}
 
+      {/* Edit Demand Modal */}
+      {isEditDemandModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 border-b-4 border-blue-500">
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                    <h3 className="text-lg font-bold text-gray-800 uppercase">Editar Demanda</h3>
+                    <button onClick={() => setIsEditDemandModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={20}/></button>
+                </div>
+                <div className="space-y-3">
+                    <input 
+                        value={editingDemandData.tag || ''} 
+                        onChange={e => setEditingDemandData({...editingDemandData, tag: e.target.value.toUpperCase()})} 
+                        className="w-full border border-gray-300 rounded p-2 text-sm font-bold uppercase outline-none focus:border-blue-500" 
+                        placeholder="TAG" 
+                    />
+                    <textarea 
+                        value={editingDemandData.description || ''} 
+                        onChange={e => setEditingDemandData({...editingDemandData, description: e.target.value.toUpperCase()})} 
+                        className="w-full border border-gray-300 rounded p-2 text-xs font-bold h-32 resize-none outline-none focus:border-blue-500" 
+                        placeholder="DESCRIÇÃO..." 
+                    />
+                    <button onClick={handleSaveEditDemand} className="w-full bg-blue-600 text-white py-3 rounded font-bold text-xs uppercase hover:bg-blue-700 flex items-center justify-center gap-2">
+                        <Save size={16}/> Salvar Alterações
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {(viewingOM || viewingART) && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4">
-            <div className="w-full h-[95vh] max-w-[95vw] bg-white flex flex-col rounded-lg overflow-hidden">
-                <div className="bg-gray-900 text-white p-2 flex justify-between items-center shrink-0">
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-0 backdrop-blur-sm">
+            <div className="w-[98vw] h-[98vh] bg-white flex flex-col rounded-lg overflow-hidden border-4 border-gray-900">
+                <div className="bg-gray-900 text-white p-3 flex justify-between items-center shrink-0">
                     <span className="font-bold text-xs">
                         VISUALIZAR DOCUMENTO - {viewingOM ? viewingOM.omNumber : viewingART?.code}
                     </span>
-                    <button onClick={() => { setViewingOM(null); setViewingART(null); }} className="p-1 hover:bg-red-600 rounded"><X size={16}/></button>
+                    <button onClick={() => { setViewingOM(null); setViewingART(null); }} className="p-1 hover:bg-red-600 rounded"><X size={24}/></button>
                 </div>
                 <div className="flex-1 bg-gray-200 relative">
-                    {pdfBlobUrl ? (
+                    {isLoadingPdf ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                            <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
+                            <h4 className="font-black text-xs uppercase">BAIXANDO ORIGINAL DO SERVIDOR...</h4>
+                        </div>
+                    ) : pdfBlobUrl ? (
                         <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
                     ) : (
                         <div className="flex items-center justify-center h-full text-gray-400 font-bold uppercase text-xs">Sem PDF Anexado</div>

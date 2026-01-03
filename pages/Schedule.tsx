@@ -15,8 +15,7 @@ export const Schedule: React.FC = () => {
   const navigate = useNavigate();
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   
-  // OTIMIZAÇÃO: Armazena apenas os IDs dos itens do agendamento que estão ativos.
-  // Lookup O(1) durante a renderização da tabela.
+  // OTIMIZAÇÃO: Armazena IDs dos itens que já estão em execução (ActiveMaintenance)
   const [activeScheduleIds, setActiveScheduleIds] = useState<Set<string>>(new Set());
   
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -30,35 +29,17 @@ export const Schedule: React.FC = () => {
   const loadData = useCallback(() => {
       setIsLoading(true);
       
-      // Delay minúsculo para permitir que o React renderize o Spinner antes de travar a thread com o processamento
       setTimeout(() => {
           try {
               const sch = StorageService.getSchedule();
               const active = StorageService.getActiveMaintenances();
               
-              // 1. Cria um mapa de chaves ativas (OM e TAG) para comparação rápida
-              const activeKeys = new Set<string>();
-              active.forEach(t => {
-                  if (t.header.om) activeKeys.add(t.header.om.trim().toUpperCase());
-                  if (t.header.tag) activeKeys.add(t.header.tag.trim().toUpperCase());
-              });
-
-              // 2. Pré-calcula quais itens do agendamento estão ativos
-              // Isso remove a lógica pesada de 'split' e 'find' de dentro do loop de renderização da tabela
+              // 1. Mapeia IDs de agenda que já estão vinculados a tarefas ativas
+              // Isso garante que o item suma da lista ou fique bloqueado se já estiver no Painel
               const activeIds = new Set<string>();
-              
-              sch.forEach(item => {
-                  // Divide a string FrotaOm (ex: "CA5302 / OM123")
-                  const parts = item.frotaOm ? item.frotaOm.split(/[\/\n\s]+/) : [];
-                  
-                  // Verifica se alguma parte coincide com uma tarefa ativa
-                  const isActive = parts.some(part => {
-                      const cleanPart = part.trim().toUpperCase();
-                      return cleanPart && activeKeys.has(cleanPart);
-                  });
-
-                  if (isActive) {
-                      activeIds.add(item.id);
+              active.forEach(task => {
+                  if (task.scheduleId) {
+                      activeIds.add(task.scheduleId);
                   }
               });
 
@@ -85,22 +66,53 @@ export const Schedule: React.FC = () => {
           alert("ESTA ATIVIDADE JÁ ESTÁ EM EXECUÇÃO NO PAINEL!");
           return;
       }
-      let om = item.frotaOm;
-      let tag = item.frotaOm;
-      if (item.frotaOm.includes('\n')) {
-          const parts = item.frotaOm.split('\n');
-          tag = parts[0].trim();
-          if (parts.length > 1) om = parts[1].trim();
-      } else if (item.frotaOm.includes('/')) {
-          const parts = item.frotaOm.split('/');
-          tag = parts[0].trim();
-          om = parts.length > 1 ? parts[1].trim() : parts[0].trim();
+
+      // Lógica de Extração e Busca de OM
+      let omNumber = '';
+      let tag = '';
+      const fullText = item.frotaOm.toUpperCase();
+
+      // Tenta extrair TAG e OM via Regex ou Split
+      // Ex: "CA5302 / 12345678" ou "12345678"
+      const omMatch = fullText.match(/(\d{8,12})/); // Procura sequência de 8 a 12 dígitos
+      if (omMatch) {
+          omNumber = omMatch[1];
+      } else if (fullText.includes('/')) {
+          const parts = fullText.split('/');
+          omNumber = parts.length > 1 ? parts[1].trim() : parts[0].trim();
+      } else {
+          omNumber = fullText;
       }
+
+      // Tenta extrair TAG (Geralmente começa com CA, TR, PP ou 3 letras)
+      const tagMatch = fullText.match(/([A-Z]{2,4}-?\d+)/);
+      if (tagMatch) {
+          tag = tagMatch[1];
+      } else {
+          tag = fullText.split('/')[0].trim();
+      }
+
+      // BUSCA AUTOMÁTICA NO BANCO DE OMs
+      const allOms = StorageService.getOMs();
+      const existingOm = allOms.find(o => o.omNumber === omNumber && o.status !== 'CONCLUIDA');
+
       const params = new URLSearchParams();
-      params.append('om', om);
-      params.append('tag', tag);
-      params.append('desc', item.description || 'Manutenção Programada');
-      params.append('scheduleId', item.id);
+      
+      if (existingOm) {
+          // SE ACHOU A OM CADASTRADA, VINCULA PELO ID
+          params.append('omId', existingOm.id);
+          params.append('om', existingOm.omNumber);
+          params.append('tag', existingOm.tag); // Usa a TAG correta da OM cadastrada
+          params.append('desc', existingOm.description || item.description); // Prioriza descrição da OM
+      } else {
+          // SE NÃO ACHOU, LEVA O TEXTO DA AGENDA
+          params.append('om', omNumber);
+          params.append('tag', tag);
+          params.append('desc', item.description || 'Manutenção Programada');
+      }
+      
+      params.append('scheduleId', item.id); // VÍNCULO CRUCIAL PARA SUMIR DA AGENDA
+      
       navigate(`/art-atividade?${params.toString()}`);
   };
 
@@ -108,7 +120,6 @@ export const Schedule: React.FC = () => {
       if(scheduleItems.length === 0) return;
       if (window.confirm("ATENÇÃO: DESEJA LIMPAR TODA A PROGRAMAÇÃO?")) {
           setIsLoading(true);
-          // Pequeno delay para feedback visual
           setTimeout(() => {
               StorageService.archiveAndClearSchedule().then(() => {
                   setScheduleItems([]);
@@ -123,7 +134,6 @@ export const Schedule: React.FC = () => {
   const handleDeleteItem = (id: string) => {
       if(window.confirm("Remover este item da programação?")) {
           setScheduleItems(prev => prev.filter(item => item.id !== id));
-          // Atualiza o Set localmente para evitar reload completo
           if (activeScheduleIds.has(id)) {
               const newSet = new Set(activeScheduleIds);
               newSet.delete(id);
@@ -134,30 +144,31 @@ export const Schedule: React.FC = () => {
   };
 
   const filteredAndPaginatedItems = useMemo(() => {
-    // 1. Filtragem Inicial (Busca)
+    // Filtragem para remover itens que já estão em execução (Visualmente somem da lista disponível)
+    // Opcional: Se quiser ver eles bloqueados, remova o filtro !activeScheduleIds.has(item.id)
+    // Conforme pedido: "APOS INICIAR ELA SUMIRAR DA PAGINA DE AGENDA"
+    const visibleItems = scheduleItems.filter(item => !activeScheduleIds.has(item.id));
+
     let list = [];
     const q = searchQuery.toUpperCase().trim();
     
-    // Otimização: Se não houver busca, usa o array original diretamente
     if (!q) {
-        list = scheduleItems;
+        list = visibleItems;
     } else {
-        // Loop otimizado para filtrar
-        for (let i = 0; i < scheduleItems.length; i++) {
-            const item = scheduleItems[i];
+        for (let i = 0; i < visibleItems.length; i++) {
+            const item = visibleItems[i];
             if (item.frotaOm?.includes(q) || item.description?.includes(q)) {
                 list.push(item);
             }
         }
     }
 
-    // 2. Paginação
     const totalItems = list.length;
     const start = (currentPage - 1) * itemsPerPage;
     const data = list.slice(start, start + itemsPerPage);
 
     return { data, totalItems };
-  }, [scheduleItems, currentPage, searchQuery]);
+  }, [scheduleItems, activeScheduleIds, currentPage, searchQuery]);
 
   const totalPages = Math.ceil(filteredAndPaginatedItems.totalItems / itemsPerPage);
 
@@ -236,33 +247,21 @@ export const Schedule: React.FC = () => {
                             {filteredAndPaginatedItems.data.length === 0 ? (
                                 <tr>
                                     <td colSpan={15} className="px-3 py-24 text-center text-gray-300 font-black uppercase tracking-[0.2em]">
-                                        {searchQuery ? "NENHUM RESULTADO PARA O FILTRO." : "NENHUMA PROGRAMAÇÃO PENDENTE."}
+                                        {searchQuery ? "NENHUM RESULTADO PARA O FILTRO." : "TODAS AS ATIVIDADES EM EXECUÇÃO OU CONCLUÍDAS."}
                                     </td>
                                 </tr>
                             ) : (
                                 filteredAndPaginatedItems.data.map(item => {
-                                    // CHECK RAPIDO O(1) usando o Set pré-calculado
-                                    const isActive = activeScheduleIds.has(item.id);
-                                    
                                     return (
-                                        <tr key={item.id} className={`transition-colors border-b border-gray-200 group ${isActive ? 'bg-orange-50/50 hover:bg-orange-100/50' : 'hover:bg-blue-50/50'}`}>
-                                            <td className={`px-1 py-1 text-center border-r border-gray-200 align-middle sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isActive ? 'bg-orange-50/80 group-hover:bg-orange-100/80' : 'bg-white group-hover:bg-blue-50/50'}`}>
+                                        <tr key={item.id} className="transition-colors border-b border-gray-200 group hover:bg-blue-50/50">
+                                            <td className="px-1 py-1 text-center border-r border-gray-200 align-middle sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] bg-white group-hover:bg-blue-50/50">
                                                 <div className="flex flex-col gap-1 items-center justify-center">
-                                                    {isActive ? (
-                                                        <div className="text-orange-500 p-1 cursor-not-allowed flex flex-col items-center" title="Em Execução (Bloqueado)">
-                                                            <Lock size={16} />
-                                                            <span className='text-[6px] font-black'>EXEC</span>
-                                                        </div>
-                                                    ) : (
-                                                        <button onClick={() => handleStartMaintenance(item)} className="text-vale-green hover:scale-110 transition-transform p-1" title="Iniciar">
-                                                            <PlayCircle size={18} />
-                                                        </button>
-                                                    )}
-                                                    {!isActive && (
-                                                        <button onClick={() => handleDeleteItem(item.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Remover">
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    )}
+                                                    <button onClick={() => handleStartMaintenance(item)} className="text-vale-green hover:scale-110 transition-transform p-1" title="Iniciar">
+                                                        <PlayCircle size={18} />
+                                                    </button>
+                                                    <button onClick={() => handleDeleteItem(item.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Remover">
+                                                        <Trash2 size={14} />
+                                                    </button>
                                                 </div>
                                             </td>
                                             <td className="px-2 py-1 whitespace-pre-wrap font-black text-gray-800 border-r border-gray-200 align-middle text-[10px]">{item.frotaOm}</td>

@@ -154,7 +154,7 @@ export const ARTEmergencial: React.FC = () => {
   const hasSignatures = signatures.length > 0;
 
   return (
-    <div className="max-w-7xl mx-auto pb-32 px-4 relative">
+    <div className="max-w-[1500px] mx-auto pb-32 px-4 relative">
       <FeedbackModal 
         isOpen={isProcessing || isSuccess} 
         isSuccess={isSuccess} 
@@ -163,43 +163,43 @@ export const ARTEmergencial: React.FC = () => {
       />
 
       {/* Title Header */}
-      <div className="flex items-center gap-4 mb-8 border-b border-gray-200 pb-6 pt-6">
+      <div className="flex items-center gap-4 mb-4 border-b border-gray-200 pb-4 pt-4">
         <BackButton />
         <div className="bg-red-600/10 p-2 rounded-xl">
-            <AlertTriangle className="text-red-600" size={28} />
+            <AlertTriangle className="text-red-600" size={24} />
         </div>
         <div>
-            <h2 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter leading-none">ART Emergencial</h2>
+            <h2 className="text-xl font-black text-vale-darkgray uppercase tracking-tighter leading-none">ART Emergencial</h2>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Análise Preliminar de Risco (APR) - {origin.replace('_', ' ')}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           
-          {/* LEFT CONTENT */}
-          <div className="xl:col-span-8 space-y-8">
+          {/* LEFT CONTENT - EXPANDIDO PARA 9/12 (75%) */}
+          <div className="xl:col-span-9 space-y-6">
               <CommonHeader data={header} onChange={setHeader} title="Identificação do Equipamento" />
 
               {/* UNIFIED RISK COCKPIT */}
-              <section className="bg-white rounded-[2rem] shadow-lg border border-gray-100 overflow-hidden flex flex-col">
+              <section className="bg-white rounded-[1.5rem] shadow-sm border border-gray-200 overflow-hidden flex flex-col">
                   {/* Cockpit Header */}
-                  <div className="bg-gray-50 p-6 border-b flex items-center justify-between">
+                  <div className="bg-gray-50 p-4 border-b flex items-center justify-between">
                       <div className="flex items-center gap-3">
                           <div className="bg-vale-dark text-white w-6 h-6 rounded-full flex items-center justify-center font-black text-xs">2</div>
-                          <h3 className="font-black text-gray-700 uppercase tracking-tight">Mapeamento de Riscos e Ambiente</h3>
+                          <h3 className="font-black text-gray-700 uppercase tracking-tight text-sm">Mapeamento de Riscos e Ambiente</h3>
                       </div>
                       <div className="text-[9px] font-bold text-gray-400 uppercase hidden sm:block tracking-wider">
                           Selecione o risco &rarr; Posicione no Mapa
                       </div>
                   </div>
 
-                  <div className="flex flex-col lg:flex-row h-[650px]">
+                  <div className="flex flex-col lg:flex-row h-[600px]">
                       {/* Left: Scrollable List */}
                       <div className="flex-1 border-b lg:border-b-0 lg:border-r border-gray-100 flex flex-col h-full">
-                          <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                          <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
                               <List size={14}/> Lista de Verificação Padrão
                           </div>
-                          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                          <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                               {riskList.map((risk, idx) => {
                                   const index = idx + 1;
                                   const isChecked = checklistRisks[index]?.checked || false;
@@ -209,11 +209,10 @@ export const ARTEmergencial: React.FC = () => {
                                     <div 
                                         key={index} 
                                         className={`
-                                            border rounded-xl p-3 transition-all duration-200 cursor-pointer
-                                            ${isActive ? 'ring-2 ring-blue-400 border-blue-400 bg-blue-50 shadow-md transform scale-[1.02]' : isChecked ? 'bg-red-50 border-red-200' : 'hover:bg-gray-50 border-gray-200'}
+                                            border rounded-lg p-2.5 transition-all duration-200 cursor-pointer
+                                            ${isActive ? 'ring-2 ring-blue-400 border-blue-400 bg-blue-50 shadow-md transform scale-[1.01]' : isChecked ? 'bg-red-50 border-red-200' : 'hover:bg-gray-50 border-gray-200'}
                                         `}
                                         onClick={(e) => {
-                                            // Click anywhere on card to toggle if not input
                                             if ((e.target as HTMLElement).tagName !== 'INPUT' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
                                                 if(!isChecked) handleRiskChange(index, true);
                                                 else setSelectedRiskId(index);
@@ -225,17 +224,17 @@ export const ARTEmergencial: React.FC = () => {
                                                 type="checkbox" 
                                                 checked={isChecked}
                                                 onChange={(e) => handleRiskChange(index, e.target.checked)}
-                                                className="mt-1 h-5 w-5 text-red-600 rounded border-gray-300 focus:ring-red-500 shrink-0"
+                                                className="mt-1 h-4 w-4 text-red-600 rounded border-gray-300 focus:ring-red-500 shrink-0"
                                             />
                                             <div className="flex-1">
-                                                <span className={`text-xs font-black uppercase leading-tight block ${isActive ? 'text-blue-800' : 'text-gray-700'}`}>
+                                                <span className={`text-[10px] font-black uppercase leading-tight block ${isActive ? 'text-blue-800' : 'text-gray-700'}`}>
                                                     <span className="text-gray-400 mr-2">#{index}</span>{risk}
                                                 </span>
                                                 
                                                 {isChecked && (
-                                                    <div className="mt-3 animate-fadeIn">
+                                                    <div className="mt-2 animate-fadeIn">
                                                         <textarea 
-                                                            className="w-full text-[10px] p-2 border border-red-200 rounded bg-white focus:ring-1 focus:ring-red-500 outline-none uppercase font-bold"
+                                                            className="w-full text-[9px] p-2 border border-red-200 rounded bg-white focus:ring-1 focus:ring-red-500 outline-none uppercase font-bold"
                                                             placeholder="MEDIDA DE CONTROLE..."
                                                             rows={2}
                                                             value={checklistRisks[index]?.control || ''}
@@ -245,7 +244,7 @@ export const ARTEmergencial: React.FC = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                            {isActive && <div className="text-blue-500 animate-pulse"><MapPin size={18} fill="currentColor"/></div>}
+                                            {isActive && <div className="text-blue-500 animate-pulse"><MapPin size={16} fill="currentColor"/></div>}
                                         </div>
                                     </div>
                                   );
@@ -255,23 +254,23 @@ export const ARTEmergencial: React.FC = () => {
 
                       {/* Right: 360 Map */}
                       <div className="lg:w-[45%] bg-gray-50/30 flex flex-col relative">
-                           <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                           <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
                               <MapPin size={14}/> Radar 360º (Entorno)
                           </div>
                           
                           <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
                                 {selectedRiskId && (
                                     <div className="absolute top-4 left-0 right-0 px-4 z-20">
-                                        <div className="bg-blue-600 text-white p-3 rounded-xl shadow-lg flex items-center justify-center gap-3 animate-bounce">
-                                            <span className="font-black text-xs uppercase">Risco #{selectedRiskId} Selecionado</span>
-                                            <ArrowRight size={16} />
-                                            <span className="font-bold text-[10px] uppercase">Clique no Quadrante</span>
+                                        <div className="bg-blue-600 text-white p-2 rounded-lg shadow-lg flex items-center justify-center gap-2 animate-bounce">
+                                            <span className="font-black text-[10px] uppercase">Risco #{selectedRiskId} Selecionado</span>
+                                            <ArrowRight size={14} />
+                                            <span className="font-bold text-[9px] uppercase">Clique no Quadrante</span>
                                         </div>
                                     </div>
                                 )}
 
-                                <div className="relative w-full max-w-[320px] aspect-square">
-                                    <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-2xl">
+                                <div className="relative w-full max-w-[280px] aspect-square">
+                                    <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-xl">
                                         {/* Base */}
                                         <circle cx="50" cy="50" r="48" fill="white" stroke="#e2e8f0" strokeWidth="1" />
                                         <line x1="50" y1="2" x2="50" y2="98" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="2" />
@@ -295,15 +294,15 @@ export const ARTEmergencial: React.FC = () => {
 
                                     {/* Risk Bubbles Overlay */}
                                     <div className="absolute inset-0 pointer-events-none">
-                                         <div className="absolute top-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['FRENTE'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
-                                         <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['TRAS'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
-                                         <div className="absolute top-0 bottom-0 right-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['DIREITA'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
-                                         <div className="absolute top-0 bottom-0 left-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['ESQUERDA'].map(r => <span key={r} className="w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                         <div className="absolute top-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['FRENTE'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                         <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['TRAS'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                         <div className="absolute top-0 bottom-0 right-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['DIREITA'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                         <div className="absolute top-0 bottom-0 left-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['ESQUERDA'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
                                     </div>
                                 </div>
 
-                                <div className="mt-8 bg-white p-4 rounded-xl border border-gray-200 text-center w-full max-w-xs shadow-sm">
-                                    <p className="text-[10px] font-bold text-gray-500 uppercase">
+                                <div className="mt-6 bg-white p-3 rounded-lg border border-gray-200 text-center w-full max-w-xs shadow-sm">
+                                    <p className="text-[9px] font-bold text-gray-500 uppercase">
                                         <span className="text-red-600">{Object.values(quadrantRisks).flat().length}</span> Riscos Posicionados
                                     </p>
                                 </div>
@@ -315,43 +314,43 @@ export const ARTEmergencial: React.FC = () => {
               <SignatureSection signatures={signatures} onUpdate={setSignatures} />
           </div>
 
-          {/* RIGHT COLUMN - STATUS */}
-          <div className="xl:col-span-4">
+          {/* RIGHT COLUMN - STATUS - REDUZIDO PARA 3/12 (25%) */}
+          <div className="xl:col-span-3">
               <div className="sticky top-6">
-                  <div className="bg-white rounded-[2rem] shadow-xl p-8 border border-gray-100 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 to-red-600"></div>
-                      <h3 className="font-black text-lg text-gray-800 mb-6 flex items-center gap-2 uppercase">
-                          <ShieldCheck className="text-red-600" /> Status da APR
+                  <div className="bg-white rounded-2xl shadow-lg p-5 border border-gray-200 relative overflow-hidden">
+                      <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 to-red-600"></div>
+                      <h3 className="font-black text-sm text-gray-800 mb-4 flex items-center gap-2 uppercase">
+                          <ShieldCheck className="text-red-600" size={18} /> Status APR
                       </h3>
                       
-                      <div className="space-y-4">
-                          <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${hasHeader ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
-                              {hasHeader ? <CheckCircle size={20} className="fill-green-200 text-green-600"/> : <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
-                              <div className="font-black text-xs uppercase">1. Identificação</div>
+                      <div className="space-y-3">
+                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${hasHeader ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+                              {hasHeader ? <CheckCircle size={16} className="fill-green-200 text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
+                              <div className="font-black text-[10px] uppercase">1. Identificação</div>
                           </div>
                           
-                          <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${hasRisks ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
-                              {hasRisks ? <CheckCircle size={20} className="fill-green-200 text-green-600"/> : <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
-                              <div className="font-black text-xs uppercase">2. Seleção de Riscos</div>
+                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${hasRisks ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+                              {hasRisks ? <CheckCircle size={16} className="fill-green-200 text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
+                              <div className="font-black text-[10px] uppercase">2. Riscos</div>
                           </div>
 
-                          <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${hasSignatures ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
-                              {hasSignatures ? <CheckCircle size={20} className="fill-green-200 text-green-600"/> : <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
-                              <div className="font-black text-xs uppercase">3. Assinaturas</div>
+                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${hasSignatures ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+                              {hasSignatures ? <CheckCircle size={16} className="fill-green-200 text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
+                              <div className="font-black text-[10px] uppercase">3. Assinaturas</div>
                           </div>
                       </div>
 
-                      <div className="mt-8">
+                      <div className="mt-6">
                           <button 
                             onClick={handleSave}
                             disabled={!hasSignatures || isProcessing}
                             className={`
-                                w-full py-4 rounded-xl font-black uppercase text-sm tracking-widest flex items-center justify-center gap-3 shadow-lg transition-all
+                                w-full py-3 rounded-lg font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 shadow-md transition-all
                                 ${hasSignatures ? 'bg-red-600 text-white hover:bg-red-700 hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
                             `}
                         >
-                            <AlertTriangle size={18} fill="currentColor" className="text-white/20" />
-                            Liberar Emergência
+                            <AlertTriangle size={16} fill="currentColor" className="text-white/20" />
+                            Liberar
                         </button>
                       </div>
                   </div>

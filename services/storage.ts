@@ -35,18 +35,29 @@ const triggerUpdate = () => {
 const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
     try {
         let cleanData = data;
-        // Se houver campos para remover (como pdfUrl), cria uma cópia limpa
-        if (stripFields.length > 0 && Array.isArray(data)) {
+        // Se houver campos para remover (como pdfUrl), substitui por marcador 'TRUE' para manter a flag na UI
+        if (Array.isArray(data)) {
             cleanData = data.map(item => {
                 const copy = { ...item };
-                stripFields.forEach(f => delete copy[f]);
+                
+                // 1. Generic strip (replace with TRUE to keep flag)
+                if (stripFields.length > 0) {
+                    stripFields.forEach(f => {
+                        if (copy[f]) copy[f] = 'TRUE'; 
+                    });
+                }
+
+                // 2. Special handling for DOCS content (Deep Strip)
+                if (key === KEYS.DOCS && copy.content?.manualFileUrl) {
+                    copy.content = { ...copy.content, manualFileUrl: 'TRUE' };
+                }
+
                 return copy;
             });
         }
         localStorage.setItem(key, JSON.stringify(cleanData));
     } catch (e) {
-        console.error(`[STORAGE] Erro de cota ao salvar ${key}. Dados pesados foram omitidos.`, e);
-        // Fallback: Tenta salvar array vazio se falhar, para não quebrar a app
+        console.error(`[STORAGE] Erro de cota ao salvar ${key}.`, e);
         try {
              if (Array.isArray(data)) localStorage.setItem(key, '[]');
         } catch (e2) { console.error("Falha crítica no storage", e2); }
@@ -55,11 +66,11 @@ const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
 
 const stripDataIfNeeded = (key: string, data: any) => {
     if (key === KEYS.OMS || key === KEYS.ARTS) {
-        if(data.pdfUrl) delete data.pdfUrl;
+        if(data.pdfUrl) data.pdfUrl = 'TRUE';
     }
     if (key === KEYS.DOCS) {
-        if(data.manualFileUrl) delete data.manualFileUrl;
-        if(data.content?.manualFileUrl) delete data.content.manualFileUrl;
+        if(data.manualFileUrl) data.manualFileUrl = 'TRUE';
+        if(data.content?.manualFileUrl) data.content.manualFileUrl = 'TRUE';
     }
     return data;
 };
@@ -103,6 +114,24 @@ const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
 ];
 
 export const StorageService = {
+  // RECUPERAÇÃO DE PDF SOB DEMANDA (Evita LocalStorage Cheio)
+  getRecordPdf: async (table: 'oms' | 'arts' | 'documents', id: string): Promise<string | null> => {
+      if (!navigator.onLine) return null;
+      try {
+          // Select specifically the PDF/File column based on table structure
+          const col = table === 'documents' ? 'content' : 'pdfUrl';
+          const { data, error } = await supabase.from(table).select(col).eq('id', id).single();
+          
+          if (error || !data) return null;
+          
+          if (table === 'documents') return data.content?.manualFileUrl || null;
+          return data.pdfUrl;
+      } catch (e) { 
+          console.error("Erro ao baixar PDF:", e);
+          return null; 
+      }
+  },
+
   // CONFIGURAÇÃO DO REALTIME (AUTO-UPDATE)
   setupSubscriptions: () => {
       if (typeof window === 'undefined') return;
@@ -157,7 +186,7 @@ export const StorageService = {
                   else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                       // INSERÇÃO/ATUALIZAÇÃO AUTOMÁTICA
                       let item = payload.new;
-                      item = stripDataIfNeeded(config.key, item); // Remove campos pesados (PDFs)
+                      item = stripDataIfNeeded(config.key, item); // Remove campos pesados (PDFs) e substitui por MARKER
                       
                       const idx = localList.findIndex((i: any) => i.id === item.id);
                       if (idx > -1) {
@@ -387,7 +416,7 @@ export const StorageService = {
     const idx = list.findIndex(o => o.id === om.id);
     if (idx > -1) list[idx] = om; else list.push(om);
     
-    // IMPORTANT: Strip PDF from local storage to avoid Quota Exceeded
+    // IMPORTANT: Strip PDF from local storage to avoid Quota Exceeded (Replace with 'TRUE')
     trySaveLocal(KEYS.OMS, list, ['pdfUrl']); 
     triggerUpdate();
 
@@ -553,6 +582,11 @@ export const StorageService = {
                   trySaveLocal(KEYS.DOCS, allDocs, ['manualFileUrl']);
                   try { await supabase.from('documents').upsert(artDoc); } catch(e) {}
               }
+          }
+
+          // EXCLUSÃO DA AGENDA: SE TIVER VÍNCULO, REMOVE O ITEM DO SCHEDULE
+          if (task.scheduleId) {
+              await StorageService.deleteScheduleItem(task.scheduleId);
           }
 
           const newTasks = tasks.filter(t => t.id !== id);

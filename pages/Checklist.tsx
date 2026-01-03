@@ -127,7 +127,8 @@ export const Checklist: React.FC = () => {
   if (isLoading) return <LoadingSpinner fullScreen />;
 
   return (
-    <div className="max-w-4xl mx-auto pb-24 px-4">
+    // Largura aumentada para MAX-W-5XL para dar mais espaço ao CommonHeader
+    <div className="max-w-5xl mx-auto pb-24 px-4">
       <FeedbackModal 
         isOpen={isProcessing || isSuccess} 
         isSuccess={isSuccess} 

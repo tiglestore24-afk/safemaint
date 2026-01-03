@@ -94,6 +94,7 @@ export interface ScheduleItem {
 export interface ActiveMaintenance {
   id: string;
   omId?: string;
+  scheduleId?: string; // NOVO: Vínculo com item da Agenda
   header: HeaderData;
   startTime: string;
   artId: string;

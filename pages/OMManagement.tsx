@@ -39,6 +39,7 @@ export const OMManagement: React.FC = () => {
   const [viewingOM, setViewingOM] = useState<OMRecord | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
   // --- NEW OM FORM STATE ---
   const [newOmNumber, setNewOmNumber] = useState('');
@@ -65,45 +66,55 @@ export const OMManagement: React.FC = () => {
     return () => window.removeEventListener('safemaint_storage_update', refreshData);
   }, [refreshData]);
 
-  // CORREÇÃO VISUALIZADOR PDF
+  // CORREÇÃO VISUALIZADOR PDF COM FETCH SOB DEMANDA
   useEffect(() => {
-    let activeUrl: string | null = null;
-
-    if (viewingOM?.pdfUrl) {
-        try {
-            // Verifica se é Base64 com cabeçalho
-            if (viewingOM.pdfUrl.startsWith('data:application/pdf;base64,')) {
-                const parts = viewingOM.pdfUrl.split(',');
-                if (parts.length > 1) {
-                    const base64Data = parts[1].replace(/\s/g, ''); // Remove quebras de linha/espaços
-                    const byteCharacters = atob(base64Data);
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) {
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                    }
-                    const byteArray = new Uint8Array(byteNumbers);
-                    const blob = new Blob([byteArray], { type: 'application/pdf' });
-                    activeUrl = URL.createObjectURL(blob);
-                    setPdfBlobUrl(activeUrl);
-                }
-            } else {
-                // Caso seja URL direta ou blob anterior
-                setPdfBlobUrl(viewingOM.pdfUrl);
-            }
-        } catch (e) {
-            console.error("Erro ao processar PDF:", e);
-            setPdfBlobUrl(null); // Em caso de erro, limpa para mostrar fallback
+    const loadPdf = async () => {
+        if (!viewingOM) {
+            setPdfBlobUrl(null);
+            return;
         }
-    } else {
-        setPdfBlobUrl(null);
-    }
 
-    // Cleanup function
-    return () => {
-        if (activeUrl) {
-            URL.revokeObjectURL(activeUrl);
+        let activeUrl: string | null = null;
+        let pdfData = viewingOM.pdfUrl;
+
+        // SE NÃO TIVER PDF LOCAL (OU FOR MARCADOR 'TRUE'), TENTA RECUPERAR DO SUPABASE
+        if (!pdfData || pdfData === 'TRUE') {
+            setIsLoadingPdf(true);
+            const remotePdf = await StorageService.getRecordPdf('oms', viewingOM.id);
+            if (remotePdf) pdfData = remotePdf;
+            setIsLoadingPdf(false);
+        }
+
+        if (pdfData && pdfData !== 'TRUE') {
+            try {
+                if (pdfData.startsWith('data:application/pdf;base64,')) {
+                    const parts = pdfData.split(',');
+                    if (parts.length > 1) {
+                        const base64Data = parts[1].replace(/\s/g, ''); 
+                        const byteCharacters = atob(base64Data);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        const blob = new Blob([byteArray], { type: 'application/pdf' });
+                        activeUrl = URL.createObjectURL(blob);
+                        setPdfBlobUrl(activeUrl);
+                        return () => URL.revokeObjectURL(activeUrl!);
+                    }
+                } else {
+                    setPdfBlobUrl(pdfData);
+                }
+            } catch (e) {
+                console.error("Erro ao processar PDF:", e);
+                setPdfBlobUrl(null); 
+            }
+        } else {
+            setPdfBlobUrl(null);
         }
     };
+    
+    loadPdf();
   }, [viewingOM]);
 
   const handleExecute = (om: OMRecord) => {
@@ -258,7 +269,13 @@ export const OMManagement: React.FC = () => {
   const filteredOms = oms
     .filter(o => {
         const isCompleted = o.status === 'CONCLUIDA';
-        if (activeTab === 'PENDENTE' && isCompleted) return false;
+        const isInProgress = o.status === 'EM_ANDAMENTO';
+        
+        // FILTRO PRINCIPAL:
+        // Na aba 'PENDENTE', OMs 'EM_ANDAMENTO' NÃO devem aparecer, pois já estão no painel de execução.
+        if (activeTab === 'PENDENTE' && (isCompleted || isInProgress)) return false;
+        
+        // Na aba 'CONCLUIDA', apenas as encerradas.
         if (activeTab === 'CONCLUIDA' && !isCompleted) return false;
 
         if (searchQuery) {
@@ -274,12 +291,6 @@ export const OMManagement: React.FC = () => {
         return true;
     })
     .sort((a, b) => {
-        if (activeTab === 'PENDENTE') {
-            const aActive = a.status === 'EM_ANDAMENTO';
-            const bActive = b.status === 'EM_ANDAMENTO';
-            if (aActive && !bActive) return -1;
-            if (!aActive && bActive) return 1;
-        }
         const dateA = new Date(a.createdAt).getTime();
         const dateB = new Date(b.createdAt).getTime();
         return sortOrder === 'DESC' ? dateB - dateA : dateA - dateB;
@@ -323,7 +334,7 @@ export const OMManagement: React.FC = () => {
               <div className="flex bg-gray-100 p-1 rounded-lg w-full lg:w-auto gap-1">
                   <button onClick={() => setActiveTab('PENDENTE')} className={`flex-1 lg:flex-none px-6 py-2 rounded-lg font-bold text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'PENDENTE' ? 'bg-[#007e7a] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     Carteira Ativa
-                    <span className="bg-white/20 px-1.5 rounded text-[9px] ml-1">{oms.filter(o => o.status !== 'CONCLUIDA').length}</span>
+                    <span className="bg-white/20 px-1.5 rounded text-[9px] ml-1">{oms.filter(o => o.status === 'PENDENTE').length}</span>
                   </button>
                   <button onClick={() => setActiveTab('CONCLUIDA')} className={`flex-1 lg:flex-none px-6 py-2 rounded-lg font-bold text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'CONCLUIDA' ? 'bg-[#007e7a] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     Histórico
@@ -393,17 +404,7 @@ export const OMManagement: React.FC = () => {
                     const isCorretiva = om.type === 'CORRETIVA';
                     const isDemanda = om.type === 'DEMANDA';
                     const isPreventiva = om.type === 'PREVENTIVA';
-                    const isStarted = om.status === 'EM_ANDAMENTO';
                     
-                    // --- LOGIC FOR LOCKING (OWNERSHIP CHECK) ---
-                    const activeTask = activeTasks.find(t => t.omId === om.id);
-                    const taskOwner = activeTask?.openedBy || 'SISTEMA';
-                    const isMyTask = taskOwner === currentUser;
-                    const isPartial = activeTask?.status === 'AGUARDANDO';
-                    
-                    // Locked if: Started AND Not My Task AND Not in Partial Stop
-                    const isLocked = isStarted && !isMyTask && !isPartial;
-
                     // COLOR LOGIC
                     let borderColor = 'border-gray-200';
                     let badgeColor = 'bg-blue-50 text-blue-600 border-blue-100';
@@ -422,9 +423,6 @@ export const OMManagement: React.FC = () => {
                     return (
                         <div key={om.id} className={`group bg-white rounded-xl shadow-sm border hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${borderColor}`}>
                             
-                            {/* Barra de Progresso (Se iniciada) */}
-                            {isStarted && <div className="absolute top-0 left-0 right-0 h-1 bg-orange-500 animate-pulse"></div>}
-                            
                             {/* Header do Card */}
                             <div className="p-4 pb-2">
                                 <div className="flex justify-between items-start mb-3">
@@ -441,7 +439,6 @@ export const OMManagement: React.FC = () => {
                                 
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-xl font-black text-gray-800 leading-none tracking-tight">{om.omNumber}</h3>
-                                    {isStarted && <span className="text-[8px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 animate-pulse">EM EXECUÇÃO</span>}
                                 </div>
                                 <p className="text-xs font-bold text-[#007e7a] uppercase mt-1 tracking-wide">{om.tag}</p>
                                 
@@ -474,11 +471,7 @@ export const OMManagement: React.FC = () => {
                                             <CheckCircle2 size={14}/> Encerrada
                                         </div>
                                     ) : (
-                                        isLocked ? (
-                                            <div className="flex-1 py-2.5 rounded-lg bg-gray-200 text-gray-400 border border-gray-300 text-[10px] font-black uppercase flex items-center justify-center gap-2 cursor-not-allowed" title={`Bloqueado por ${taskOwner}`}>
-                                                <Lock size={14}/> Bloqueado ({taskOwner})
-                                            </div>
-                                        ) : isDemanda ? (
+                                        isDemanda ? (
                                             <div className="flex-1 py-2.5 rounded-lg bg-pink-50 text-pink-600 border border-pink-200 text-[9px] font-black uppercase text-center flex flex-col leading-none justify-center gap-1 cursor-default" title="Use a página Demandas Extras para iniciar">
                                                 <span>VIA DEMANDAS EXTRAS</span>
                                             </div>
@@ -487,7 +480,7 @@ export const OMManagement: React.FC = () => {
                                                 onClick={() => handleExecute(om)} 
                                                 className={`flex-1 py-2.5 rounded-lg text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all ${isCorretiva ? 'bg-red-600 hover:bg-red-700' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
                                             >
-                                                {isStarted ? <><StopCircle size={14}/> Continuar</> : <><PlayCircle size={14}/> Iniciar Atividade <ArrowRight size={12}/></>}
+                                                <PlayCircle size={14}/> Iniciar Atividade <ArrowRight size={12}/>
                                             </button>
                                         )
                                     )}
@@ -524,16 +517,7 @@ export const OMManagement: React.FC = () => {
                             {filteredOms.map((om, idx) => {
                                 const isCorretiva = om.type === 'CORRETIVA';
                                 const isDemanda = om.type === 'DEMANDA';
-                                const isPreventiva = om.type === 'PREVENTIVA';
-                                const isStarted = om.status === 'EM_ANDAMENTO';
                                 
-                                // --- LOCK LOGIC FOR LIST VIEW TOO ---
-                                const activeTask = activeTasks.find(t => t.omId === om.id);
-                                const taskOwner = activeTask?.openedBy || 'SISTEMA';
-                                const isMyTask = taskOwner === currentUser;
-                                const isPartial = activeTask?.status === 'AGUARDANDO';
-                                const isLocked = isStarted && !isMyTask && !isPartial;
-
                                 // COLOR LOGIC
                                 let badgeColor = 'bg-blue-50 text-blue-600 border-blue-100';
                                 if (isCorretiva) badgeColor = 'bg-red-50 text-red-600 border-red-100';
@@ -551,9 +535,7 @@ export const OMManagement: React.FC = () => {
                                         </td>
                                         <td className="p-4 text-center text-gray-500">{new Date(om.createdAt).toLocaleDateString()}</td>
                                         <td className="p-4 text-center">
-                                            {isStarted ? (
-                                                <span className="text-orange-500 flex items-center justify-center gap-1"><Loader2 size={12} className="animate-spin"/> EXEC</span>
-                                            ) : om.status === 'CONCLUIDA' ? (
+                                            {om.status === 'CONCLUIDA' ? (
                                                 <span className="text-green-600 flex items-center justify-center gap-1"><CheckCircle2 size={12}/> FIM</span>
                                             ) : (
                                                 <span className="text-gray-400">PENDENTE</span>
@@ -567,21 +549,17 @@ export const OMManagement: React.FC = () => {
                                             )}
                                             
                                             {om.status !== 'CONCLUIDA' && (
-                                                isLocked ? (
-                                                    <div className="p-1.5 text-gray-400 bg-gray-100 rounded cursor-not-allowed" title={`Bloqueado por ${taskOwner}`}>
-                                                        <Lock size={14}/>
-                                                    </div>
-                                                ) : isDemanda ? (
+                                                isDemanda ? (
                                                     <div className="p-1.5 text-purple-400 bg-purple-50 rounded cursor-default" title="Via Demandas Extras">
                                                         <ClipboardList size={14}/>
                                                     </div>
                                                 ) : (
                                                     <button 
                                                         onClick={() => handleExecute(om)}
-                                                        className={`p-1.5 rounded text-white ${isStarted ? 'bg-orange-500 hover:bg-orange-600' : isCorretiva ? 'bg-red-600 hover:bg-red-700' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
-                                                        title={isStarted ? "Continuar" : "Iniciar"}
+                                                        className={`p-1.5 rounded text-white ${isCorretiva ? 'bg-red-600 hover:bg-red-700' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
+                                                        title="Iniciar"
                                                     >
-                                                        {isStarted ? <StopCircle size={14}/> : <PlayCircle size={14}/>}
+                                                        <PlayCircle size={14}/>
                                                     </button>
                                                 )
                                             )}
@@ -620,117 +598,120 @@ export const OMManagement: React.FC = () => {
                         <input type="file" accept=".pdf" onChange={handlePdfUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                         {isExtracting ? (
                             <div className="flex flex-col items-center animate-pulse">
-                                <Loader2 size={32} className="text-[#007e7a] animate-spin mb-2" />
-                                <span className="text-[10px] font-bold text-[#007e7a] uppercase">Analisando Documento...</span>
+                                <Loader2 size={32} className="text-[#007e7a] animate-spin mb-3" />
+                                <span className="font-black text-xs text-[#007e7a] uppercase tracking-widest">Extraindo dados do PDF...</span>
                             </div>
                         ) : newOmPdf ? (
-                            <div className="flex flex-col items-center">
-                                <CheckCircle2 size={32} className="text-green-500 mb-2" />
-                                <span className="text-xs font-black text-green-600 uppercase">PDF Processado</span>
-                                <span className="text-[9px] text-gray-400 uppercase mt-1">Clique para alterar</span>
+                            <div className="flex flex-col items-center animate-fadeIn">
+                                <CheckCircle2 size={32} className="text-green-600 mb-2" />
+                                <span className="font-black text-xs text-green-600 uppercase tracking-widest">PDF Processado com Sucesso</span>
+                                <span className="text-[9px] text-gray-400 mt-1 uppercase">Clique para trocar o arquivo</span>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center">
-                                <FileSearch size={28} className="text-gray-400 mb-2 group-hover:text-[#007e7a] transition-colors" />
-                                <span className="text-xs font-black text-gray-600 uppercase group-hover:text-[#007e7a]">Anexar PDF da Ordem</span>
-                                <span className="text-[9px] text-gray-400 uppercase mt-1">Extração automática de dados</span>
+                            <div className="flex flex-col items-center group-hover:scale-105 transition-transform">
+                                <FileSearch size={32} className="text-[#007e7a] mb-2" />
+                                <span className="font-black text-xs text-[#007e7a] uppercase tracking-widest">Anexar PDF da Ordem</span>
+                                <span className="text-[9px] text-gray-400 mt-1 uppercase">Leitura automática de Número, Tag e Descrição</span>
                             </div>
                         )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <div className="flex justify-between items-end mb-1">
-                                <label className="text-[10px] font-black text-gray-500 uppercase">Número OM</label>
-                                {newOmNumber && !isExtracting && <Sparkles size={10} className="text-yellow-500 animate-pulse" />}
-                            </div>
-                            <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm font-black uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a] transition-all" placeholder="" />
+                        <div className="relative">
+                            <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Número OM</label>
+                            <input 
+                                type="text" 
+                                value={newOmNumber} 
+                                onChange={e => setNewOmNumber(e.target.value)} 
+                                className="w-full bg-gray-50 border border-gray-200 p-3 rounded-lg text-sm font-black uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a]/20"
+                                placeholder="00000000"
+                            />
+                            {newOmNumber && !isExtracting && newOmPdf && <Sparkles size={14} className="absolute right-3 top-8 text-yellow-500 animate-pulse" />}
                         </div>
                         <div>
-                            <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Tag Equipamento</label>
+                            <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Tag Equipamento</label>
                             <input 
+                                type="text" 
                                 value={newOmTag} 
                                 onChange={e => setNewOmTag(e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1'))} 
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm font-black uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a] text-[#007e7a] transition-all" 
-                                placeholder="" 
+                                className="w-full bg-gray-50 border border-gray-200 p-3 rounded-lg text-sm font-black uppercase text-[#007e7a] outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a]/20"
+                                placeholder="CA..."
                             />
                         </div>
                     </div>
-                    
-                    <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Classificação</label>
-                        <div className="flex bg-gray-100 p-1 rounded-lg gap-1">
-                            <button onClick={() => setNewOmType('PREVENTIVA')} className={`flex-1 py-2 text-[10px] font-black rounded-md uppercase transition-all ${newOmType === 'PREVENTIVA' ? 'bg-white shadow text-[#007e7a]' : 'text-gray-400 hover:text-gray-600'}`}>Preventiva</button>
-                            <button onClick={() => setNewOmType('CORRETIVA')} className={`flex-1 py-2 text-[10px] font-black rounded-md uppercase transition-all ${newOmType === 'CORRETIVA' ? 'bg-white shadow text-red-600' : 'text-gray-400 hover:text-gray-600'}`}>Corretiva</button>
-                            <button onClick={() => setNewOmType('DEMANDA')} className={`flex-1 py-2 text-[10px] font-black rounded-md uppercase transition-all ${newOmType === 'DEMANDA' ? 'bg-white shadow text-purple-600' : 'text-gray-400 hover:text-gray-600'}`}>Demanda</button>
-                        </div>
-                    </div>
 
-                    {newOmType === 'PREVENTIVA' && (
-                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                            <label className="text-[9px] font-black text-blue-800 uppercase mb-1 block flex items-center gap-1"><Link size={10}/> Vincular OM da Programação</label>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Tipo de Manutenção</label>
+                            <select 
+                                value={newOmType} 
+                                onChange={e => setNewOmType(e.target.value as any)} 
+                                className="w-full bg-gray-50 border border-gray-200 p-3 rounded-lg text-xs font-bold uppercase outline-none focus:border-[#007e7a]"
+                            >
+                                <option value="PREVENTIVA">Preventiva</option>
+                                <option value="CORRETIVA">Corretiva</option>
+                                <option value="DEMANDA">Demanda</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Vincular Programação (Opcional)</label>
                             <select 
                                 value={linkedScheduleOm} 
-                                onChange={(e) => setLinkedScheduleOm(e.target.value)} 
-                                className="w-full bg-white border border-blue-200 rounded p-2 text-[10px] font-bold uppercase outline-none text-gray-700 focus:border-blue-400"
+                                onChange={e => setLinkedScheduleOm(e.target.value)} 
+                                className="w-full bg-gray-50 border border-gray-200 p-3 rounded-lg text-xs font-bold uppercase outline-none focus:border-[#007e7a]"
                             >
-                                <option value="">-- SELECIONAR VÍNCULO --</option>
+                                <option value="">-- Sem Vínculo --</option>
                                 {scheduleItems.map(item => (
                                     <option key={item.id} value={item.frotaOm}>
-                                        {item.frotaOm} - {item.description?.slice(0, 30)}...
+                                        {item.frotaOm.slice(0, 30)}...
                                     </option>
                                 ))}
                             </select>
                         </div>
-                    )}
-                    
-                    <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Descrição</label>
-                        <textarea value={newOmDesc} onChange={e => setNewOmDesc(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-bold uppercase outline-none h-24 resize-none focus:border-[#007e7a]" placeholder="" />
                     </div>
-                    
-                    <button onClick={handleSaveNewOM} disabled={isExtracting} className="w-full bg-[#007e7a] hover:bg-[#00605d] disabled:bg-gray-300 text-white py-3.5 rounded-xl font-black text-xs uppercase mt-2 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
-                        <Save size={16}/> Salvar & Arquivar
+
+                    <div>
+                        <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Descrição da Atividade</label>
+                        <textarea 
+                            value={newOmDesc} 
+                            onChange={e => setNewOmDesc(e.target.value.toUpperCase())} 
+                            className="w-full bg-gray-50 border border-gray-200 p-3 rounded-lg text-xs font-bold h-24 resize-none outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a]/20 uppercase"
+                            placeholder="Descreva a atividade..."
+                        />
+                    </div>
+
+                    <button 
+                        onClick={handleSaveNewOM} 
+                        disabled={isExtracting}
+                        className="w-full bg-[#007e7a] text-white py-4 rounded-xl font-black text-xs uppercase hover:bg-[#00605d] flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all active:scale-95"
+                    >
+                        {isExtracting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                        Salvar na Biblioteca
                     </button>
                 </div>
             </div>
         </div>
       )}
 
-      {/* PDF VIEWER MODAL */}
-      {viewingOM && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="w-full h-[95vh] max-w-[95vw] bg-white flex flex-col rounded-2xl overflow-hidden shadow-2xl">
-                <div className="bg-gray-900 text-white p-4 flex justify-between items-center shrink-0">
-                    <div className="flex items-center gap-3">
-                        <FileText className="text-[#007e7a]" />
-                        <div>
-                            <h3 className="font-black text-sm uppercase tracking-wider">Visualizador de Documento</h3>
-                            <p className="text-[10px] font-bold text-gray-400 uppercase">OM: {viewingOM.omNumber}</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-2">
-                        {pdfBlobUrl && (
-                            <a 
-                                href={pdfBlobUrl} 
-                                download={`OM-${viewingOM.omNumber}.pdf`}
-                                className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors"
-                                title="Baixar"
-                            >
-                                <Download size={20}/>
-                            </a>
-                        )}
-                        <button onClick={() => setViewingOM(null)} className="p-2 bg-white/10 hover:bg-red-600 rounded-full transition-all"><X size={20}/></button>
-                    </div>
+      {(viewingOM) && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-0 backdrop-blur-sm">
+            <div className="w-[98vw] h-[98vh] bg-white flex flex-col rounded-lg overflow-hidden border-4 border-gray-900">
+                <div className="bg-gray-900 text-white p-3 flex justify-between items-center shrink-0">
+                    <span className="font-bold text-xs">
+                        VISUALIZAR DOCUMENTO - {viewingOM.omNumber}
+                    </span>
+                    <button onClick={() => setViewingOM(null)} className="p-1 hover:bg-red-600 rounded"><X size={24}/></button>
                 </div>
-                <div className="flex-1 bg-gray-100 relative flex items-center justify-center">
-                    {pdfBlobUrl ? (
-                        <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white shadow-inner" title="Viewer" />
-                    ) : (
-                        <div className="flex flex-col items-center justify-center text-gray-400 gap-3">
-                            <Info size={48} className="opacity-20" />
-                            <span className="font-black text-xs uppercase tracking-widest">Carregando ou Documento não disponível</span>
+                <div className="flex-1 bg-gray-200 relative">
+                    {isLoadingPdf ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                            <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
+                            <h4 className="font-black text-xs uppercase">BAIXANDO ORIGINAL DO SERVIDOR...</h4>
                         </div>
+                    ) : pdfBlobUrl ? (
+                        <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-gray-400 font-bold uppercase text-xs">Sem PDF Anexado</div>
                     )}
                 </div>
             </div>

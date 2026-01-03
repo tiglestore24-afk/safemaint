@@ -12,18 +12,18 @@ interface CommonHeaderProps {
 }
 
 const TYPE_OPTIONS: { id: MaintenanceType; label: string; icon: React.ReactNode; color: string }[] = [
-  { id: 'MECANICA', label: 'Mecânica', icon: <Wrench size={18} />, color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  { id: 'ELETRICA', label: 'Elétrica', icon: <Zap size={18} />, color: 'text-yellow-600 bg-yellow-50 border-yellow-200' },
-  { id: 'LUBRIFICACAO', label: 'Lubrificação', icon: <Droplets size={18} />, color: 'text-teal-600 bg-teal-50 border-teal-200' },
-  { id: 'SOLDA', label: 'Solda', icon: <Flame size={18} />, color: 'text-orange-600 bg-orange-50 border-orange-200' },
-  { id: 'OUTROS', label: 'Outros', icon: <MoreHorizontal size={18} />, color: 'text-gray-600 bg-gray-50 border-gray-200' },
+  { id: 'MECANICA', label: 'Mec.', icon: <Wrench size={10} />, color: 'text-blue-600 bg-blue-50 border-blue-200' },
+  { id: 'ELETRICA', label: 'Elét.', icon: <Zap size={10} />, color: 'text-yellow-600 bg-yellow-50 border-yellow-200' },
+  { id: 'LUBRIFICACAO', label: 'Lub.', icon: <Droplets size={10} />, color: 'text-teal-600 bg-teal-50 border-teal-200' },
+  { id: 'SOLDA', label: 'Solda', icon: <Flame size={10} />, color: 'text-orange-600 bg-orange-50 border-orange-200' },
+  { id: 'OUTROS', label: 'Out.', icon: <MoreHorizontal size={10} />, color: 'text-gray-600 bg-gray-50 border-gray-200' },
 ];
 
 export const CommonHeader: React.FC<CommonHeaderProps> = ({ 
   data, 
   onChange, 
   readOnly = false,
-  title = "Identificação da Manutenção" 
+  title = "Identificação" 
 }) => {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [availableOms, setAvailableOms] = useState<OMRecord[]>([]);
@@ -46,7 +46,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
       om: om.omNumber,
       tag: om.tag,
       description: om.description,
-      type: om.type === 'CORRETIVA' ? 'MECANICA' : 'MECANICA' // Default type, can be changed
+      type: om.type === 'CORRETIVA' ? 'MECANICA' : 'MECANICA'
     });
     setIsPickerOpen(false);
   };
@@ -58,42 +58,43 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
   );
 
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-6 relative animate-fadeIn">
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-100 pb-3 gap-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-[#007e7a]/10 p-2 rounded-lg">
-             <Wrench size={20} className="text-[#007e7a]" />
+    // ESTILO COMPACTO OTIMIZADO
+    <div className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-200 mb-2 relative animate-fadeIn">
+      <div className="flex flex-row items-center justify-between mb-1.5 border-b border-gray-100 pb-1.5 gap-2">
+        <div className="flex items-center gap-1.5">
+          <div className="bg-[#007e7a]/10 p-1 rounded-md">
+             <Wrench size={12} className="text-[#007e7a]" />
           </div>
-          <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">{title}</h3>
+          <h3 className="text-[10px] font-black text-gray-800 uppercase tracking-tight">{title}</h3>
         </div>
         
         {!readOnly && (
           <button 
             onClick={() => setIsPickerOpen(true)}
-            className="flex items-center gap-2 bg-[#007e7a] text-white px-4 py-2 rounded-lg font-bold text-xs uppercase shadow-sm hover:bg-[#00605d] transition-all active:scale-95"
+            className="flex items-center gap-1 bg-[#007e7a] text-white px-2 py-0.5 rounded font-bold text-[9px] uppercase shadow-sm hover:bg-[#00605d] transition-all active:scale-95"
           >
-            <List size={16} /> Buscar na Carteira
+            <List size={10} /> Buscar OM
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* OM Number */}
-        <div className="relative group">
-            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Ordem (OM)</label>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-2">
+        {/* OM Number - 2 cols */}
+        <div className="relative group col-span-1 md:col-span-1 lg:col-span-2">
+            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Ordem (OM)</label>
             <input 
                 type="text" 
                 value={data.om} 
                 onChange={e => handleChange('om', e.target.value)}
                 readOnly={readOnly}
-                className={`w-full p-3 rounded-xl border-2 text-sm font-black text-gray-800 outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] focus:ring-4 focus:ring-[#007e7a]/10'}`}
+                className={`w-full p-1.5 rounded border text-[10px] font-black text-gray-800 outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a]'}`}
                 placeholder=""
             />
         </div>
 
-        {/* TAG */}
-        <div className="relative group">
-            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Tag Equipamento</label>
+        {/* TAG - 2 cols */}
+        <div className="relative group col-span-1 md:col-span-1 lg:col-span-2">
+            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Tag</label>
             <input 
                 type="text" 
                 value={data.tag} 
@@ -102,65 +103,64 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
                     handleChange('tag', val);
                 }}
                 readOnly={readOnly}
-                className={`w-full p-3 rounded-xl border-2 text-sm font-black text-[#007e7a] outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] focus:ring-4 focus:ring-[#007e7a]/10'}`}
+                className={`w-full p-1.5 rounded border text-[10px] font-black text-[#007e7a] outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a]'}`}
                 placeholder=""
             />
         </div>
 
-        {/* Date & Time */}
-        <div className="grid grid-cols-2 gap-2">
-            <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Data</label>
-                <input 
-                    type="date" 
-                    value={data.date} 
-                    onChange={e => handleChange('date', e.target.value)}
-                    readOnly={readOnly}
-                    className={`w-full p-3 rounded-xl border-2 text-xs font-bold text-gray-700 outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a]'}`}
-                />
-            </div>
-            <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Hora</label>
-                <input 
-                    type="time" 
-                    value={data.time} 
-                    onChange={e => handleChange('time', e.target.value)}
-                    readOnly={readOnly}
-                    className={`w-full p-3 rounded-xl border-2 text-xs font-bold text-gray-700 outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a]'}`}
-                />
-            </div>
+        {/* Date - 2 cols */}
+        <div className="col-span-1 lg:col-span-2">
+            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Data</label>
+            <input 
+                type="date" 
+                value={data.date} 
+                onChange={e => handleChange('date', e.target.value)}
+                readOnly={readOnly}
+                className={`w-full p-1.5 rounded border text-[10px] font-bold text-gray-700 outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a]'}`}
+            />
         </div>
 
-        {/* Type Selection */}
-        <div>
-            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Especialidade</label>
+        {/* Time - 1 col */}
+        <div className="col-span-1 lg:col-span-2">
+            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Hora</label>
+            <input 
+                type="time" 
+                value={data.time} 
+                onChange={e => handleChange('time', e.target.value)}
+                readOnly={readOnly}
+                className={`w-full p-1.5 rounded border text-[10px] font-bold text-gray-700 outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a]'}`}
+            />
+        </div>
+
+        {/* Type Selection - 2 cols */}
+        <div className="col-span-2 lg:col-span-2">
+            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Tipo</label>
             <div className="relative">
                 <select 
                     value={data.type} 
                     onChange={e => handleChange('type', e.target.value)}
                     disabled={readOnly}
-                    className={`w-full p-3 rounded-xl border-2 text-xs font-black uppercase outline-none appearance-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] text-gray-700'}`}
+                    className={`w-full p-1.5 rounded border text-[10px] font-black uppercase outline-none appearance-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] text-gray-700'}`}
                 >
                     {TYPE_OPTIONS.map(opt => (
                         <option key={opt.id} value={opt.id}>{opt.label}</option>
                     ))}
                 </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                     {TYPE_OPTIONS.find(t => t.id === data.type)?.icon}
                 </div>
             </div>
         </div>
 
-        {/* Description */}
-        <div className="md:col-span-2 lg:col-span-4">
-            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Descrição da Atividade</label>
-            <textarea 
+        {/* Description - Full Row */}
+        <div className="col-span-2 md:col-span-4 lg:col-span-12">
+            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Descrição da Atividade</label>
+            <input 
                 value={data.description} 
                 onChange={e => handleChange('description', e.target.value.toUpperCase())}
                 readOnly={readOnly}
-                rows={2}
-                className={`w-full p-3 rounded-xl border-2 text-xs font-bold text-gray-600 outline-none resize-none transition-all ${readOnly ? 'bg-gray-100 border-transparent' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] focus:ring-4 focus:ring-[#007e7a]/10'}`}
-                placeholder=""
+                className={`w-full p-1.5 rounded border text-[10px] font-bold text-gray-600 outline-none transition-all truncate ${readOnly ? 'bg-gray-100 border-transparent' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a]'}`}
+                placeholder="DESCRIÇÃO BREVE..."
             />
         </div>
       </div>

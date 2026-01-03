@@ -7,7 +7,7 @@ import {
   Clock, AlertOctagon, PauseCircle, 
   StopCircle, Bell, X, Activity, 
   ShieldCheck, WifiOff, Database, Wrench, PlayCircle, Timer, Lock, 
-  Volume2, VolumeX, Eye, Info, CheckSquare, CloudLightning, FileText, Box, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Calendar, Link as LinkIcon, Search, ClipboardList
+  Volume2, VolumeX, Eye, Info, CheckSquare, CloudLightning, FileText, Box, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Calendar, Link as LinkIcon, Search, ClipboardList, Loader2
 } from 'lucide-react';
 import { checkConnection } from '../services/supabase';
 
@@ -66,8 +66,9 @@ export const Dashboard: React.FC = () => {
   const [closingTask, setClosingTask] = useState<ActiveMaintenance | null>(null);
   
   // Viewer State (Generic for OM or ART)
-  const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string; type: string } | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string; type: string; id: string } | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
   
   // Data for lookups
   const [allOms, setAllOms] = useState<OMRecord[]>([]);
@@ -115,23 +116,46 @@ export const Dashboard: React.FC = () => {
     return () => window.removeEventListener('safemaint_storage_update', refreshData);
   }, [refreshData]);
 
+  // FETCH PDF SOB DEMANDA SE NÃO EXISTIR NA MEMÓRIA OU FOR MARCADOR 'TRUE'
   useEffect(() => {
-    if (viewingDoc?.url) {
-        try {
-            if (viewingDoc.url.startsWith('data:application/pdf;base64,')) {
-                const parts = viewingDoc.url.split(',');
-                if (parts.length > 1) {
-                    const byteCharacters = atob(parts[1]);
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                    const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-                    const url = URL.createObjectURL(blob);
-                    setPdfBlobUrl(url);
-                    return () => URL.revokeObjectURL(url);
-                }
-            } else setPdfBlobUrl(viewingDoc.url);
-        } catch (e) { setPdfBlobUrl(viewingDoc.url); }
-    } else setPdfBlobUrl(null);
+    const loadPdf = async () => {
+        if (!viewingDoc) {
+            setPdfBlobUrl(null);
+            return;
+        }
+
+        let pdfData = viewingDoc.url;
+        let activeUrl: string | null = null;
+
+        if (!pdfData || pdfData === 'TRUE') {
+            setIsLoadingPdf(true);
+            const table = viewingDoc.type === 'PROCEDIMENTO' ? 'arts' : 'oms'; // Mapeia 'OM'->oms e 'PROCEDIMENTO'->arts
+            const remotePdf = await StorageService.getRecordPdf(table as any, viewingDoc.id);
+            if (remotePdf) pdfData = remotePdf;
+            setIsLoadingPdf(false);
+        }
+
+        if (pdfData && pdfData !== 'TRUE') {
+            try {
+                if (pdfData.startsWith('data:application/pdf;base64,')) {
+                    const parts = pdfData.split(',');
+                    if (parts.length > 1) {
+                        const byteCharacters = atob(parts[1]);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+                        activeUrl = URL.createObjectURL(blob);
+                        setPdfBlobUrl(activeUrl);
+                        return () => URL.revokeObjectURL(activeUrl!);
+                    }
+                } else setPdfBlobUrl(pdfData);
+            } catch (e) { setPdfBlobUrl(pdfData); }
+        } else {
+            setPdfBlobUrl(null);
+        }
+    };
+    
+    loadPdf();
   }, [viewingDoc]);
 
   const toggleMute = () => {
@@ -193,7 +217,7 @@ export const Dashboard: React.FC = () => {
       const omsList = StorageService.getOMs();
       const om = omsList.find(o => o.id === n.id);
       if (om && om.pdfUrl) {
-          setViewingDoc({ url: om.pdfUrl, title: om.omNumber, type: 'OM' });
+          setViewingDoc({ url: om.pdfUrl, title: om.omNumber, type: 'OM', id: om.id });
           setShowNotifications(false);
       }
   };
@@ -201,7 +225,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="max-w-[1600px] mx-auto pb-10">
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
+      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200 animate-fadeIn relative z-30">
         <div className="flex items-center gap-4">
             <div className="bg-[#007e7a]/10 p-2 rounded-lg">
                 <ShieldCheck size={24} className="text-[#007e7a]" />
@@ -235,7 +259,7 @@ export const Dashboard: React.FC = () => {
                     {notifications.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-bounce">{notifications.length}</span>}
                 </button>
                 {showNotifications && (
-                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden ring-1 ring-black/5 animate-fadeIn">
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-[9999] overflow-hidden ring-1 ring-black/5 animate-fadeIn">
                         <div className="bg-gray-50 p-3 flex justify-between items-center border-b">
                             <span className="font-black text-[10px] uppercase text-gray-500 tracking-wider">Notificações ({notifications.length})</span>
                             <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
@@ -258,7 +282,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
         {/* COLUNA ESQUERDA - CARDS ATIVOS */}
         <div className="lg:col-span-8 space-y-6">
             <h3 className="font-black text-sm text-gray-500 uppercase border-b border-gray-200 pb-2 flex items-center gap-2">
@@ -313,6 +337,7 @@ export const Dashboard: React.FC = () => {
                         let pdfUrl = linkedOm?.pdfUrl;
                         let pdfTitle = linkedOm?.omNumber || 'DOCUMENTO ORIGINAL';
                         let pdfType = 'OM';
+                        let docId = linkedOm?.id || '';
 
                         // 2. Se não achou na OM, tenta pegar da ART Vinculada (Procedimento Padrão)
                         if (!pdfUrl && task.artId) {
@@ -323,11 +348,13 @@ export const Dashboard: React.FC = () => {
                                     pdfUrl = linkedArt.pdfUrl;
                                     pdfTitle = linkedArt.taskName;
                                     pdfType = 'PROCEDIMENTO';
+                                    docId = linkedArt.id;
                                 }
                             }
                         }
 
-                        const hasPdf = !!pdfUrl;
+                        // Has PDF = either has URL locally OR has an ID to fetch from server
+                        const hasPdf = !!pdfUrl || !!docId;
 
                         return (
                             <div key={task.id} className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-shadow border border-gray-200 overflow-hidden flex flex-col md:flex-row">
@@ -360,14 +387,14 @@ export const Dashboard: React.FC = () => {
                                             {/* Botão Ver PDF - INDISPENSÁVEL E VISÍVEL */}
                                             {hasPdf && (
                                                 <button 
-                                                    onClick={() => setViewingDoc({ url: pdfUrl!, title: pdfTitle, type: pdfType })}
+                                                    onClick={() => setViewingDoc({ url: pdfUrl!, title: pdfTitle, type: pdfType, id: docId })}
                                                     className={`
                                                         px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all shadow-sm
                                                         ${pdfType === 'OM' ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'}
                                                     `}
                                                     title={`Visualizar ${pdfType}`}
                                                 >
-                                                    <FileText size={12} /> {pdfType === 'OM' ? 'VER OM' : 'VER ART'}
+                                                    <FileText size={12} /> {pdfType === 'OM' ? 'PDF ORIGINAL (OM)' : 'PDF ORIGINAL (ART)'}
                                                 </button>
                                             )}
 
@@ -581,32 +608,34 @@ export const Dashboard: React.FC = () => {
           </div>
       )}
 
-      {/* PDF VIEWER OVERLAY (GENERIC) */}
+      {/* PDF VIEWER OVERLAY (GENERIC - MAXIMIZED FOR SAFETY) */}
       {viewingDoc && (
-        <div className="fixed inset-0 z-[100] bg-gray-900/95 flex items-center justify-center p-4 backdrop-blur-md">
-            <div className="w-full h-[95vh] max-w-[95vw] bg-white flex flex-col rounded-2xl overflow-hidden shadow-2xl">
-                <div className="bg-white p-3 flex justify-between items-center shrink-0 border-b border-gray-200">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-[#007e7a] text-white p-1.5 rounded">
-                            <FileText size={18} />
-                        </div>
-                        <div>
-                            <span className="font-black text-xs text-gray-800 uppercase tracking-wide block">Visualização de Documento</span>
-                            <span className="font-bold text-[10px] text-[#007e7a] uppercase tracking-widest">{viewingDoc.title}</span>
-                        </div>
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden">
+            <div className="bg-gray-900 px-4 py-2 flex justify-between items-center text-white shrink-0 border-b border-gray-800">
+                <div className="flex items-center gap-3">
+                    <FileText size={18} className="text-[#007e7a]"/>
+                    <div>
+                        <h3 className="font-black text-sm tracking-tighter uppercase">Visualizador de Documento</h3>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{viewingDoc.title}</p>
                     </div>
-                    <button onClick={() => setViewingDoc(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-all"><X size={20}/></button>
                 </div>
-                <div className="flex-1 bg-gray-100 relative">
-                    {pdfBlobUrl ? (
-                        <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-                            <Info size={40} className="opacity-20" />
-                            <span className="font-bold text-[10px] uppercase tracking-widest">Carregando Documento...</span>
-                        </div>
-                    )}
-                </div>
+                <button onClick={() => setViewingDoc(null)} className="p-2 bg-white/10 rounded hover:bg-red-600 transition-colors"><X size={16}/></button>
+            </div>
+            
+            <div className="flex-1 bg-black relative">
+                {isLoadingPdf ? (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                        <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
+                        <h4 className="font-black text-xs uppercase">BAIXANDO ORIGINAL DO SERVIDOR...</h4>
+                    </div>
+                ) : pdfBlobUrl ? (
+                    <iframe src={pdfBlobUrl} className="w-full h-full border-none" title="Viewer" />
+                ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                        <Info size={48} className="mx-auto mb-2 opacity-30" />
+                        <h4 className="font-black text-xs uppercase">PDF Indisponível</h4>
+                    </div>
+                )}
             </div>
         </div>
       )}

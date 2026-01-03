@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StorageService } from '../services/storage';
 import { OMRecord, ActiveMaintenance, DocumentRecord, PendingExtraDemand } from '../types';
-import { ClipboardList, PlayCircle, Search, AlertOctagon, Link as LinkIcon, Info, Trash2 } from 'lucide-react';
+import { ClipboardList, PlayCircle, Search, AlertOctagon, Link as LinkIcon, Info, Trash2, FileText, X, Loader2 } from 'lucide-react';
 import { FeedbackModal } from '../components/FeedbackModal';
 
 export const ExtraDemands: React.FC = () => {
@@ -21,16 +21,60 @@ export const ExtraDemands: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  // Viewer State
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string; id: string } | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+
   useEffect(() => {
     loadData();
     window.addEventListener('safemaint_storage_update', loadData);
     return () => window.removeEventListener('safemaint_storage_update', loadData);
   }, []);
 
+  // PDF Blob Logic (With On-Demand Fetch)
+  useEffect(() => {
+    const loadPdf = async () => {
+        if (!viewingDoc) {
+            setPdfBlobUrl(null);
+            return;
+        }
+
+        let pdfData = viewingDoc.url;
+        let activeUrl: string | null = null;
+
+        if (!pdfData || pdfData === 'TRUE') {
+            setIsLoadingPdf(true);
+            const remotePdf = await StorageService.getRecordPdf('oms', viewingDoc.id);
+            if (remotePdf) pdfData = remotePdf;
+            setIsLoadingPdf(false);
+        }
+
+        if (pdfData && pdfData !== 'TRUE') {
+            try {
+                if (pdfData.startsWith('data:application/pdf;base64,')) {
+                    const parts = pdfData.split(',');
+                    if (parts.length > 1) {
+                        const byteCharacters = atob(parts[1]);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+                        activeUrl = URL.createObjectURL(blob);
+                        setPdfBlobUrl(activeUrl);
+                        return () => URL.revokeObjectURL(activeUrl!);
+                    }
+                } else setPdfBlobUrl(pdfData);
+            } catch (e) { setPdfBlobUrl(pdfData); }
+        } else setPdfBlobUrl(null);
+    };
+    
+    loadPdf();
+  }, [viewingDoc]);
+
   const loadData = () => {
       setPendingDemands(StorageService.getPendingExtraDemands());
-      // FILTRO RIGOROSO: Apenas OMs do tipo 'DEMANDA' e não concluídas podem ser vinculadas
-      setAvailableOms(StorageService.getOMs().filter(o => o.status !== 'CONCLUIDA' && o.type === 'DEMANDA'));
+      // FILTRO RIGOROSO: Apenas OMs com status 'PENDENTE' podem ser vinculadas.
+      setAvailableOms(StorageService.getOMs().filter(o => o.status === 'PENDENTE'));
   };
 
   const handleDeleteDemand = (e: React.MouseEvent, id: string) => {
@@ -43,23 +87,31 @@ export const ExtraDemands: React.FC = () => {
   const handleStartDemand = async () => {
     if (!selectedDemand) return;
 
-    // Se uma OM for selecionada, usamos os dados dela. Se não, usamos o card de Demanda.
     const selectedOM = availableOms.find(o => o.id === selectedOmId);
     
-    // REDIRECIONAMENTO PARA ART EMERGENCIAL
-    // O tempo só começa a contar na tela de ART
+    if (selectedOM && selectedOM.tag !== selectedDemand.tag) {
+        alert("ERRO DE SEGURANÇA: O TAG da OM não corresponde ao TAG da Demanda.");
+        return;
+    }
+    
     navigate('/art-emergencial', { 
         state: { 
             omId: selectedOmId || undefined,
             om: selectedOM ? selectedOM.omNumber : 'DEMANDA-EXTRA',
-            tag: selectedOM ? selectedOM.tag : selectedDemand.tag, // Tag da OM tem prioridade se selecionada
+            tag: selectedOM ? selectedOM.tag : selectedDemand.tag, 
             description: selectedDemand.description,
-            type: 'MECANICA', // Default, ajustável na ART
-            origin: 'DEMANDA_EXTRA', // Flag para lógica de cor/tipo
-            demandId: selectedDemand.id // Passamos o ID para excluir a pendência ao iniciar
+            type: 'MECANICA', 
+            origin: 'DEMANDA_EXTRA', 
+            demandId: selectedDemand.id 
         } 
     });
   };
+
+  const matchingOms = selectedDemand 
+    ? availableOms.filter(om => om.tag === selectedDemand.tag) 
+    : [];
+
+  const selectedOMRecord = availableOms.find(o => o.id === selectedOmId);
 
   return (
     <div className="max-w-6xl mx-auto pb-20 px-4 animate-fadeIn">
@@ -106,7 +158,7 @@ export const ExtraDemands: React.FC = () => {
                           </div>
 
                           <button 
-                            onClick={() => setSelectedDemand(demand)}
+                            onClick={() => { setSelectedDemand(demand); setSelectedOmId(''); }}
                             className="w-full py-3 bg-pink-600 text-white font-black text-xs uppercase rounded-lg hover:bg-pink-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
                           >
                               <PlayCircle size={16}/> SELECIONAR PARA INÍCIO
@@ -131,7 +183,7 @@ export const ExtraDemands: React.FC = () => {
 
                   <div className="mb-6 bg-pink-50 border border-pink-100 p-4 rounded-xl">
                       <div className="flex justify-between items-center mb-1">
-                          <span className="text-[10px] font-black text-pink-400 uppercase tracking-widest">TAG</span>
+                          <span className="text-[10px] font-black text-pink-400 uppercase tracking-widest">TAG SELECIONADO</span>
                           <span className="text-[10px] font-black text-pink-400 uppercase tracking-widest">DATA REGISTRO</span>
                       </div>
                       <div className="flex justify-between items-center">
@@ -142,23 +194,48 @@ export const ExtraDemands: React.FC = () => {
 
                   <div className="mb-6">
                       <label className="block text-xs font-black text-gray-500 uppercase mb-2 flex items-center gap-1">
-                          <LinkIcon size={14}/> Selecionar Ordem (OM - TIPO DEMANDA)
+                          <LinkIcon size={14}/> Vincular Ordem (OM)
                       </label>
-                      <select 
-                          value={selectedOmId}
-                          onChange={e => setSelectedOmId(e.target.value)}
-                          className="w-full p-4 rounded-xl border-2 bg-gray-50 border-gray-200 text-sm font-bold text-gray-700 outline-none focus:border-pink-500 appearance-none uppercase transition-all"
-                      >
-                          <option value="">-- SEM OM (AVULSO) --</option>
-                          {availableOms.map(om => (
-                              <option key={om.id} value={om.id}>
-                                  {om.omNumber} - {om.tag}
-                              </option>
-                          ))}
-                      </select>
-                      <p className="text-[9px] text-gray-400 mt-2 flex items-center gap-1">
-                          <Info size={10}/> Apenas OMs cadastradas como "DEMANDA" aparecem aqui.
-                      </p>
+                      
+                      {matchingOms.length > 0 ? (
+                          <div className="space-y-3">
+                              <select 
+                                  value={selectedOmId}
+                                  onChange={e => setSelectedOmId(e.target.value)}
+                                  className="w-full p-4 rounded-xl border-2 bg-white border-green-200 text-sm font-bold text-gray-700 outline-none focus:border-green-500 appearance-none uppercase transition-all shadow-sm"
+                              >
+                                  <option value="">-- SEM OM (EXECUTAR AVULSO) --</option>
+                                  {matchingOms.map(om => (
+                                      <option key={om.id} value={om.id}>
+                                          [{om.type.substring(0,4)}] OM: {om.omNumber}
+                                      </option>
+                                  ))}
+                              </select>
+                              
+                              {/* VIEW PDF BUTTON */}
+                              {selectedOMRecord && (selectedOMRecord.pdfUrl || true) && (
+                                  <button 
+                                      onClick={() => setViewingDoc({ url: selectedOMRecord.pdfUrl || '', title: selectedOMRecord.omNumber, id: selectedOMRecord.id })}
+                                      className="w-full py-2.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors animate-fadeIn"
+                                  >
+                                      <FileText size={14} /> VISUALIZAR PDF ORIGINAL (IMPORTANTE)
+                                  </button>
+                              )}
+
+                              <p className="text-[9px] text-green-600 font-bold flex items-center gap-1 bg-green-50 p-2 rounded-lg border border-green-100">
+                                  <Info size={10}/> {matchingOms.length} OM(s) encontradas com o TAG {selectedDemand.tag}.
+                              </p>
+                          </div>
+                      ) : (
+                          <div className="bg-orange-50 border border-orange-100 p-3 rounded-xl">
+                              <p className="text-[10px] text-orange-600 font-bold flex items-center gap-1 mb-1">
+                                  <AlertOctagon size={12}/> NENHUMA OM COMPATÍVEL ENCONTRADA
+                              </p>
+                              <p className="text-[9px] text-gray-500">
+                                  Não existem OMs pendentes com o TAG <strong>{selectedDemand.tag}</strong>. Você pode iniciar sem vincular OM.
+                              </p>
+                          </div>
+                      )}
                   </div>
 
                   <button 
@@ -166,10 +243,45 @@ export const ExtraDemands: React.FC = () => {
                       className="w-full bg-pink-600 hover:bg-pink-700 text-white py-4 rounded-xl font-black text-sm uppercase shadow-lg hover:shadow-pink-200 hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-3"
                   >
                       <PlayCircle size={20} />
-                      IR PARA ART EMERGENCIAL
+                      {selectedOmId ? 'VINCULAR OM E INICIAR ART' : 'INICIAR ART SEM OM'}
                   </button>
               </div>
           </div>
+      )}
+
+      {/* PDF VIEWER OVERLAY */}
+      {viewingDoc && (
+        <div className="fixed inset-0 z-[100] bg-gray-900/95 flex items-center justify-center p-0 backdrop-blur-md">
+            <div className="w-[98vw] h-[98vh] bg-white flex flex-col rounded-xl overflow-hidden shadow-2xl border-4 border-gray-900">
+                <div className="bg-white p-3 flex justify-between items-center shrink-0 border-b border-gray-200">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-[#007e7a] text-white p-1.5 rounded">
+                            <FileText size={18} />
+                        </div>
+                        <div>
+                            <span className="font-black text-xs text-gray-800 uppercase tracking-wide block">Visualização de Documento (Segurança)</span>
+                            <span className="font-bold text-[10px] text-[#007e7a] uppercase tracking-widest">{viewingDoc.title}</span>
+                        </div>
+                    </div>
+                    <button onClick={() => setViewingDoc(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-all"><X size={24}/></button>
+                </div>
+                <div className="flex-1 bg-gray-100 relative">
+                    {isLoadingPdf ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                            <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
+                            <h4 className="font-black text-xs uppercase">BAIXANDO ORIGINAL DO SERVIDOR...</h4>
+                        </div>
+                    ) : pdfBlobUrl ? (
+                        <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                            <Info size={40} className="opacity-20" />
+                            <span className="font-bold text-[10px] uppercase tracking-widest">Carregando Documento...</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
       )}
     </div>
   );
