@@ -339,7 +339,7 @@ export const ARTAtividade: React.FC = () => {
       {/* PREVIEW MODAL */}
       {showPreviewModal && selectedART && (
           <div className="fixed inset-0 bg-vale-dark/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md animate-fadeIn">
-              <div className="bg-white rounded-[2rem] w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+              <div className="bg-white rounded-[2rem] w-full max-w-[95vw] h-[95vh] flex flex-col overflow-hidden shadow-2xl">
                   <div className="bg-gray-900 p-6 flex justify-between items-center text-white shrink-0">
                       <div>
                           <h3 className="font-black text-xl tracking-tighter uppercase">Documento Original</h3>

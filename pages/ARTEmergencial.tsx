@@ -21,6 +21,9 @@ export const ARTEmergencial: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
 
   const [omId, setOmId] = useState<string | undefined>(undefined);
+  const [origin, setOrigin] = useState<'CORRETIVA' | 'DEMANDA_EXTRA'>('CORRETIVA');
+  const [pendingDemandId, setPendingDemandId] = useState<string | undefined>(undefined);
+
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
 
   const [selectedRiskId, setSelectedRiskId] = useState<number | null>(null);
@@ -35,6 +38,8 @@ export const ARTEmergencial: React.FC = () => {
         const stateData = location.state as any;
         setHeader(prev => ({ ...prev, ...stateData }));
         if (stateData.omId) setOmId(stateData.omId);
+        if (stateData.origin) setOrigin(stateData.origin);
+        if (stateData.demandId) setPendingDemandId(stateData.demandId);
     } else {
         const now = new Date();
         setHeader(prev => ({ ...prev, time: now.toTimeString().slice(0,5) }));
@@ -98,7 +103,7 @@ export const ARTEmergencial: React.FC = () => {
           signatures
         };
         
-        StorageService.saveDocument(doc);
+        await StorageService.saveDocument(doc);
         
         const nowIso = new Date().toISOString();
         const currentUser = localStorage.getItem('safemaint_user') || 'ADMIN';
@@ -110,12 +115,17 @@ export const ARTEmergencial: React.FC = () => {
             startTime: nowIso,
             artId: artId,
             artType: 'ART_EMERGENCIAL',
-            origin: 'CORRETIVA',
+            origin: origin, // Usa a origem passada (Corretiva ou Demanda Extra)
             status: 'ANDAMENTO',
             currentSessionStart: nowIso,
             openedBy: currentUser
         };
-        StorageService.startMaintenance(activeTask);
+        await StorageService.startMaintenance(activeTask);
+
+        // SE VEIO DE DEMANDA EXTRA, LIMPA A PENDÊNCIA
+        if (pendingDemandId) {
+            await StorageService.deletePendingExtraDemand(pendingDemandId);
+        }
 
         setIsProcessing(false);
         setIsSuccess(true);
@@ -160,7 +170,7 @@ export const ARTEmergencial: React.FC = () => {
         </div>
         <div>
             <h2 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter leading-none">ART Emergencial</h2>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Análise Preliminar de Risco (APR) - Corretiva</p>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Análise Preliminar de Risco (APR) - {origin.replace('_', ' ')}</p>
         </div>
       </div>
 

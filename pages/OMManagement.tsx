@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { StorageService } from '../services/storage';
-import { OMRecord, DocumentRecord, ScheduleItem } from '../types';
+import { OMRecord, DocumentRecord, ScheduleItem, ActiveMaintenance } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { 
   FileInput, PlayCircle, Trash2, Search, CalendarDays, User,
   Wrench, AlertOctagon, Clock, CheckCircle2, Eye, X, Info, FileText,
-  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download, Link, LayoutGrid, List as ListIcon
+  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download, Link, LayoutGrid, List as ListIcon, Lock, ClipboardList
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
@@ -21,6 +21,7 @@ export const OMManagement: React.FC = () => {
   const [oms, setOms] = useState<OMRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'PENDENTE' | 'CONCLUIDA'>('PENDENTE');
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [activeTasks, setActiveTasks] = useState<ActiveMaintenance[]>([]);
   
   // --- FEEDBACK STATES ---
   const [isProcessing, setIsProcessing] = useState(false);
@@ -29,7 +30,7 @@ export const OMManagement: React.FC = () => {
 
   // --- STATE DOS FILTROS & VIEW ---
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'CORRETIVA' | 'PREVENTIVA'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'CORRETIVA' | 'PREVENTIVA' | 'DEMANDA'>('ALL');
   const [dateFilter, setDateFilter] = useState('');
   const [sortOrder, setSortOrder] = useState<'DESC' | 'ASC'>('DESC');
   const [viewMode, setViewMode] = useState<'GRID' | 'LIST'>('GRID');
@@ -43,18 +44,22 @@ export const OMManagement: React.FC = () => {
   const [newOmNumber, setNewOmNumber] = useState('');
   const [newOmTag, setNewOmTag] = useState('');
   const [newOmDesc, setNewOmDesc] = useState('');
-  const [newOmType, setNewOmType] = useState<'PREVENTIVA' | 'CORRETIVA'>('PREVENTIVA');
+  const [newOmType, setNewOmType] = useState<'PREVENTIVA' | 'CORRETIVA' | 'DEMANDA'>('PREVENTIVA');
   const [newOmPdf, setNewOmPdf] = useState<string>('');
   const [linkedScheduleOm, setLinkedScheduleOm] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   
+  const [currentUser, setCurrentUser] = useState('');
+
   const refreshData = useCallback(() => {
     const allOms = StorageService.getOMs();
     setOms(allOms);
     setScheduleItems(StorageService.getSchedule());
+    setActiveTasks(StorageService.getActiveMaintenances());
   }, []);
 
   useEffect(() => {
+    setCurrentUser(localStorage.getItem('safemaint_user')?.toUpperCase() || '');
     refreshData();
     window.addEventListener('safemaint_storage_update', refreshData);
     return () => window.removeEventListener('safemaint_storage_update', refreshData);
@@ -327,7 +332,7 @@ export const OMManagement: React.FC = () => {
               
               <div className="relative w-full lg:flex-1 lg:max-w-md">
                   <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
-                  <input type="text" placeholder="BUSCAR OM, TAG..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a]/20" />
+                  <input type="text" placeholder="FILTRAR..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a]/20" />
               </div>
           </div>
 
@@ -339,8 +344,9 @@ export const OMManagement: React.FC = () => {
               <div className="grid grid-cols-2 md:flex md:flex-row gap-2 w-full items-center">
                   <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="bg-gray-50 border border-gray-200 text-gray-600 font-bold text-[10px] rounded p-2 outline-none uppercase hover:bg-gray-100">
                       <option value="ALL">Todos Tipos</option>
-                      <option value="CORRETIVA">Corretiva</option>
-                      <option value="PREVENTIVA">Preventiva</option>
+                      <option value="CORRETIVA">Corretiva (Vermelho)</option>
+                      <option value="PREVENTIVA">Preventiva (Azul)</option>
+                      <option value="DEMANDA">Demanda Extra (Rosa)</option>
                   </select>
                   <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-gray-50 border border-gray-200 text-gray-600 font-bold text-[10px] rounded p-2 outline-none uppercase hover:bg-gray-100" />
                   <button onClick={() => setSortOrder(prev => prev === 'DESC' ? 'ASC' : 'DESC')} className="bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 rounded px-3 py-2 flex items-center justify-center gap-2">
@@ -384,11 +390,37 @@ export const OMManagement: React.FC = () => {
             /* --- GRID VIEW (CARDS) --- */
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
                 {filteredOms.map((om) => {
-                    const isCritical = om.type === 'CORRETIVA';
+                    const isCorretiva = om.type === 'CORRETIVA';
+                    const isDemanda = om.type === 'DEMANDA';
+                    const isPreventiva = om.type === 'PREVENTIVA';
                     const isStarted = om.status === 'EM_ANDAMENTO';
                     
+                    // --- LOGIC FOR LOCKING (OWNERSHIP CHECK) ---
+                    const activeTask = activeTasks.find(t => t.omId === om.id);
+                    const taskOwner = activeTask?.openedBy || 'SISTEMA';
+                    const isMyTask = taskOwner === currentUser;
+                    const isPartial = activeTask?.status === 'AGUARDANDO';
+                    
+                    // Locked if: Started AND Not My Task AND Not in Partial Stop
+                    const isLocked = isStarted && !isMyTask && !isPartial;
+
+                    // COLOR LOGIC
+                    let borderColor = 'border-gray-200';
+                    let badgeColor = 'bg-blue-50 text-blue-600 border-blue-100';
+                    
+                    if (isCorretiva) {
+                        borderColor = 'border-red-500';
+                        badgeColor = 'bg-red-50 text-red-600 border-red-100';
+                    } else if (isDemanda) {
+                        borderColor = 'border-pink-500';
+                        badgeColor = 'bg-pink-50 text-pink-600 border-pink-100';
+                    } else if (isPreventiva) {
+                        borderColor = 'border-blue-500';
+                        badgeColor = 'bg-blue-50 text-blue-600 border-blue-100';
+                    }
+
                     return (
-                        <div key={om.id} className={`group bg-white rounded-xl shadow-sm border hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${isCritical ? 'border-red-100' : 'border-gray-200'}`}>
+                        <div key={om.id} className={`group bg-white rounded-xl shadow-sm border hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${borderColor}`}>
                             
                             {/* Barra de Progresso (Se iniciada) */}
                             {isStarted && <div className="absolute top-0 left-0 right-0 h-1 bg-orange-500 animate-pulse"></div>}
@@ -396,8 +428,8 @@ export const OMManagement: React.FC = () => {
                             {/* Header do Card */}
                             <div className="p-4 pb-2">
                                 <div className="flex justify-between items-start mb-3">
-                                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1.5 ${isCritical ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-blue-50 text-blue-600 border border-blue-100'}`}>
-                                        {isCritical ? <AlertOctagon size={10}/> : <Wrench size={10}/>}
+                                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1.5 border ${badgeColor}`}>
+                                        {isCorretiva ? <AlertOctagon size={10}/> : isDemanda ? <ClipboardList size={10}/> : <Wrench size={10}/>}
                                         {om.type}
                                     </span>
                                     {om.pdfUrl && (
@@ -442,12 +474,22 @@ export const OMManagement: React.FC = () => {
                                             <CheckCircle2 size={14}/> Encerrada
                                         </div>
                                     ) : (
-                                        <button 
-                                            onClick={() => handleExecute(om)} 
-                                            className={`flex-1 py-2.5 rounded-lg text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all ${isCritical ? 'bg-red-600 hover:bg-red-700' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
-                                        >
-                                            {isStarted ? <><StopCircle size={14}/> Continuar</> : <><PlayCircle size={14}/> Iniciar Atividade <ArrowRight size={12}/></>}
-                                        </button>
+                                        isLocked ? (
+                                            <div className="flex-1 py-2.5 rounded-lg bg-gray-200 text-gray-400 border border-gray-300 text-[10px] font-black uppercase flex items-center justify-center gap-2 cursor-not-allowed" title={`Bloqueado por ${taskOwner}`}>
+                                                <Lock size={14}/> Bloqueado ({taskOwner})
+                                            </div>
+                                        ) : isDemanda ? (
+                                            <div className="flex-1 py-2.5 rounded-lg bg-pink-50 text-pink-600 border border-pink-200 text-[9px] font-black uppercase text-center flex flex-col leading-none justify-center gap-1 cursor-default" title="Use a página Demandas Extras para iniciar">
+                                                <span>VIA DEMANDAS EXTRAS</span>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={() => handleExecute(om)} 
+                                                className={`flex-1 py-2.5 rounded-lg text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all ${isCorretiva ? 'bg-red-600 hover:bg-red-700' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
+                                            >
+                                                {isStarted ? <><StopCircle size={14}/> Continuar</> : <><PlayCircle size={14}/> Iniciar Atividade <ArrowRight size={12}/></>}
+                                            </button>
+                                        )
                                     )}
                                     <button 
                                         onClick={() => { if(window.confirm('Excluir esta ordem?')) StorageService.deleteOM(om.id).then(refreshData) }} 
@@ -480,8 +522,22 @@ export const OMManagement: React.FC = () => {
                         </thead>
                         <tbody className="text-xs font-bold divide-y divide-gray-100">
                             {filteredOms.map((om, idx) => {
-                                const isCritical = om.type === 'CORRETIVA';
+                                const isCorretiva = om.type === 'CORRETIVA';
+                                const isDemanda = om.type === 'DEMANDA';
+                                const isPreventiva = om.type === 'PREVENTIVA';
                                 const isStarted = om.status === 'EM_ANDAMENTO';
+                                
+                                // --- LOCK LOGIC FOR LIST VIEW TOO ---
+                                const activeTask = activeTasks.find(t => t.omId === om.id);
+                                const taskOwner = activeTask?.openedBy || 'SISTEMA';
+                                const isMyTask = taskOwner === currentUser;
+                                const isPartial = activeTask?.status === 'AGUARDANDO';
+                                const isLocked = isStarted && !isMyTask && !isPartial;
+
+                                // COLOR LOGIC
+                                let badgeColor = 'bg-blue-50 text-blue-600 border-blue-100';
+                                if (isCorretiva) badgeColor = 'bg-red-50 text-red-600 border-red-100';
+                                else if (isDemanda) badgeColor = 'bg-pink-50 text-pink-600 border-pink-100';
                                 
                                 return (
                                     <tr key={om.id} className="hover:bg-blue-50/30 transition-colors group">
@@ -489,7 +545,7 @@ export const OMManagement: React.FC = () => {
                                         <td className="p-4 text-[#007e7a]">{om.tag}</td>
                                         <td className="p-4 text-gray-600 truncate max-w-xs" title={om.description}>{om.description}</td>
                                         <td className="p-4 text-center">
-                                            <span className={`px-2 py-1 rounded text-[9px] font-black border ${isCritical ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                            <span className={`px-2 py-1 rounded text-[9px] font-black border ${badgeColor}`}>
                                                 {om.type.substring(0,4)}
                                             </span>
                                         </td>
@@ -511,13 +567,23 @@ export const OMManagement: React.FC = () => {
                                             )}
                                             
                                             {om.status !== 'CONCLUIDA' && (
-                                                <button 
-                                                    onClick={() => handleExecute(om)}
-                                                    className={`p-1.5 rounded text-white ${isStarted ? 'bg-orange-500 hover:bg-orange-600' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
-                                                    title={isStarted ? "Continuar" : "Iniciar"}
-                                                >
-                                                    {isStarted ? <StopCircle size={14}/> : <PlayCircle size={14}/>}
-                                                </button>
+                                                isLocked ? (
+                                                    <div className="p-1.5 text-gray-400 bg-gray-100 rounded cursor-not-allowed" title={`Bloqueado por ${taskOwner}`}>
+                                                        <Lock size={14}/>
+                                                    </div>
+                                                ) : isDemanda ? (
+                                                    <div className="p-1.5 text-purple-400 bg-purple-50 rounded cursor-default" title="Via Demandas Extras">
+                                                        <ClipboardList size={14}/>
+                                                    </div>
+                                                ) : (
+                                                    <button 
+                                                        onClick={() => handleExecute(om)}
+                                                        className={`p-1.5 rounded text-white ${isStarted ? 'bg-orange-500 hover:bg-orange-600' : isCorretiva ? 'bg-red-600 hover:bg-red-700' : 'bg-[#007e7a] hover:bg-[#00605d]'}`}
+                                                        title={isStarted ? "Continuar" : "Iniciar"}
+                                                    >
+                                                        {isStarted ? <StopCircle size={14}/> : <PlayCircle size={14}/>}
+                                                    </button>
+                                                )
                                             )}
                                             
                                             <button 
@@ -540,7 +606,7 @@ export const OMManagement: React.FC = () => {
       {/* MODAL CADASTRAR OM */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border-b-[6px] border-[#007e7a]">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 border-b-[6px] border-[#007e7a]">
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <h3 className="text-xl font-black text-gray-800 uppercase tracking-tight">Nova Ordem (OM)</h3>
@@ -578,11 +644,16 @@ export const OMManagement: React.FC = () => {
                                 <label className="text-[10px] font-black text-gray-500 uppercase">Número OM</label>
                                 {newOmNumber && !isExtracting && <Sparkles size={10} className="text-yellow-500 animate-pulse" />}
                             </div>
-                            <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm font-black uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a] transition-all" placeholder="000000" />
+                            <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm font-black uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a] transition-all" placeholder="" />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Tag Equipamento</label>
-                            <input value={newOmTag} onChange={e => setNewOmTag(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm font-black uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a] text-[#007e7a] transition-all" placeholder="TAG-01" />
+                            <input 
+                                value={newOmTag} 
+                                onChange={e => setNewOmTag(e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1'))} 
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm font-black uppercase outline-none focus:border-[#007e7a] focus:ring-1 focus:ring-[#007e7a] text-[#007e7a] transition-all" 
+                                placeholder="" 
+                            />
                         </div>
                     </div>
                     
@@ -591,6 +662,7 @@ export const OMManagement: React.FC = () => {
                         <div className="flex bg-gray-100 p-1 rounded-lg gap-1">
                             <button onClick={() => setNewOmType('PREVENTIVA')} className={`flex-1 py-2 text-[10px] font-black rounded-md uppercase transition-all ${newOmType === 'PREVENTIVA' ? 'bg-white shadow text-[#007e7a]' : 'text-gray-400 hover:text-gray-600'}`}>Preventiva</button>
                             <button onClick={() => setNewOmType('CORRETIVA')} className={`flex-1 py-2 text-[10px] font-black rounded-md uppercase transition-all ${newOmType === 'CORRETIVA' ? 'bg-white shadow text-red-600' : 'text-gray-400 hover:text-gray-600'}`}>Corretiva</button>
+                            <button onClick={() => setNewOmType('DEMANDA')} className={`flex-1 py-2 text-[10px] font-black rounded-md uppercase transition-all ${newOmType === 'DEMANDA' ? 'bg-white shadow text-purple-600' : 'text-gray-400 hover:text-gray-600'}`}>Demanda</button>
                         </div>
                     </div>
 
@@ -614,7 +686,7 @@ export const OMManagement: React.FC = () => {
                     
                     <div>
                         <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Descrição</label>
-                        <textarea value={newOmDesc} onChange={e => setNewOmDesc(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-bold uppercase outline-none h-24 resize-none focus:border-[#007e7a]" placeholder="DETALHES DA ATIVIDADE..." />
+                        <textarea value={newOmDesc} onChange={e => setNewOmDesc(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-bold uppercase outline-none h-24 resize-none focus:border-[#007e7a]" placeholder="" />
                     </div>
                     
                     <button onClick={handleSaveNewOM} disabled={isExtracting} className="w-full bg-[#007e7a] hover:bg-[#00605d] disabled:bg-gray-300 text-white py-3.5 rounded-xl font-black text-xs uppercase mt-2 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
@@ -628,7 +700,7 @@ export const OMManagement: React.FC = () => {
       {/* PDF VIEWER MODAL */}
       {viewingOM && (
         <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="w-full h-full max-w-5xl bg-white flex flex-col rounded-2xl overflow-hidden shadow-2xl">
+            <div className="w-full h-[95vh] max-w-[95vw] bg-white flex flex-col rounded-2xl overflow-hidden shadow-2xl">
                 <div className="bg-gray-900 text-white p-4 flex justify-between items-center shrink-0">
                     <div className="flex items-center gap-3">
                         <FileText className="text-[#007e7a]" />

@@ -1,8 +1,15 @@
-
+<?php
+  header("Access-Control-Allow-Origin: *");
+  header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+  header("Access-Control-Allow-Headers: Content-Type, Authorization");
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
+    <meta http-equiv="Access-Control-Allow-Origin" content="*" />
+    <meta http-equiv="Access-Control-Allow-Methods" content="GET, POST, OPTIONS" />
+    <meta http-equiv="Access-Control-Allow-Headers" content="Content-Type, Authorization" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
     <meta name="theme-color" content="#007e7a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -33,7 +40,7 @@
               'spin-slow': 'spin 8s linear infinite',
               'spin-reverse-slow': 'spin-reverse 12s linear infinite',
               'spin-reverse': 'spin-reverse 1s linear infinite',
-              'fadeIn': 'fadeIn 0.5s ease-out forwards',
+              'fadeIn': 'fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards',
             },
             keyframes: {
               shimmer: {
@@ -64,6 +71,10 @@
         background-color: #111827;
       }
       
+      .animate-fadeIn {
+        will-change: opacity, transform;
+      }
+      
       .custom-scrollbar::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -82,13 +93,15 @@
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+    "react": "https://esm.sh/react@18.3.1?dev",
+    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime?dev",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?dev&deps=react@18.3.1",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.28.0?dev&deps=react@18.3.1,react-dom@18.3.1",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.47.10",
+    "lucide-react": "https://esm.sh/lucide-react@0.468.0?dev&deps=react@18.3.1",
+    "pdfjs-dist": "https://esm.sh/pdfjs-dist@3.11.174",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "pdfjs-dist": "https://esm.sh/pdfjs-dist@3.11.174"
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>

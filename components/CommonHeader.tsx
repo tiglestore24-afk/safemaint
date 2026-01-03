@@ -87,7 +87,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
                 onChange={e => handleChange('om', e.target.value)}
                 readOnly={readOnly}
                 className={`w-full p-3 rounded-xl border-2 text-sm font-black text-gray-800 outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] focus:ring-4 focus:ring-[#007e7a]/10'}`}
-                placeholder="000000"
+                placeholder=""
             />
         </div>
 
@@ -97,10 +97,13 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
             <input 
                 type="text" 
                 value={data.tag} 
-                onChange={e => handleChange('tag', e.target.value.toUpperCase())}
+                onChange={e => {
+                    const val = e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1');
+                    handleChange('tag', val);
+                }}
                 readOnly={readOnly}
                 className={`w-full p-3 rounded-xl border-2 text-sm font-black text-[#007e7a] outline-none transition-all ${readOnly ? 'bg-gray-100 border-transparent text-gray-500' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] focus:ring-4 focus:ring-[#007e7a]/10'}`}
-                placeholder="TAG-000"
+                placeholder=""
             />
         </div>
 
@@ -157,7 +160,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
                 readOnly={readOnly}
                 rows={2}
                 className={`w-full p-3 rounded-xl border-2 text-xs font-bold text-gray-600 outline-none resize-none transition-all ${readOnly ? 'bg-gray-100 border-transparent' : 'bg-gray-50 border-gray-100 focus:bg-white focus:border-[#007e7a] focus:ring-4 focus:ring-[#007e7a]/10'}`}
-                placeholder="Descreva a atividade..."
+                placeholder=""
             />
         </div>
       </div>
@@ -179,7 +182,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
                     <input 
                         autoFocus
                         type="text" 
-                        placeholder="Filtrar por OM, TAG ou Descrição..." 
+                        placeholder="FILTRAR..." 
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="w-full bg-gray-100 border-transparent p-3 rounded-xl text-xs font-bold uppercase focus:bg-white focus:border-[#007e7a] focus:ring-2 focus:ring-[#007e7a]/20 outline-none transition-all"

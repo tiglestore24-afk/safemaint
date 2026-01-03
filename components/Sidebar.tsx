@@ -4,11 +4,18 @@ import { NavLink } from 'react-router-dom';
 import { 
   AlertTriangle, FileText, CheckSquare, Calendar, Archive,
   Settings, Menu, LayoutDashboard, ChevronLeft, ChevronRight,
-  MessageSquare, FileInput, BarChart2, LogOut
+  FileInput, BarChart2, LogOut, ClipboardList
 } from 'lucide-react';
-import { Logo } from './Logo';
+import { Cube3D } from './Cube3D';
+import { StorageService } from '../services/storage';
 
-export const Sidebar: React.FC<{ isOpen: boolean; toggle: () => void; onLogout?: () => void }> = ({ isOpen, toggle, onLogout }) => {
+interface SidebarProps {
+  isOpen: boolean;
+  toggle: () => void;
+  onLogout?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [userName, setUserName] = useState('');
   const [userRole, setUserRole] = useState('');
@@ -18,10 +25,16 @@ export const Sidebar: React.FC<{ isOpen: boolean; toggle: () => void; onLogout?:
       setUserRole(localStorage.getItem('safemaint_role') || 'OPERADOR');
   }, []);
   
+  const handleLogoutClick = async () => {
+      // Chama o serviço para liberar a sessão no backend antes de limpar o localstorage
+      await StorageService.logoutUser(localStorage.getItem('safemaint_user') || '');
+      if (onLogout) onLogout();
+  };
+  
   const sections = [
     { title: "PRINCIPAL", items: [
       { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-      { path: '/chat', label: 'Comunicação', icon: <MessageSquare size={20} /> },
+      { path: '/extra-demands', label: 'Demandas Extras', icon: <ClipboardList size={20} /> },
     ]},
     { title: "OPERAÇÃO", items: [
       { path: '/om-management', label: 'Ordens (OM)', icon: <FileInput size={20} /> },
@@ -72,9 +85,9 @@ export const Sidebar: React.FC<{ isOpen: boolean; toggle: () => void; onLogout?:
       >
         
         {/* Header / Logo Area */}
-        <div className="relative h-24 flex items-center justify-center border-b border-gray-800/50 bg-gray-900/30">
+        <div className="relative h-28 flex items-center justify-center border-b border-gray-800/50 bg-gray-900/30 overflow-hidden">
             <div className={`transition-all duration-300 ${isCollapsed ? 'scale-75' : 'scale-100'}`}>
-                 <Logo size={isCollapsed ? "sm" : "md"} showText={!isCollapsed} light />
+                 <Cube3D size="sm" />
             </div>
             
             {/* Collapse Toggle Button (Desktop) */}
@@ -159,7 +172,7 @@ export const Sidebar: React.FC<{ isOpen: boolean; toggle: () => void; onLogout?:
             )}
 
             <button 
-                onClick={onLogout}
+                onClick={handleLogoutClick}
                 className={`
                     w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white transition-all duration-300 group border border-red-900/30
                     ${isCollapsed ? 'justify-center px-2' : ''}

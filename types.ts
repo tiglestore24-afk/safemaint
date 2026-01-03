@@ -98,7 +98,7 @@ export interface ActiveMaintenance {
   startTime: string;
   artId: string;
   artType: 'ART_EMERGENCIAL' | 'ART_ATIVIDADE';
-  origin: 'PREVENTIVA' | 'CORRETIVA';
+  origin: 'PREVENTIVA' | 'CORRETIVA' | 'DEMANDA_EXTRA';
   status?: 'ANDAMENTO' | 'PAUSADA' | 'AGUARDANDO';
   currentSessionStart?: string;
   accumulatedTime?: number;
@@ -115,7 +115,7 @@ export interface MaintenanceLog {
   duration: string;
   responsible: string;
   status: string;
-  type?: 'PREVENTIVA' | 'CORRETIVA'; // Adicionado para automação do quadro
+  type?: 'PREVENTIVA' | 'CORRETIVA' | 'DEMANDA_EXTRA'; // Adicionado para automação do quadro
 }
 
 export interface ChatMessage {
@@ -132,7 +132,7 @@ export interface OMRecord {
   omNumber: string;
   description: string;
   tag: string;
-  type: 'CORRETIVA' | 'PREVENTIVA';
+  type: 'CORRETIVA' | 'PREVENTIVA' | 'DEMANDA';
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'CONCLUIDA';
   createdAt: string;
   pdfUrl?: string;
@@ -146,6 +146,14 @@ export interface ChecklistTemplateItem {
   legacyId: number;
   section: string;
   description: string;
+}
+
+export interface PendingExtraDemand {
+    id: string;
+    tag: string;
+    description: string;
+    createdAt: string;
+    status: 'PENDENTE';
 }
 
 // Novos status baseados na foto do quadro branco

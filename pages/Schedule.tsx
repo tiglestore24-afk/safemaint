@@ -193,7 +193,7 @@ export const Schedule: React.FC = () => {
                         <Search className="absolute left-3 top-3 text-gray-400" size={16}/>
                         <input 
                             type="text" 
-                            placeholder="FILTRAR OM, TAG OU ATIVIDADE..." 
+                            placeholder="FILTRAR..." 
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                             className="w-full bg-white border border-gray-300 pl-10 pr-4 py-2.5 rounded-xl text-xs font-bold uppercase outline-none focus:border-vale-green focus:ring-1 focus:ring-vale-green shadow-sm transition-all"

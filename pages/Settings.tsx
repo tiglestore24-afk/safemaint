@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { supabase, checkConnection } from '../services/supabase';
-import { Employee, User, OMRecord, RegisteredART, ScheduleItem, DocumentRecord } from '../types';
+import { Employee, User, OMRecord, RegisteredART, ScheduleItem, DocumentRecord, PendingExtraDemand } from '../types';
 import { 
   Save, Database, Users, Shield, 
   BrainCircuit, Trash2,
-  Eye, X, FileText, Cloud, Edit2, Calendar, Eraser, CheckCircle2, Sparkles, Loader2, Copy, Zap, Terminal, RefreshCw, BookOpen, Table, UploadCloud
+  Eye, X, FileText, Cloud, Edit2, Calendar, Eraser, CheckCircle2, Sparkles, Loader2, Copy, Zap, Terminal, RefreshCw, BookOpen, Table, UploadCloud, ClipboardList, Plus
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
@@ -17,14 +17,14 @@ import { useNavigate } from 'react-router-dom';
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
-// ... (GENERATED_SQL CONSTANT REMAINS THE SAME - OMITTED FOR BREVITY, ASSUME IT'S THERE) ...
 const GENERATED_SQL = `
--- --- SCRIPT SETUP TOTAL SAFEMAINT V3 ---
--- RODE ESTE SCRIPT NO 'SQL EDITOR' DO SUPABASE.
+-- ============================================================
+-- SCRIPT SETUP TOTAL SAFEMAINT V4 (ALL TABLES + REALTIME)
+-- ============================================================
 
 -- 1. CRIAÇÃO DAS TABELAS
 CREATE TABLE IF NOT EXISTS users (
-    id text PRIMARY KEY, name text, matricula text, login text, password text, role text
+    id text PRIMARY KEY, name text, matricula text, login text, password text, role text, is_active_session boolean default false
 );
 
 CREATE TABLE IF NOT EXISTS employees (
@@ -32,7 +32,16 @@ CREATE TABLE IF NOT EXISTS employees (
 );
 
 CREATE TABLE IF NOT EXISTS oms (
-    id text PRIMARY KEY, "omNumber" text, tag text, description text, type text, status text, "createdAt" text, "pdfUrl" text, "createdBy" text
+    id text PRIMARY KEY, 
+    "omNumber" text, 
+    tag text, 
+    description text, 
+    type text, 
+    status text, 
+    "createdAt" text, 
+    "pdfUrl" text, 
+    "createdBy" text,
+    "linkedScheduleOm" text
 );
 
 CREATE TABLE IF NOT EXISTS arts (
@@ -67,16 +76,37 @@ CREATE TABLE IF NOT EXISTS availability (
     id text PRIMARY KEY, tag text, "statusMap" jsonb
 );
 
+CREATE TABLE IF NOT EXISTS pending_extra_demands (
+    id text PRIMARY KEY, tag text, description text, "createdAt" text, status text
+);
+
 -- 2. HABILITAR REALTIME (ATUALIZAÇÃO EM TEMPO REAL)
 DO $$
 DECLARE
   t text;
-  tables text[] := ARRAY['users', 'employees', 'oms', 'arts', 'documents', 'schedule', 'active_maintenance', 'history', 'chat_messages', 'checklist_definitions', 'availability'];
+  -- Lista exata de tabelas para Realtime
+  tables text[] := ARRAY[
+    'users', 
+    'employees', 
+    'oms', 
+    'arts', 
+    'documents', 
+    'schedule', 
+    'active_maintenance', 
+    'history', 
+    'chat_messages', 
+    'checklist_definitions', 
+    'availability', 
+    'pending_extra_demands'
+  ];
 BEGIN
   FOREACH t IN ARRAY tables LOOP
     BEGIN
       EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', t);
-    EXCEPTION WHEN duplicate_object THEN NULL; END;
+    EXCEPTION 
+      WHEN duplicate_object THEN NULL; -- Ignora se já estiver adicionada
+      WHEN undefined_object THEN NULL; -- Ignora se a publicação não existir
+    END;
   END LOOP;
 END $$;
 
@@ -84,7 +114,7 @@ END $$;
 DO $$
 DECLARE
   t text;
-  tables text[] := ARRAY['users', 'employees', 'oms', 'arts', 'documents', 'schedule', 'active_maintenance', 'history', 'chat_messages', 'checklist_definitions', 'availability'];
+  tables text[] := ARRAY['users', 'employees', 'oms', 'arts', 'documents', 'schedule', 'active_maintenance', 'history', 'chat_messages', 'checklist_definitions', 'availability', 'pending_extra_demands'];
 BEGIN
   FOREACH t IN ARRAY tables LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
@@ -94,8 +124,8 @@ BEGIN
 END $$;
 
 -- 4. INSERIR DADOS PADRÃO (CHECKLIST MESTRE E USUÁRIO ADMIN)
-INSERT INTO users (id, name, matricula, login, password, role) VALUES
-('default-admin', 'ADMINISTRADOR', '81025901', '81025901', '123', 'ADMIN')
+INSERT INTO users (id, name, matricula, login, password, role, is_active_session) VALUES
+('default-admin', 'ADMINISTRADOR', '81025901', '81025901', '123', 'ADMIN', false)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO checklist_definitions (id, "legacyId", section, description) VALUES
@@ -138,7 +168,7 @@ ON CONFLICT (id) DO NOTHING;
 
 export const Settings: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'OMS' | 'PROCEDURES' | 'SCHEDULE' | 'EMPLOYEES' | 'USERS' | 'DB_LIVE'>('OMS');
+  const [activeTab, setActiveTab] = useState<'OMS' | 'PROCEDURES' | 'SCHEDULE' | 'EMPLOYEES' | 'USERS' | 'DB_LIVE' | 'DEMANDS_REGISTER'>('OMS');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   
@@ -181,7 +211,7 @@ export const Settings: React.FC = () => {
   const [newOmNumber, setNewOmNumber] = useState('');
   const [newOmTag, setNewOmTag] = useState('');
   const [newOmDesc, setNewOmDesc] = useState('');
-  const [newOmType, setNewOmType] = useState<'PREVENTIVA' | 'CORRETIVA'>('PREVENTIVA');
+  const [newOmType, setNewOmType] = useState<'PREVENTIVA' | 'CORRETIVA' | 'DEMANDA'>('PREVENTIVA');
   const [newOmPdf, setNewOmPdf] = useState<string>('');
   const [isExtracting, setIsExtracting] = useState(false);
   
@@ -204,6 +234,10 @@ export const Settings: React.FC = () => {
   const [artCode, setArtCode] = useState('');
   const [artTask, setArtTask] = useState('');
   const [artPdf, setArtPdf] = useState('');
+
+  // Forms - Demands (New Tab)
+  const [demandTag, setDemandTag] = useState('');
+  const [demandActivities, setDemandActivities] = useState<string[]>(['']);
 
   useEffect(() => {
     refresh();
@@ -439,6 +473,7 @@ export const Settings: React.FC = () => {
       setArtCode(''); setArtTask(''); setArtPdf('');
       setWeekNumber('');
       setScheduleText('');
+      setDemandTag(''); setDemandActivities(['']);
   };
   
   // --- HELPER FUNCTION FOR FEEDBACK ---
@@ -663,6 +698,43 @@ export const Settings: React.FC = () => {
       }, "CADASTRANDO MODELO...", "ART NA BIBLIOTECA!");
   };
 
+  // --- PENDING DEMANDS ACTIONS ---
+  const handleAddDemandActivity = () => {
+      setDemandActivities([...demandActivities, '']);
+  };
+
+  const handleRemoveDemandActivity = (index: number) => {
+      const newActivities = demandActivities.filter((_, i) => i !== index);
+      setDemandActivities(newActivities.length ? newActivities : ['']);
+  };
+
+  const handleDemandActivityChange = (index: number, value: string) => {
+      const newActivities = [...demandActivities];
+      newActivities[index] = value.toUpperCase();
+      setDemandActivities(newActivities);
+  };
+
+  const handleSaveDemand = () => {
+      if (!demandTag) { alert('Tag obrigatório'); return; }
+      const validActivities = demandActivities.filter(a => a.trim() !== '');
+      if (validActivities.length === 0) { alert('Adicione ao menos uma atividade'); return; }
+
+      withFeedback(async () => {
+          // PARA CADA ATIVIDADE, CRIA UM CARD INDIVIDUAL (PendingExtraDemand)
+          for (const activity of validActivities) {
+              const demand: PendingExtraDemand = {
+                  id: crypto.randomUUID(),
+                  tag: demandTag.toUpperCase(),
+                  description: activity, // Cada item forma seu card
+                  createdAt: new Date().toISOString(),
+                  status: 'PENDENTE'
+              };
+              await StorageService.savePendingExtraDemand(demand);
+          }
+          resetForms();
+      }, "SALVANDO DEMANDAS...", "DEMANDAS EXPORTADAS!");
+  };
+
   return (
     <div className="max-w-7xl mx-auto pb-10 px-4">
       {/* GLOBAL FEEDBACK MODAL */}
@@ -702,11 +774,12 @@ export const Settings: React.FC = () => {
       <nav className="flex bg-white p-1 rounded-lg mb-6 shadow-sm border border-gray-200 gap-1 overflow-x-auto">
         {[
           {id: 'OMS', label: 'Cadastro OM', icon: <BrainCircuit size={14}/>},
-          {id: 'PROCEDURES', label: 'Biblioteca ARTs (Modelos)', icon: <BookOpen size={14}/>}, 
-          {id: 'SCHEDULE', label: 'Programação (Massa)', icon: <Calendar size={14}/>},
+          {id: 'PROCEDURES', label: 'Biblioteca ARTs', icon: <BookOpen size={14}/>}, 
+          {id: 'SCHEDULE', label: 'Programação', icon: <Calendar size={14}/>},
+          {id: 'DEMANDS_REGISTER', label: 'Cadastro Demandas', icon: <ClipboardList size={14}/>},
           {id: 'EMPLOYEES', label: 'Equipe', icon: <Users size={14}/>},
           {id: 'USERS', label: 'Acessos', icon: <Shield size={14}/>},
-          {id: 'DB_LIVE', label: 'DB ONLINE (LIVE)', icon: <Terminal size={14}/>}
+          {id: 'DB_LIVE', label: 'DB LIVE', icon: <Terminal size={14}/>}
         ].map((tab) => (
             <button key={tab.id} className={`flex-1 px-4 py-2 font-bold text-xs rounded transition-all flex items-center justify-center gap-2 uppercase whitespace-nowrap ${activeTab === tab.id ? 'bg-[#007e7a] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`} onClick={() => { setActiveTab(tab.id as any); setSearchQuery(''); resetForms(); }}> 
               {tab.icon} {tab.label} 
@@ -740,24 +813,53 @@ export const Settings: React.FC = () => {
                             )}
                         </div>
                         <div className="relative">
-                            <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-[#007e7a] outline-none" placeholder="Número OM" />
+                            <input value={newOmNumber} onChange={e => setNewOmNumber(e.target.value)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-[#007e7a] outline-none" placeholder="NÚMERO" />
                             {newOmNumber && !isExtracting && newOmPdf && <Sparkles size={12} className="absolute right-2 top-2.5 text-yellow-500 animate-pulse" />}
                         </div>
-                        <input value={newOmTag} onChange={e => setNewOmTag(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase text-[#007e7a] focus:border-[#007e7a] outline-none" placeholder="TAG EQUIPAMENTO" />
+                        <input value={newOmTag} onChange={e => setNewOmTag(e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1'))} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase text-[#007e7a] focus:border-[#007e7a] outline-none" placeholder="TAG" />
                         <select value={newOmType} onChange={e => setNewOmType(e.target.value as any)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-xs font-bold uppercase focus:border-[#007e7a] outline-none">
                             <option value="PREVENTIVA">PREVENTIVA</option>
                             <option value="CORRETIVA">CORRETIVA</option>
+                            <option value="DEMANDA">DEMANDA</option>
                         </select>
                         <textarea value={newOmDesc} onChange={e => setNewOmDesc(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-xs font-bold h-20 resize-none focus:border-[#007e7a] outline-none" placeholder="DESCRIÇÃO DA ATIVIDADE..." />
                         <button onClick={handleAddOM} disabled={isExtracting} className="w-full bg-[#007e7a] text-white py-3 rounded font-bold text-xs uppercase hover:bg-[#00605d] flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"><Save size={14}/> Salvar na Biblioteca</button>
                     </div>
                   )}
 
+                  {activeTab === 'DEMANDS_REGISTER' && (
+                      <div className="space-y-4 animate-fadeIn">
+                          <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Cadastrar Nova Demanda</h3>
+                          <input 
+                              value={demandTag} 
+                              onChange={e => setDemandTag(e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1'))} 
+                              className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-orange-500 outline-none" 
+                              placeholder="TAG EQUIPAMENTO" 
+                          />
+                          <div className="space-y-2">
+                              <label className="text-[10px] font-bold text-gray-500 uppercase">Lista de Atividades (Cada Item = 1 Card)</label>
+                              {demandActivities.map((act, idx) => (
+                                  <div key={idx} className="flex gap-1">
+                                      <input 
+                                          value={act} 
+                                          onChange={(e) => handleDemandActivityChange(idx, e.target.value)} 
+                                          className="flex-1 bg-gray-50 border border-gray-300 p-2 rounded text-xs font-bold uppercase focus:border-orange-500 outline-none"
+                                          placeholder={`ITEM ${idx + 1}`}
+                                      />
+                                      <button onClick={() => handleRemoveDemandActivity(idx)} className="text-gray-400 hover:text-red-500 p-2"><X size={14}/></button>
+                                  </div>
+                              ))}
+                              <button onClick={handleAddDemandActivity} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 py-2 rounded text-[10px] font-bold uppercase flex items-center justify-center gap-1"><Plus size={12}/> Adicionar Item</button>
+                          </div>
+                          <button onClick={handleSaveDemand} className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded font-bold text-xs uppercase flex items-center justify-center gap-2 shadow-lg"><Save size={14}/> Exportar para Demandas</button>
+                      </div>
+                  )}
+
                   {activeTab === 'SCHEDULE' && (
                     <div className="space-y-4">
                         <div className="space-y-3">
                             <h3 className="font-bold text-gray-700 uppercase text-xs border-b pb-2">Importação em Massa (Excel)</h3>
-                            <input value={weekNumber} onChange={e => setWeekNumber(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="NÚMERO DA SEMANA (EX: 42)" />
+                            <input value={weekNumber} onChange={e => setWeekNumber(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="NÚMERO DA SEMANA" />
                             <div className="bg-blue-50 p-2 rounded text-[9px] text-blue-800">
                                 <strong>COLE AS COLUNAS DO EXCEL (14 COLUNAS):</strong><br/>
                                 FROTA/OM | DESC | D.MIN | D.MAX | PRIOR | PESSOAS | H | D.INI (REF) | D.FIM | CENTRO | H.INI | H.FIM | REC | REC2
@@ -775,8 +877,8 @@ export const Settings: React.FC = () => {
                             <input type="file" accept=".pdf" onChange={(e) => handlePdfUpload(e, 'ART')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                             {isExtracting ? <span className="text-[10px] font-bold text-blue-600">ANALISANDO ARQUIVO...</span> : <span className="text-[10px] font-bold text-blue-500 uppercase">Upload PDF ART</span>}
                         </div>
-                        <input value={artCode} onChange={e => setArtCode(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="Código ART (Ex: 33854)" />
-                        <input value={artTask} onChange={e => setArtTask(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="Tarefa Padrão" />
+                        <input value={artCode} onChange={e => setArtCode(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="CÓDIGO" />
+                        <input value={artTask} onChange={e => setArtTask(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase focus:border-blue-500 outline-none" placeholder="TAREFA PADRÃO" />
                         <button onClick={handleAddART} disabled={isExtracting} className="w-full bg-blue-600 text-white py-3 rounded font-bold text-xs uppercase hover:bg-blue-700 flex items-center justify-center gap-2"><Save size={14}/> Cadastrar Modelo</button>
                     </div>
                   )}
@@ -784,9 +886,9 @@ export const Settings: React.FC = () => {
                   {activeTab === 'EMPLOYEES' && (
                     <div className="space-y-3">
                         <div className="flex justify-between items-center border-b pb-2"><h3 className="font-bold text-gray-700 uppercase text-xs">{editingId ? 'Editando Colaborador' : 'Novo Colaborador'}</h3></div>
-                        <input value={empName} onChange={e => setEmpName(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="Nome" />
-                        <input value={empMatricula} onChange={e => setEmpMatricula(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="Matrícula" />
-                        <input value={empFunction} onChange={e => setEmpFunction(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="Função" />
+                        <input value={empName} onChange={e => setEmpName(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="NOME" />
+                        <input value={empMatricula} onChange={e => setEmpMatricula(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="MATRÍCULA" />
+                        <input value={empFunction} onChange={e => setEmpFunction(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="FUNÇÃO" />
                         {editingId ? (<div className="flex gap-2"><button onClick={resetForms} className="flex-1 bg-gray-200 text-gray-600 py-3 rounded font-bold text-xs uppercase">Cancelar</button><button onClick={handleAddEmployee} className="flex-1 bg-orange-500 text-white py-3 rounded font-bold text-xs uppercase">Atualizar</button></div>) : (<button onClick={handleAddEmployee} className="w-full bg-orange-500 text-white py-3 rounded font-bold text-xs uppercase">Salvar</button>)}
                     </div>
                   )}
@@ -794,9 +896,9 @@ export const Settings: React.FC = () => {
                   {activeTab === 'USERS' && (
                     <div className="space-y-3">
                          <div className="flex justify-between items-center border-b pb-2"><h3 className="font-bold text-gray-700 uppercase text-xs">{editingId ? 'Editando Usuário' : 'Novo Usuário'}</h3></div>
-                        <input value={userName} onChange={e => setUserName(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="Nome Exibição" />
-                        <input value={userLogin} onChange={e => setUserLogin(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="Login / Matrícula" />
-                        <input type="text" value={userPass} onChange={e => setUserPass(e.target.value)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="Senha" />
+                        <input value={userName} onChange={e => setUserName(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="NOME EXIBIÇÃO" />
+                        <input value={userLogin} onChange={e => setUserLogin(e.target.value.toUpperCase())} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="LOGIN / MATRÍCULA" />
+                        <input type="text" value={userPass} onChange={e => setUserPass(e.target.value)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-sm font-bold uppercase" placeholder="SENHA" />
                         <select value={userRole} onChange={e => setUserRole(e.target.value as any)} className="w-full bg-gray-50 border border-gray-300 p-2 rounded text-xs font-bold uppercase">
                             <option value="OPERADOR">Operador</option>
                             <option value="ADMIN">Admin</option>
@@ -823,6 +925,7 @@ export const Settings: React.FC = () => {
                                   <option value="active_maintenance">Active Maintenance (Atividades)</option>
                                   <option value="schedule">Schedule (Programação)</option>
                                   <option value="oms">OMS (Ordens)</option>
+                                  <option value="pending_extra_demands">Pending Demands (Demandas)</option>
                                   <option value="chat_messages">Chat (Mensagens)</option>
                                   <option value="availability">Availability (Disponibilidade)</option>
                                   <option value="users">Users</option>
@@ -861,6 +964,15 @@ export const Settings: React.FC = () => {
                               <br/>Esta visualização é exclusiva para inserção de dados em massa.
                           </p>
                       </div>
+                  ) : activeTab === 'DEMANDS_REGISTER' ? (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-400 p-10 animate-fadeIn">
+                          <ClipboardList size={64} className="mb-4 opacity-20 text-orange-500"/>
+                          <p className="font-black text-sm uppercase tracking-widest text-gray-500">Cadastro de Demandas</p>
+                          <p className="text-[10px] font-bold mt-2 max-w-sm text-center">
+                              Use o formulário à esquerda para registrar demandas extras.
+                              <br/>Cada item na lista criará um card separado na página de Demandas.
+                          </p>
+                      </div>
                   ) : activeTab !== 'DB_LIVE' && (
                       <>
                         <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
@@ -868,7 +980,7 @@ export const Settings: React.FC = () => {
                                 {activeTab === 'OMS' ? 'Biblioteca de OMs' : activeTab === 'PROCEDURES' ? 'CADASTRO DE MODELOS (BIBLIOTECA)' : 'Registros Cadastrados'}
                             </h4>
                             <div className="relative w-64">
-                                <input type="text" placeholder="Filtrar..." value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-3 pr-3 py-2 bg-white border border-gray-300 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a]" />
+                                <input type="text" placeholder="FILTRAR..." value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full pl-3 pr-3 py-2 bg-white border border-gray-300 rounded text-xs font-bold uppercase outline-none focus:border-[#007e7a]" />
                             </div>
                         </div>
 
@@ -896,7 +1008,7 @@ export const Settings: React.FC = () => {
                                 <tbody>
                                     {activeTab === 'OMS' && oms.filter(om => om.omNumber.includes(searchQuery) || om.tag.includes(searchQuery)).map(om => (
                                         <tr key={om.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                                            <td className="p-3"><div className="font-bold text-sm text-gray-800">{om.omNumber}</div><div className={`text-[9px] font-bold px-1.5 py-0.5 rounded inline-block mt-1 ${om.type === 'CORRETIVA' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{om.type}</div></td>
+                                            <td className="p-3"><div className="font-bold text-sm text-gray-800">{om.omNumber}</div><div className={`text-[9px] font-bold px-1.5 py-0.5 rounded inline-block mt-1 ${om.type === 'CORRETIVA' ? 'bg-red-50 text-red-600' : om.type === 'DEMANDA' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>{om.type}</div></td>
                                             <td className="p-3"><div className="font-bold text-xs text-[#007e7a]">{om.tag}</div><div className="text-[10px] text-gray-500 truncate max-w-[200px]">{om.description}</div></td>
                                             <td className="p-3 text-right"><div className="flex justify-end gap-2">{om.pdfUrl && <button onClick={() => setViewingOM(om)} className="p-1.5 text-[#007e7a] hover:bg-teal-50 rounded" title="Ver PDF"><Eye size={14}/></button>}<button onClick={() => handleOpenEditOM(om)} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded" title="Editar"><Edit2 size={14}/></button><button onClick={() => { if(window.confirm('Excluir esta OM?')) StorageService.deleteOM(om.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
                                         </tr>
@@ -987,7 +1099,7 @@ export const Settings: React.FC = () => {
 
       {showSqlModal && (
           <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden border-t-8 border-indigo-600">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] h-[95vh] flex flex-col overflow-hidden border-t-8 border-indigo-600">
                   <div className="bg-gray-50 p-6 border-b flex justify-between items-center shrink-0">
                       <div>
                           <h3 className="text-xl font-black text-gray-800 uppercase flex items-center gap-2">
@@ -1026,13 +1138,13 @@ export const Settings: React.FC = () => {
 
       {isEditOmModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6 border-b-4 border-orange-500">
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 border-b-4 border-orange-500">
                 <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold text-gray-800 uppercase">Editar Ordem</h3><button onClick={() => setIsEditOmModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={20}/></button></div>
                 <div className="mb-4"><div className="border border-dashed border-gray-300 bg-gray-50 rounded p-2 text-center cursor-pointer relative group transition-colors hover:bg-gray-100"><input type="file" accept=".pdf" onChange={(e) => handlePdfUpload(e, 'EDIT_OM')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />{isExtracting ? (<span className="text-[10px] font-bold text-orange-500 animate-pulse">REPROCESSANDO DOCUMENTO...</span>) : (<span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-orange-500">Trocar PDF (Re-extrair)</span>)}</div></div>
                 <div className="space-y-3">
-                    <input value={editingOmData.omNumber || ''} onChange={e => setEditingOmData({...editingOmData, omNumber: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm font-bold uppercase outline-none focus:border-orange-500" placeholder="Número OM" />
+                    <input value={editingOmData.omNumber || ''} onChange={e => setEditingOmData({...editingOmData, omNumber: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm font-bold uppercase outline-none focus:border-orange-500" placeholder="NÚMERO OM" />
                     <input value={editingOmData.tag || ''} onChange={e => setEditingOmData({...editingOmData, tag: e.target.value.toUpperCase()})} className="w-full border border-gray-300 rounded p-2 text-sm font-bold uppercase outline-none focus:border-orange-500" placeholder="TAG" />
-                    <select value={editingOmData.type || 'PREVENTIVA'} onChange={e => setEditingOmData({...editingOmData, type: e.target.value as any})} className="w-full border border-gray-300 rounded p-2 text-xs font-bold uppercase outline-none"><option value="PREVENTIVA">PREVENTIVA</option><option value="CORRETIVA">CORRETIVA</option></select>
+                    <select value={editingOmData.type || 'PREVENTIVA'} onChange={e => setEditingOmData({...editingOmData, type: e.target.value as any})} className="w-full border border-gray-300 rounded p-2 text-xs font-bold uppercase outline-none"><option value="PREVENTIVA">PREVENTIVA</option><option value="CORRETIVA">CORRETIVA</option><option value="DEMANDA">DEMANDA</option></select>
                     <textarea value={editingOmData.description || ''} onChange={e => setEditingOmData({...editingOmData, description: e.target.value.toUpperCase()})} className="w-full border border-gray-300 rounded p-2 text-xs font-bold h-20 resize-none outline-none focus:border-orange-500" placeholder="DESCRIÇÃO..." />
                     <button onClick={handleSaveEditOM} disabled={isExtracting} className="w-full bg-orange-500 text-white py-3 rounded font-bold text-xs uppercase hover:bg-orange-600 flex items-center justify-center gap-2"><Save size={16}/> Salvar Alterações</button>
                 </div>
@@ -1042,7 +1154,7 @@ export const Settings: React.FC = () => {
 
       {(viewingOM || viewingART) && (
         <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4">
-            <div className="w-full h-full max-w-4xl bg-white flex flex-col rounded-lg overflow-hidden">
+            <div className="w-full h-[95vh] max-w-[95vw] bg-white flex flex-col rounded-lg overflow-hidden">
                 <div className="bg-gray-900 text-white p-2 flex justify-between items-center shrink-0">
                     <span className="font-bold text-xs">
                         VISUALIZAR DOCUMENTO - {viewingOM ? viewingOM.omNumber : viewingART?.code}

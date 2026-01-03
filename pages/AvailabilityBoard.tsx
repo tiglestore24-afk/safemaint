@@ -3,15 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { AvailabilityRecord, AvailabilityStatus, ScheduleItem, MaintenanceLog, ActiveMaintenance } from '../types';
 import { BackButton } from '../components/BackButton';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Edit2, X, Star, Eye, CheckCircle, Database, RefreshCw } from 'lucide-react';
-
-const INITIAL_FLEET = [
-    'CA5302', 'CA5304', 'CA5305', 'CA5306', 'CA5307', 'CA5309', 'CA5310', 
-    'CA5312', 'CA5316', 'CA5317', 'CA5318', 'CA5322', 'CA5324', 'CA5330'
-];
+import { ChevronLeft, ChevronRight, Plus, Trash2, Edit2, X, Star, Eye, CheckCircle, Database, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const STATUS_OPTIONS: { id: AvailabilityStatus; label: string; icon: React.ReactNode; color: string }[] = [
-    { id: 'PREV', label: 'PREVENTIVA (PROG)', icon: <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-black" title="Preventiva"></div>, color: 'text-black' },
+    { id: 'PREV', label: 'PREVENTIVA (PROG/CARD)', icon: <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-black" title="Preventiva"></div>, color: 'text-black' },
     { id: 'CORRETIVA', label: 'CORRETIVA (CARD)', icon: <div className="w-4 h-4 rounded-full bg-red-600 shadow-sm border border-red-800" title="Corretiva"></div>, color: 'text-red-600' },
     { id: 'SEM_FALHA', label: 'SEM FALHA', icon: <div className="w-3 h-3 rounded-full bg-green-500/50" title="Disponível"></div>, color: 'text-[#007e7a]' },
     { id: 'META', label: 'META PÓS PREV.', icon: <Star size={16} fill="#007e7a" className="text-[#007e7a]" />, color: 'text-[#007e7a]' },
@@ -28,6 +23,7 @@ export const AvailabilityBoard: React.FC = () => {
     const [history, setHistory] = useState<MaintenanceLog[]>([]);
     const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
     const [activeTasks, setActiveTasks] = useState<ActiveMaintenance[]>([]);
+    const [displayRows, setDisplayRows] = useState<AvailabilityRecord[]>([]);
     
     const [currentDate, setCurrentDate] = useState(new Date());
     const [editMode, setEditMode] = useState(false);
@@ -43,18 +39,52 @@ export const AvailabilityBoard: React.FC = () => {
 
     const loadData = () => {
         const storedRecords = StorageService.getAvailability();
-        setHistory(StorageService.getHistory());
-        setSchedule(StorageService.getSchedule());
-        setActiveTasks(StorageService.getActiveMaintenances());
+        const storedHistory = StorageService.getHistory();
+        const storedSchedule = StorageService.getSchedule();
+        const storedActive = StorageService.getActiveMaintenances();
 
-        if (storedRecords.length === 0) {
-            const initial = INITIAL_FLEET.map(tag => ({ id: crypto.randomUUID(), tag, statusMap: {} }));
-            StorageService.saveAvailability(initial);
-            setRecords(initial);
-        } else {
-            setRecords(storedRecords);
-        }
+        setHistory(storedHistory);
+        setSchedule(storedSchedule);
+        setActiveTasks(storedActive);
+        setRecords(storedRecords);
     };
+
+    // LÓGICA DE UNIFICAÇÃO (MANUAL + AUTOMÁTICO)
+    useEffect(() => {
+        // 1. Tags Manuais
+        const manualTags = new Set(records.map(r => r.tag));
+        
+        // 2. Tags de Cards Ativos
+        const activeTags = new Set<string>();
+        activeTasks.forEach(t => {
+            if(t.header.tag) activeTags.add(t.header.tag.trim().toUpperCase());
+        });
+
+        // 3. Tags de Histórico
+        const historyTags = new Set<string>();
+        history.forEach(h => {
+            if(h.tag) historyTags.add(h.tag.trim().toUpperCase());
+        });
+
+        // 4. Tags de Agenda
+        const scheduleTags = new Set<string>();
+        schedule.forEach(s => {
+            const tag = s.frotaOm.split(/[\/\n\s]/)[0].trim().toUpperCase();
+            if (tag.length > 2) scheduleTags.add(tag);
+        });
+
+        // Merge de todas as fontes
+        const allUniqueTags = Array.from(new Set([...manualTags, ...activeTags, ...historyTags, ...scheduleTags])).sort();
+
+        // Cria registros virtuais para o que não está salvo manualmente
+        const mergedRows: AvailabilityRecord[] = allUniqueTags.map(tag => {
+            const existing = records.find(r => r.tag === tag);
+            if (existing) return existing;
+            return { id: `auto-${tag}`, tag: tag, statusMap: {} }; // Registro Virtual
+        });
+
+        setDisplayRows(mergedRows);
+    }, [records, activeTasks, history, schedule]);
 
     const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
     
@@ -74,14 +104,17 @@ export const AvailabilityBoard: React.FC = () => {
         
         const statuses: Set<AvailabilityStatus> = new Set();
 
+        // Normaliza a Tag da linha para comparação (remove espaços e garante uppercase)
+        const normalizedRowTag = tag.trim().toUpperCase();
+
         // 1. CORRETIVA (Cards Abertos ou Histórico)
         const hasActiveCorrective = activeTasks.some(t => 
-            t.header.tag === tag && 
+            t.header.tag && t.header.tag.trim().toUpperCase() === normalizedRowTag && 
             (t.origin === 'CORRETIVA' || t.artType === 'ART_EMERGENCIAL') && 
             t.startTime.startsWith(dateIso)
         );
         const hasHistoryCorrective = history.some(h => 
-            h.tag === tag && 
+            h.tag && h.tag.trim().toUpperCase() === normalizedRowTag && 
             h.type === 'CORRETIVA' && 
             h.startTime.startsWith(dateIso)
         );
@@ -90,32 +123,41 @@ export const AvailabilityBoard: React.FC = () => {
             statuses.add('CORRETIVA');
         }
 
-        // 2. PROGRAMAÇÃO (Schedule)
-        // Lógica: Extrai a primeira parte da FrotaOm (ex: "CA5302" de "CA5302 / OM123") e compara com o TAG da linha.
-        // Compara a Data de Início (dateStart - Coluna 8) com a data da célula.
+        // 2. PREVENTIVA (Cards Abertos - NOVA LÓGICA)
+        // Se houver um CARD de preventiva aberto, também preenche o quadro
+        const hasActivePreventiveCard = activeTasks.some(t => 
+            t.header.tag && t.header.tag.trim().toUpperCase() === normalizedRowTag && 
+            t.origin === 'PREVENTIVA' && 
+            t.startTime.startsWith(dateIso)
+        );
+        const hasHistoryPreventive = history.some(h => 
+            h.tag && h.tag.trim().toUpperCase() === normalizedRowTag && 
+            h.type === 'PREVENTIVA' && 
+            h.startTime.startsWith(dateIso)
+        );
+
+        if (hasActivePreventiveCard || hasHistoryPreventive) {
+            statuses.add('PREV');
+        }
+
+        // 3. PROGRAMAÇÃO (Schedule)
+        // Verifica se a agenda tem algum item para esta TAG e DATA
         const scheduleItemsForDay = schedule.filter(s => {
-            const scheduleTag = s.frotaOm.split(/[\/\n\s]/)[0].trim().toUpperCase(); // Pega a primeira parte (CA...)
-            return scheduleTag === tag && s.dateStart === dateStrBR;
+            const scheduleTag = s.frotaOm.split(/[\/\n\s]/)[0].trim().toUpperCase(); 
+            return scheduleTag === normalizedRowTag && s.dateStart === dateStrBR;
         });
 
         if (scheduleItemsForDay.length > 0) {
             scheduleItemsForDay.forEach(item => {
-                const desc = item.description.toUpperCase();
-                
-                if (desc.includes('PNEU')) {
-                    statuses.add('PNEUS');
-                } else if (desc.includes('INSPE')) {
-                    statuses.add('INSPECAO');
-                } else if (desc.includes('LUB')) {
-                    statuses.add('LS');
-                } else {
-                    // Se não for pneu, inspeção ou lubrificação, assume PREVENTIVA padrão
-                    statuses.add('PREV');
-                }
+                const desc = item.description ? item.description.toUpperCase() : '';
+                if (desc.includes('PNEU')) statuses.add('PNEUS');
+                else if (desc.includes('INSPE')) statuses.add('INSPECAO');
+                else if (desc.includes('LUB')) statuses.add('LS');
+                else statuses.add('PREV');
             });
         }
 
-        // 3. SEM FALHA (Default para passado se não tiver nada)
+        // 4. SEM FALHA (Default para passado se não tiver nada)
         const today = new Date();
         today.setHours(0,0,0,0);
         if (statuses.size === 0 && targetDate < today) {
@@ -126,10 +168,10 @@ export const AvailabilityBoard: React.FC = () => {
     };
 
     const renderCellContent = (manualStatuses: AvailabilityStatus[], autoStatuses: AvailabilityStatus[]) => {
-        // MERGE: Combina manuais e automáticos removendo duplicatas e 'SEM_FALHA' se houver outros eventos
+        // MERGE: Combina manuais e automáticos
         let combined = Array.from(new Set([...manualStatuses, ...autoStatuses]));
         
-        // Se houver qualquer evento real (Auto ou Manual), remove o "Sem Falha" automático visualmente para limpar
+        // Prioridade visual: Se houver evento real, remove o "Sem Falha"
         if (combined.length > 1 && combined.includes('SEM_FALHA')) {
             combined = combined.filter(s => s !== 'SEM_FALHA');
         }
@@ -149,8 +191,6 @@ export const AvailabilityBoard: React.FC = () => {
     const handleCellClick = (recId: string, day: number, currentStatuses: AvailabilityStatus[]) => {
         if(editMode) {
             setSelectedCell({ recId, day, currentStatuses });
-        } else {
-            // Visualização apenas - Sem ação ou talvez abrir detalhes no futuro
         }
     };
 
@@ -158,7 +198,14 @@ export const AvailabilityBoard: React.FC = () => {
         if (!selectedCell) return;
         const keyDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCell.day).padStart(2, '0')}`;
         
-        const updatedRecords = records.map(rec => {
+        // Se for uma linha virtual (auto), cria registro real agora
+        let targetRecords = [...records];
+        if (selectedCell.recId.startsWith('auto-')) {
+            const tag = selectedCell.recId.replace('auto-', '');
+            targetRecords.push({ id: selectedCell.recId, tag: tag, statusMap: {} });
+        }
+
+        const updatedRecords = targetRecords.map(rec => {
             if (rec.id === selectedCell.recId) {
                 const newStatusMap = { ...rec.statusMap };
                 let currentList = [...(newStatusMap[keyDate] || [])];
@@ -182,20 +229,29 @@ export const AvailabilityBoard: React.FC = () => {
         });
 
         StorageService.saveAvailability(updatedRecords);
+        setRecords(updatedRecords); 
         
-        // Atualiza a seleção atual para refletir mudança imediata no modal
+        // Atualiza seleção
         const updatedRec = updatedRecords.find(r => r.id === selectedCell.recId);
-        const autoStatuses = getAutoStatuses(updatedRec!.tag, selectedCell.day);
-        const manualStatuses = updatedRec!.statusMap[keyDate] || [];
-        const combined = Array.from(new Set([...manualStatuses, ...autoStatuses])); // Visual merge for modal logic if needed
-        
-        setSelectedCell({ ...selectedCell, currentStatuses: combined });
+        if(updatedRec) {
+            const autoStatuses = getAutoStatuses(updatedRec.tag, selectedCell.day);
+            const manualStatuses = updatedRec.statusMap[keyDate] || [];
+            const combined = Array.from(new Set([...manualStatuses, ...autoStatuses]));
+            setSelectedCell({ ...selectedCell, currentStatuses: combined });
+        }
     };
 
     const handleAddTag = () => {
         if (!newTag.trim()) return;
+        // Verifica duplicidade
+        if (records.some(r => r.tag === newTag.toUpperCase())) {
+            alert('Este equipamento já existe na tabela.');
+            return;
+        }
         const newRecord: AvailabilityRecord = { id: crypto.randomUUID(), tag: newTag.toUpperCase(), statusMap: {} };
-        StorageService.saveAvailability([...records, newRecord]);
+        const newRecs = [...records, newRecord];
+        StorageService.saveAvailability(newRecs);
+        setRecords(newRecs);
         setNewTag(''); setIsAddModalOpen(false);
     };
 
@@ -234,60 +290,75 @@ export const AvailabilityBoard: React.FC = () => {
                 </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm border border-gray-300 overflow-hidden relative">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-300 overflow-hidden relative min-h-[200px]">
                 <div className="bg-[#007e7a] text-white text-center py-1.5 font-bold uppercase text-[10px] tracking-widest flex justify-center items-center gap-2 shadow-md z-30 relative">
                     <Database size={12} /> Mapa de Ocorrências & Programação
                 </div>
 
-                <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full border-collapse">
-                        <thead>
-                            <tr className="bg-gray-100">
-                                <th className="p-2 text-left text-[10px] font-black uppercase border border-gray-300 w-28 sticky left-0 bg-gray-100 z-20 text-gray-600 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Tag Frota</th>
-                                {daysArray.map(day => (
-                                    <th key={day} className={`p-1 text-center text-[9px] font-bold border border-gray-300 w-9 min-w-[36px] ${day > daysInMonth ? 'bg-gray-200 text-gray-300' : 'text-gray-700'}`}>
-                                        {day}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {records.map((rec) => (
-                                <tr key={rec.id} className="hover:bg-teal-50/20 transition-colors group">
-                                    <td className="p-2 border border-gray-300 font-black text-[10px] text-gray-700 bg-white sticky left-0 z-10 flex justify-between items-center shadow-[2px_0_5px_rgba(0,0,0,0.05)] group-hover:bg-teal-50/50">
-                                        <span>{rec.tag}</span>
-                                        {editMode && <button onClick={() => StorageService.saveAvailability(records.filter(r => r.id !== rec.id))} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={12}/></button>}
-                                    </td>
-                                    {daysArray.map(day => {
-                                        const isActiveDay = day <= daysInMonth;
-                                        // Key date for Manual overrides
-                                        const keyDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                        
-                                        const manualStatuses = rec.statusMap[keyDate] || [];
-                                        const autoStatuses = isActiveDay ? getAutoStatuses(rec.tag, day) : [];
-                                        
-                                        // Combined for passing to click handler
-                                        const combined = Array.from(new Set([...manualStatuses, ...autoStatuses]));
-
-                                        return (
-                                            <td 
-                                                key={day} 
-                                                onClick={() => isActiveDay && handleCellClick(rec.id, day, combined)} 
-                                                className={`
-                                                    border border-gray-300 text-center align-middle relative
-                                                    ${isActiveDay ? (editMode ? 'cursor-pointer hover:bg-orange-50' : 'hover:bg-gray-50') : 'bg-gray-100'}
-                                                `} 
-                                                style={{ height: '32px' }}
-                                            >
-                                                {isActiveDay && renderCellContent(manualStatuses, autoStatuses)}
-                                            </td>
-                                        );
-                                    })}
+                {displayRows.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                        <Database size={32} className="opacity-20 mb-2" />
+                        <p className="font-bold text-xs uppercase tracking-widest">Nenhuma frota cadastrada</p>
+                        <p className="text-[10px] mt-1">Adicione ou aguarde integração com Cards</p>
+                        <button onClick={() => setIsAddModalOpen(true)} className="mt-4 text-[#007e7a] text-[10px] font-black uppercase hover:underline border border-[#007e7a] px-4 py-2 rounded-lg hover:bg-teal-50">
+                            + Adicionar Equipamento
+                        </button>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full border-collapse">
+                            <thead>
+                                <tr className="bg-gray-100">
+                                    <th className="p-2 text-left text-[10px] font-black uppercase border border-gray-300 w-28 sticky left-0 bg-gray-100 z-20 text-gray-600 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Tag Frota</th>
+                                    {daysArray.map(day => (
+                                        <th key={day} className={`p-1 text-center text-[9px] font-bold border border-gray-300 w-9 min-w-[36px] ${day > daysInMonth ? 'bg-gray-200 text-gray-300' : 'text-gray-700'}`}>
+                                            {day}
+                                        </th>
+                                    ))}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {displayRows.map((rec) => (
+                                    <tr key={rec.id} className="hover:bg-teal-50/20 transition-colors group">
+                                        <td className="p-2 border border-gray-300 font-black text-[10px] text-gray-700 bg-white sticky left-0 z-10 flex justify-between items-center shadow-[2px_0_5px_rgba(0,0,0,0.05)] group-hover:bg-teal-50/50">
+                                            <span>{rec.tag}</span>
+                                            {editMode && !rec.id.startsWith('auto-') && <button onClick={() => { 
+                                                const newRecs = records.filter(r => r.id !== rec.id);
+                                                StorageService.saveAvailability(newRecs);
+                                                setRecords(newRecs);
+                                            }} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={12}/></button>}
+                                        </td>
+                                        {daysArray.map(day => {
+                                            const isActiveDay = day <= daysInMonth;
+                                            // Key date for Manual overrides
+                                            const keyDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                            
+                                            const manualStatuses = rec.statusMap[keyDate] || [];
+                                            const autoStatuses = isActiveDay ? getAutoStatuses(rec.tag, day) : [];
+                                            
+                                            // Combined for passing to click handler
+                                            const combined = Array.from(new Set([...manualStatuses, ...autoStatuses]));
+
+                                            return (
+                                                <td 
+                                                    key={day} 
+                                                    onClick={() => isActiveDay && handleCellClick(rec.id, day, combined)} 
+                                                    className={`
+                                                        border border-gray-300 text-center align-middle relative
+                                                        ${isActiveDay ? (editMode ? 'cursor-pointer hover:bg-orange-50' : 'hover:bg-gray-50') : 'bg-gray-100'}
+                                                    `} 
+                                                    style={{ height: '32px' }}
+                                                >
+                                                    {isActiveDay && renderCellContent(manualStatuses, autoStatuses)}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
             
             {/* LEGENDA DE STATUS */}
@@ -344,7 +415,7 @@ export const AvailabilityBoard: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-xl p-6 max-w-xs w-full border-t-4 border-[#007e7a] shadow-2xl">
                         <h3 className="text-lg font-black mb-4 uppercase text-gray-800">Novo Equipamento</h3>
-                        <input value={newTag} onChange={e => setNewTag(e.target.value.toUpperCase())} className="w-full border-2 border-gray-200 rounded-lg p-3 font-bold uppercase focus:border-[#007e7a] outline-none mb-4 text-sm" placeholder="TAG..." autoFocus />
+                        <input value={newTag} onChange={e => setNewTag(e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1'))} className="w-full border-2 border-gray-200 rounded-lg p-3 font-bold uppercase focus:border-[#007e7a] outline-none mb-4 text-sm" placeholder="DIGITE O TAG..." autoFocus />
                         <div className="flex gap-2">
                             <button onClick={() => setIsAddModalOpen(false)} className="flex-1 py-3 bg-gray-100 font-bold text-gray-500 rounded-lg text-xs uppercase hover:bg-gray-200">Cancelar</button>
                             <button onClick={handleAddTag} disabled={!newTag} className="flex-1 py-3 bg-[#007e7a] text-white font-bold rounded-lg text-xs uppercase hover:bg-[#00605d]">Salvar</button>

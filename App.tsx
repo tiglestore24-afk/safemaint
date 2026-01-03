@@ -14,14 +14,16 @@ import { Archive } from './pages/Archive';
 import { Trash } from './pages/Trash';
 import { Report } from './pages/Report';
 import { Settings } from './pages/Settings';
-import { Chat } from './pages/Chat';
+import { ExtraDemands } from './pages/ExtraDemands'; // Importado
 import { OMManagement } from './pages/OMManagement';
 import { StorageService } from './services/storage';
+import { SplashScreen } from './components/SplashScreen';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     // Check initial auth
@@ -60,9 +62,15 @@ const App: React.FC = () => {
       window.location.href = '/';
   };
 
-  if (isLoading) return null; // Ou um spinner simples de loading inicial
+  // 1. SPLASH SCREEN (Prioridade Máxima Visual)
+  if (showSplash) {
+      return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
 
-  // SE NÃO ESTIVER AUTENTICADO, RENDERIZA APENAS O LOGIN (Tela Inicial)
+  // 2. LOADING STATE (Se o app ainda estiver carregando lógica pesada, opcional)
+  if (isLoading) return null;
+
+  // 3. NÃO AUTENTICADO -> LOGIN
   if (!isAuthenticated) {
       return (
           <HashRouter>
@@ -73,7 +81,7 @@ const App: React.FC = () => {
       );
   }
 
-  // SE ESTIVER AUTENTICADO, RENDERIZA O APP COMPLETO
+  // 4. APP AUTENTICADO
   return (
     <HashRouter>
       <div className="flex h-screen overflow-hidden bg-gray-100">
@@ -102,7 +110,7 @@ const App: React.FC = () => {
                 <Route path="/archive" element={<Archive />} />
                 <Route path="/trash" element={<Trash />} />
                 <Route path="/report" element={<Report />} />
-                <Route path="/chat" element={<Chat />} />
+                <Route path="/extra-demands" element={<ExtraDemands />} /> 
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/dashboard" />} />
             </Routes>

@@ -59,8 +59,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               setError('Credenciais inválidas');
               setIsLoading(false);
             }
-        } catch(e) {
-            setError('Erro de conexão ou dados incorretos');
+        } catch(e: any) {
+            if (e.message === "ALREADY_LOGGED_IN") {
+                setError('USUÁRIO JÁ LOGADO NO SISTEMA');
+            } else {
+                setError('Erro de conexão ou dados incorretos');
+            }
             setIsLoading(false);
         }
     }, 800);
@@ -197,7 +201,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                                 value={newName}
                                 onChange={(e) => setNewName(e.target.value)}
                                 className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-vale-green focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
-                                placeholder="SEU NOME"
+                                placeholder=""
                                 required
                                 disabled={isLoading}
                             />
@@ -218,7 +222,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                             value={isRegistering ? newMatricula : user}
                             onChange={(e) => isRegistering ? setNewMatricula(e.target.value) : setUser(e.target.value)}
                             className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-vale-green focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
-                            placeholder="810259XX"
+                            placeholder=""
                             required
                             disabled={isLoading}
                         />
@@ -238,7 +242,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                             value={isRegistering ? newPass : pass}
                             onChange={(e) => isRegistering ? setNewPass(e.target.value) : setPass(e.target.value)}
                             className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-vale-green focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
-                            placeholder="••••••"
+                            placeholder=""
                             required
                             disabled={isLoading}
                         />
@@ -257,7 +261,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                                 value={confirmPass}
                                 onChange={(e) => setConfirmPass(e.target.value)}
                                 className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-vale-green focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
-                                placeholder="••••••"
+                                placeholder=""
                                 required
                                 disabled={isLoading}
                             />

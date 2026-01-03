@@ -352,7 +352,7 @@ export const Report: React.FC = () => {
                              </div>
                              <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">TAG</label>
-                                <input type="text" value={equipment} onChange={e => setEquipment(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-black text-lg text-vale-green" />
+                                <input type="text" value={equipment} onChange={e => setEquipment(e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1'))} className="w-full border-2 border-gray-300 rounded p-2 font-black text-lg text-vale-green" />
                              </div>
                              <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">DATA</label>

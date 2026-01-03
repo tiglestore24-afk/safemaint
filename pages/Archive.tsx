@@ -2,10 +2,20 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord, SignatureRecord } from '../types';
-import { Eye, Download, Trash2, X, FileText, CheckCircle, Clipboard, Filter, QrCode, Cloud, Archive as ArchiveIcon, Calendar, Hash, Tag, Printer, ShieldAlert } from 'lucide-react';
+import { Eye, Download, Trash2, X, FileText, CheckCircle, Clipboard, Filter, QrCode, Cloud, Archive as ArchiveIcon, Calendar, Hash, Tag, Printer, ShieldAlert, MapPin, AlertTriangle, AlertOctagon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BackButton } from '../components/BackButton';
 import { Logo } from '../components/Logo';
+
+// LISTA DE RISCOS PADRÃO PARA TRADUÇÃO DOS IDS NA VISUALIZAÇÃO
+const RISK_LIST = [
+    "CONTATO COM SUPERFÍCIES CORTANTES/PERFURANTE", "PRENSAMENTO DE DEDOS OU MÃOS", "QUEDA DE PEÇAS/ESTRUTURAS/EQUIPAMENTOS",
+    "PRENSAMENTO OU AGARRAMENTO DO CORPO", "ATROPELAMENTO/ESMAGAMENTO POR VEÍCULOS", "QUEDA, TROPEÇO OU ESCORREGÃO",
+    "ANIMAIS PEÇONHENTOS/INSETOS", "DESMORONAMENTOS DE PILHAS", "QUEDA DE PLATAFORMA OU ESCADAS", "ARCO E/OU CHOQUE ELÉTRICO",
+    "FONTES DE ENERGIA (HIDRÁULICA, PNEUMÁTICA)", "EXPOSIÇÃO A VAPORES, CONDENSADOS OU QUENTES", "GASES, VAPORES, POEIRAS OU FUMOS",
+    "PRODUTOS QUÍMICOS OU QUEIMADURAS", "PROJEÇÃO DE MATERIAIS NA FACE/OLHOS", "CONDIÇÕES CLIMÁTICAS ADVERSAS",
+    "QUEDA DE HOMEM AO MAR/AFOGAMENTO", "INTERFERÊNCIA ENTRE EQUIPES", "EXCESSO OU DEFICIÊNCIA DE ILUMINAÇÃO", "OUTRAS SITUAÇÕES DE RISCO"
+];
 
 interface ListItemProps {
   doc: DocumentRecord;
@@ -20,7 +30,7 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onShowQR, 
     const getTypeStyles = () => {
         if (isArchived) return { text: 'text-gray-400', bg: 'bg-gray-400', border: 'border-gray-200' };
         switch(doc.type) {
-            case 'ART_EMERGENCIAL': return { text: 'text-red-600', bg: 'bg-red-600', border: 'border-red-100', icon: <ShieldAlert size={14}/> };
+            case 'ART_EMERGENCIAL': return { text: 'text-pink-600', bg: 'bg-pink-600', border: 'border-pink-100', icon: <AlertOctagon size={14}/> };
             case 'ART_ATIVIDADE': return { text: 'text-blue-600', bg: 'bg-blue-600', border: 'border-blue-100', icon: <FileText size={14}/> };
             case 'CHECKLIST': return { text: 'text-vale-green', bg: 'bg-vale-green', border: 'border-vale-green/20', icon: <CheckCircle size={14}/> };
             case 'RELATORIO': return { text: 'text-orange-500', bg: 'bg-orange-500', border: 'border-orange-100', icon: <Clipboard size={14}/> };
@@ -85,7 +95,7 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onShowQR, 
 
 export const Archive: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'ARTS' | 'CHECKLISTS' | 'RELATORIOS'>('ARTS');
+  const [activeTab, setActiveTab] = useState<'ARTS' | 'DEMANDAS' | 'CHECKLISTS' | 'RELATORIOS'>('ARTS');
   const [recentDocs, setRecentDocs] = useState<DocumentRecord[]>([]);
   const [archivedDocs, setArchivedDocs] = useState<DocumentRecord[]>([]);
   const [viewDoc, setViewDoc] = useState<DocumentRecord | null>(null);
@@ -131,9 +141,20 @@ export const Archive: React.FC = () => {
     let filtered: DocumentRecord[] = allDocs.filter(d => d.status !== 'LIXEIRA' && d.status !== 'RASCUNHO');
 
     switch(activeTab) {
-        case 'ARTS': filtered = filtered.filter(d => d.type === 'ART_EMERGENCIAL' || d.type === 'ART_ATIVIDADE'); break;
-        case 'CHECKLISTS': filtered = filtered.filter(d => d.type === 'CHECKLIST'); break;
-        case 'RELATORIOS': filtered = filtered.filter(d => d.type === 'RELATORIO'); break;
+        case 'ARTS': 
+            // Mostra apenas ART_ATIVIDADE (Padrão)
+            filtered = filtered.filter(d => d.type === 'ART_ATIVIDADE'); 
+            break;
+        case 'DEMANDAS': 
+            // Mostra apenas ART_EMERGENCIAL (Gerado por Demandas/Corretivas)
+            filtered = filtered.filter(d => d.type === 'ART_EMERGENCIAL'); 
+            break;
+        case 'CHECKLISTS': 
+            filtered = filtered.filter(d => d.type === 'CHECKLIST'); 
+            break;
+        case 'RELATORIOS': 
+            filtered = filtered.filter(d => d.type === 'RELATORIO'); 
+            break;
     }
 
     const recent = filtered.filter(d => d.status !== 'ARQUIVADO');
@@ -169,22 +190,20 @@ export const Archive: React.FC = () => {
   const handleShowQR = (e: React.MouseEvent, doc: DocumentRecord) => { e.stopPropagation(); setShowQr(doc); };
 
   const renderFullDocument = (doc: DocumentRecord) => {
-      // If manual upload exists (PDF/Image) or attached PDF from ART
-      if (doc.content?.manualFileUrl) {
+      // If manual upload exists (PDF/Image) AND it is a RELATORIO type, show full screen.
+      // NOTE: ART_ATIVIDADE manualFileUrl is handled differently (embedded in layout below)
+      if (doc.type === 'RELATORIO' && doc.content?.manualFileUrl) {
           return (
               <div className="flex flex-col h-full bg-gray-200">
-                  {/* HEADER PARA PDF ORIGINAL - GARANTE VISIBILIDADE DE OM E ART */}
                   <div className="bg-gray-900 text-white p-3 flex justify-between items-center shrink-0 border-b border-gray-700">
                       <div>
                           <span className="font-black text-sm uppercase tracking-widest text-vale-green block mb-1">DOCUMENTO ORIGINAL ANEXO</span>
                           <span className="font-bold text-xs uppercase flex gap-4">
                               {doc.header.om && <span>OM: <span className="text-white">{doc.header.om}</span></span>}
                               {doc.header.tag && <span>TAG: <span className="text-white">{doc.header.tag}</span></span>}
-                              {doc.content.artNumber && <span>ART: <span className="text-white">{doc.content.artNumber}</span></span>}
                           </span>
                       </div>
                   </div>
-                  
                   <div className="flex-1 relative bg-gray-200 overflow-hidden">
                       {doc.content.manualFileUrl.includes('image') ? (
                           <div className="flex items-center justify-center h-full overflow-auto">
@@ -197,10 +216,6 @@ export const Archive: React.FC = () => {
               </div>
           );
       }
-
-      const riskList = doc.type === 'ART_EMERGENCIAL' && doc.content?.checklistRisks 
-        ? Object.entries(doc.content.checklistRisks).filter(([_, val]: any) => val.checked)
-        : [];
 
       // Default HTML Render for Printing
       return (
@@ -267,8 +282,9 @@ export const Archive: React.FC = () => {
                       </table>
                   </div>
               ) : (
-                  // STANDARD DOCUMENT RENDER
+                  // STANDARD DOCUMENT RENDER (ARTs, CHECKLISTS)
                   <>
+                    {/* Common Header */}
                     <div className="flex justify-between items-center border-b-4 border-[#007e7a] pb-4 mb-6">
                         <div>
                             <h1 className="text-2xl font-black text-[#111827] uppercase tracking-tight">SAFEMAINT</h1>
@@ -280,17 +296,13 @@ export const Archive: React.FC = () => {
                         </div>
                     </div>
 
+                    {/* Data Block */}
                     <div className="grid grid-cols-4 gap-4 mb-6 bg-gray-50 p-4 rounded border border-gray-200 text-xs">
                         <div><span className="block font-black text-gray-400 uppercase">DATA</span><span className="font-bold">{new Date(doc.createdAt).toLocaleDateString()}</span></div>
                         <div><span className="block font-black text-gray-400 uppercase">HORA</span><span className="font-bold">{new Date(doc.createdAt).toLocaleTimeString().slice(0,5)}</span></div>
                         <div><span className="block font-black text-gray-400 uppercase">OM</span><span className="font-black text-gray-800">{doc.header.om}</span></div>
                         <div><span className="block font-black text-gray-400 uppercase">TAG</span><span className="font-black text-gray-800">{doc.header.tag}</span></div>
-                        {doc.content?.artNumber && (
-                            <div className="col-span-4 border-t border-gray-200 pt-2 mt-1">
-                                <span className="block font-black text-gray-400 uppercase">ART VINCULADA</span>
-                                <span className="font-bold text-gray-700 uppercase">{doc.content.artNumber} - {doc.content.artName}</span>
-                            </div>
-                        )}
+                        
                         <div className="col-span-4 border-t border-gray-200 pt-2 mt-1">
                             <span className="block font-black text-gray-400 uppercase">ATIVIDADE / DESCRIÇÃO</span>
                             <span className="font-bold text-gray-700 uppercase">{doc.header.description}</span>
@@ -300,42 +312,101 @@ export const Archive: React.FC = () => {
                     <div className="mb-6">
                         <h2 className="font-black text-lg border-l-4 border-[#007e7a] pl-3 uppercase mb-4">{doc.type.replace('_', ' ')}</h2>
                         
+                        {/* --- RENDERIZAÇÃO ESPECÍFICA: ART EMERGENCIAL (COM TODOS OS DETALHES) --- */}
                         {doc.type === 'ART_EMERGENCIAL' && (
                             <div className="space-y-6">
+                                {/* 1. RISCOS IDENTIFICADOS (DETALHADO) */}
                                 <div>
-                                    <h3 className="font-bold text-xs uppercase bg-gray-100 p-2 mb-2">Riscos Identificados & Controles</h3>
+                                    <h3 className="font-black text-xs uppercase bg-gray-100 p-2 mb-2 flex items-center gap-2 border-b-2 border-red-200">
+                                        <ShieldAlert size={14} className="text-red-600"/> 
+                                        Análise Preliminar de Risco (APR) - Detalhado
+                                    </h3>
                                     <table className="w-full text-xs border border-gray-300">
-                                        <thead className="bg-gray-200 font-bold">
+                                        <thead className="bg-gray-100 font-bold">
                                             <tr>
-                                                <th className="p-2 text-left border-r border-gray-300 w-10">#</th>
-                                                <th className="p-2 text-left border-r border-gray-300">Risco</th>
-                                                <th className="p-2 text-left">Medida de Controle</th>
+                                                <th className="p-2 text-left border-r border-gray-300 w-10">ID</th>
+                                                <th className="p-2 text-left border-r border-gray-300">Descrição do Risco (Padrão)</th>
+                                                <th className="p-2 text-left">Medida de Controle Aplicada</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {riskList.length > 0 ? riskList.map(([id, val]: any) => (
-                                                <tr key={id} className="border-t border-gray-300">
-                                                    <td className="p-2 border-r border-gray-300 text-center font-bold">{id}</td>
-                                                    <td className="p-2 border-r border-gray-300 font-bold text-red-700">RISCO #{id} (Ver Tabela Padrão)</td>
-                                                    <td className="p-2 uppercase">{val.control || 'N/A'}</td>
-                                                </tr>
-                                            )) : <tr><td colSpan={3} className="p-4 text-center italic">Nenhum risco marcado</td></tr>}
+                                            {doc.content?.checklistRisks && Object.entries(doc.content.checklistRisks).filter(([_, val]: any) => val.checked).length > 0 ? (
+                                                Object.entries(doc.content.checklistRisks)
+                                                    .filter(([_, val]: any) => val.checked)
+                                                    .map(([idStr, val]: any) => {
+                                                        const id = parseInt(idStr);
+                                                        const riskDesc = RISK_LIST[id - 1] || "RISCO NÃO CATALOGADO";
+                                                        return (
+                                                            <tr key={id} className="border-t border-gray-300">
+                                                                <td className="p-2 border-r border-gray-300 text-center font-bold">{id}</td>
+                                                                <td className="p-2 border-r border-gray-300 font-bold text-gray-800">{riskDesc}</td>
+                                                                <td className="p-2 uppercase font-mono text-gray-600">{val.control || 'PADRÃO'}</td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                            ) : (
+                                                <tr><td colSpan={3} className="p-4 text-center italic">Nenhum risco crítico selecionado.</td></tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {/* 2. MAPEAMENTO 360 (TEXTUAL) */}
                                 {doc.content?.quadrantRisks && (
-                                    <div className="grid grid-cols-4 gap-2 text-center text-xs font-bold border border-gray-300 p-4 rounded">
-                                        {Object.entries(doc.content.quadrantRisks).map(([quad, risks]: any) => (
-                                            <div key={quad} className="bg-gray-50 p-2 rounded border border-gray-200">
-                                                <div className="text-gray-400 text-[10px] mb-1">{quad}</div>
-                                                <div className="text-red-600">{risks.length > 0 ? risks.join(', ') : '-'}</div>
-                                            </div>
-                                        ))}
+                                    <div>
+                                        <h3 className="font-black text-xs uppercase bg-gray-100 p-2 mb-2 flex items-center gap-2 border-b-2 border-blue-200">
+                                            <MapPin size={14} className="text-blue-600"/> 
+                                            Mapeamento de Entorno (Radar 360º)
+                                        </h3>
+                                        <div className="grid grid-cols-4 gap-2 text-center text-xs font-bold border border-gray-300 p-4 rounded bg-white">
+                                            {Object.entries(doc.content.quadrantRisks).map(([quad, risks]: any) => (
+                                                <div key={quad} className="bg-gray-50 p-3 rounded border border-gray-200 flex flex-col justify-between h-full">
+                                                    <div className="text-gray-400 text-[10px] uppercase tracking-widest mb-2 border-b border-gray-200 pb-1">{quad}</div>
+                                                    <div className="text-red-600 font-black text-sm">
+                                                        {risks.length > 0 ? risks.map((r: number) => `#${r}`).join(', ') : '-'}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="text-[9px] text-gray-400 mt-1 uppercase text-center">* Números correspondem aos IDs da tabela de riscos acima.</p>
                                     </div>
                                 )}
                             </div>
                         )}
 
+                        {/* --- RENDERIZAÇÃO ESPECÍFICA: ART ATIVIDADE (COM PDF DESTACADO) --- */}
+                        {doc.type === 'ART_ATIVIDADE' && (
+                            <div className="space-y-6">
+                                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 text-center shadow-sm">
+                                    <h3 className="text-xs font-black text-blue-400 uppercase tracking-[0.2em] mb-2">DOCUMENTO ORIGINAL VINCULADO</h3>
+                                    
+                                    <div className="flex flex-col items-center gap-2 mb-4">
+                                        <span className="text-4xl font-black text-blue-900 tracking-tighter">
+                                            {doc.content?.artNumber || 'N/D'}
+                                        </span>
+                                        <span className="text-sm font-bold text-gray-600 uppercase bg-white px-3 py-1 rounded-full border border-gray-200 shadow-sm">
+                                            {doc.content?.artName || 'PROCEDIMENTO PADRÃO'}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex justify-center gap-4">
+                                        <div className="flex items-center gap-2 text-green-600 bg-green-100 px-4 py-2 rounded-lg border border-green-200">
+                                            <CheckCircle size={18} />
+                                            <span className="text-[10px] font-black uppercase">ARQUIVADO & LIDO</span>
+                                        </div>
+                                        
+                                        {doc.content?.manualFileUrl && (
+                                            <a href={doc.content.manualFileUrl} download className="flex items-center gap-2 text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg border border-blue-800 transition-colors shadow-sm no-print">
+                                                <Download size={18} />
+                                                <span className="text-[10px] font-black uppercase">BAIXAR PDF ORIGINAL</span>
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* RENDERIZAÇÃO: CHECKLIST */}
                         {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
                             <div>
                                 <table className="w-full text-[10px] border border-gray-300">
@@ -364,6 +435,7 @@ export const Archive: React.FC = () => {
                             </div>
                         )}
 
+                        {/* RENDERIZAÇÃO: RELATÓRIO GERAL */}
                         {doc.type === 'RELATORIO' && !doc.content?.scheduleItems && doc.content && (
                             <div className="space-y-4 text-xs">
                                 <div className="p-4 bg-gray-50 border border-gray-200 rounded">
@@ -379,8 +451,11 @@ export const Archive: React.FC = () => {
                         )}
                     </div>
 
+                    {/* ASSINATURAS */}
                     <div className="mt-8 pt-6 border-t-2 border-gray-200 break-inside-avoid">
-                        <h4 className="text-xs font-black mb-4 uppercase text-gray-400 tracking-widest">Assinaturas Digitais Validadas</h4>
+                        <h4 className="text-xs font-black mb-4 uppercase text-gray-400 tracking-widest flex items-center gap-2">
+                            <CheckCircle size={14} /> Assinaturas Digitais Validadas
+                        </h4>
                         <div className="grid grid-cols-3 gap-6">
                             {doc.signatures.map(sig => (
                                 <div key={sig.id} className="text-center border border-gray-200 p-2 rounded bg-gray-50">
@@ -421,6 +496,7 @@ export const Archive: React.FC = () => {
       <nav className="flex bg-gray-100 p-1 rounded-xl mb-6 shadow-inner overflow-x-auto gap-1 border border-gray-200">
         {[
           { id: 'ARTS', label: 'ARTs', icon: <FileText size={14}/> },
+          { id: 'DEMANDAS', label: 'Demandas', icon: <AlertOctagon size={14}/> },
           { id: 'CHECKLISTS', label: 'Checklists', icon: <CheckCircle size={14}/> },
           { id: 'RELATORIOS', label: 'Relatórios', icon: <Clipboard size={14}/> }
         ].map((tab) => (

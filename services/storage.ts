@@ -1,5 +1,5 @@
 
-import { DocumentRecord, Employee, RegisteredART, User, ScheduleItem, ActiveMaintenance, MaintenanceLog, ChatMessage, OMRecord, ChecklistTemplateItem, AvailabilityRecord } from '../types';
+import { DocumentRecord, Employee, RegisteredART, User, ScheduleItem, ActiveMaintenance, MaintenanceLog, ChatMessage, OMRecord, ChecklistTemplateItem, AvailabilityRecord, PendingExtraDemand } from '../types';
 import { supabase } from './supabase';
 
 export interface NotificationItem {
@@ -8,6 +8,7 @@ export interface NotificationItem {
     title: string;
     message: string;
     date: string;
+    source?: 'OM' | 'DEMAND'; // Added to distinguish source
 }
 
 const KEYS = {
@@ -21,7 +22,8 @@ const KEYS = {
   OMS: 'safemaint_oms',
   CHECKLIST_TEMPLATE: 'safemaint_checklist_template',
   AVAILABILITY: 'safemaint_availability', 
-  USERS: 'safemaint_users'
+  USERS: 'safemaint_users',
+  PENDING_DEMANDS: 'safemaint_pending_demands'
 };
 
 const triggerUpdate = () => {
@@ -118,7 +120,9 @@ export const StorageService = {
           { key: KEYS.USERS, table: 'users' },
           { key: KEYS.HISTORY, table: 'history' },
           { key: KEYS.AVAILABILITY, table: 'availability' },
-          { key: KEYS.CHAT, table: 'chat_messages' }
+          { key: KEYS.CHAT, table: 'chat_messages' },
+          { key: KEYS.PENDING_DEMANDS, table: 'pending_extra_demands' },
+          { key: KEYS.CHECKLIST_TEMPLATE, table: 'checklist_definitions' } // Adicionado
       ];
 
       tablesMap.forEach(config => {
@@ -188,7 +192,8 @@ export const StorageService = {
           { local: KEYS.USERS, remote: 'users' },
           { local: KEYS.CHECKLIST_TEMPLATE, remote: 'checklist_definitions' },
           { local: KEYS.AVAILABILITY, remote: 'availability' },
-          { local: KEYS.CHAT, remote: 'chat_messages' } 
+          { local: KEYS.CHAT, remote: 'chat_messages' },
+          { local: KEYS.PENDING_DEMANDS, remote: 'pending_extra_demands' }
       ];
 
       for (const t of tables) {
@@ -223,17 +228,28 @@ export const StorageService = {
 
   getPendingSyncCount: () => 0,
 
+  // VALIDAÇÃO DE LOGIN ÚNICO
   validateUser: async (login: string, pass: string): Promise<User | null> => {
       try {
           if (navigator.onLine) {
+              // Verifica se usuário existe e senha confere
               const { data, error } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
               
               if (!error && data) {
+                  // VERIFICAÇÃO DE SESSÃO ATIVA (Login Único)
+                  if (data.is_active_session) {
+                      throw new Error("ALREADY_LOGGED_IN");
+                  }
+
+                  // Marca como logado
+                  await supabase.from('users').update({ is_active_session: true }).eq('id', data.id);
+
                   StorageService.saveUser(data); 
                   return data as User;
               }
 
               if (!data) {
+                  // Fallback para admin inicial
                   const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
                   if (count === 0 && login.toUpperCase() === '81025901' && pass === '123') {
                       const defaultAdmin: User = {
@@ -249,10 +265,26 @@ export const StorageService = {
                   }
               }
           }
-      } catch (e) {}
+      } catch (e: any) {
+          if (e.message === "ALREADY_LOGGED_IN") throw e;
+          console.error("Login offline fallback", e);
+      }
 
+      // Offline fallback
       const localUsers = StorageService.getUsers();
       return localUsers.find(u => u.login === login.toUpperCase() && u.password === pass) || null;
+  },
+
+  // LOGOUT COM LIBERAÇÃO DE SESSÃO
+  logoutUser: async (login: string) => {
+      if (navigator.onLine && login) {
+          try {
+              // Libera a flag is_active_session
+              await supabase.from('users').update({ is_active_session: false }).eq('login', login.toUpperCase());
+          } catch(e) {
+              console.error("Erro ao fazer logout remoto", e);
+          }
+      }
   },
 
   registerUser: async (newUser: User): Promise<{ success: boolean; message: string }> => {
@@ -410,12 +442,53 @@ export const StorageService = {
     try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
     if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
   },
-  resumeMaintenance: async (id: string) => {
+  
+  linkOmToMaintenance: async (taskId: string, omId: string, omNumber: string, omDesc: string) => {
+      const tasks = StorageService.getActiveMaintenances();
+      const task = tasks.find(t => t.id === taskId);
+      
+      if (task) {
+          // Atualiza a Tarefa
+          task.omId = omId;
+          task.header.om = omNumber;
+          // Preserva descrição manual da demanda extra se necessário, ou concatena
+          task.header.description = `${task.header.description} | ${omDesc}`; 
+          
+          trySaveLocal(KEYS.ACTIVE, tasks);
+          
+          // Atualiza o Documento (ART) vinculado à tarefa
+          if (task.artId) {
+              const docs = StorageService.getDocuments();
+              const doc = docs.find(d => d.id === task.artId);
+              if (doc) {
+                  doc.header.om = omNumber;
+                  doc.header.description = task.header.description;
+                  trySaveLocal(KEYS.DOCS, docs, ['manualFileUrl']);
+                  try { await supabase.from('documents').upsert(doc); } catch(e) {}
+              }
+          }
+
+          triggerUpdate();
+          
+          // Atualiza o Status da OM para Em Andamento
+          await StorageService.updateOMStatus(omId, 'EM_ANDAMENTO');
+          
+          // Sincroniza a task
+          try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
+      }
+  },
+
+  resumeMaintenance: async (id: string, newOwner?: string) => {
       const tasks = StorageService.getActiveMaintenances();
       const task = tasks.find(t => t.id === id);
       if (task) {
           task.status = 'ANDAMENTO';
           task.currentSessionStart = new Date().toISOString();
+          
+          // SE fornecido um novo dono (quem clicou retomar), atualiza a propriedade da task
+          if (newOwner) {
+              task.openedBy = newOwner;
+          }
           
           trySaveLocal(KEYS.ACTIVE, tasks);
           triggerUpdate();
@@ -541,9 +614,31 @@ export const StorageService = {
   },
   getNotifications: (): NotificationItem[] => {
       const oms = StorageService.getOMs();
-      return oms.filter(o => o.status === 'PENDENTE').map(o => ({
-          id: o.id, type: o.type === 'CORRETIVA' ? 'URGENT' : 'INFO',
-          title: `OM: ${o.omNumber}`, message: `${o.tag} - ${o.description}`, date: new Date(o.createdAt).toLocaleDateString()
+      const demands = StorageService.getPendingExtraDemands();
+
+      const omNotifs: NotificationItem[] = oms.filter(o => o.status === 'PENDENTE').map(o => ({
+          id: o.id, 
+          type: (o.type === 'CORRETIVA' || o.type === 'DEMANDA' ? 'URGENT' : 'INFO') as 'URGENT' | 'INFO',
+          title: `OM: ${o.omNumber}`, 
+          message: `${o.tag} - ${o.description || 'Sem descrição'}`, // Mensagem com TAG e Desc
+          date: o.createdAt, 
+          source: 'OM'
+      }));
+
+      const demandNotifs: NotificationItem[] = demands.map(d => ({
+          id: d.id,
+          type: 'URGENT' as 'URGENT' | 'INFO',
+          title: `DEMANDA EXTRA`,
+          message: `${d.tag} - ${d.description || 'Sem descrição'}`,
+          date: d.createdAt,
+          source: 'DEMAND'
+      }));
+
+      const all = [...demandNotifs, ...omNotifs];
+      // Ordenação correta por data (mais recente primeiro)
+      return all.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(n => ({
+          ...n,
+          date: new Date(n.date).toLocaleDateString('pt-BR') // Formata para exibição
       }));
   },
   getAvailability: (): AvailabilityRecord[] => JSON.parse(localStorage.getItem(KEYS.AVAILABILITY) || '[]'),
@@ -585,5 +680,22 @@ export const StorageService = {
       window.dispatchEvent(new Event('safemaint_chat_update'));
       try { await supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'); } catch(e) {}
   },
+  
+  // --- DEMANDAS EXTRAS PENDENTES ---
+  getPendingExtraDemands: (): PendingExtraDemand[] => JSON.parse(localStorage.getItem(KEYS.PENDING_DEMANDS) || '[]'),
+  savePendingExtraDemand: async (demand: PendingExtraDemand) => {
+      const list = StorageService.getPendingExtraDemands();
+      list.push(demand);
+      trySaveLocal(KEYS.PENDING_DEMANDS, list);
+      triggerUpdate();
+      try { await supabase.from('pending_extra_demands').upsert(demand); } catch(e) {}
+  },
+  deletePendingExtraDemand: async (id: string) => {
+      const list = StorageService.getPendingExtraDemands().filter(d => d.id !== id);
+      trySaveLocal(KEYS.PENDING_DEMANDS, list);
+      triggerUpdate();
+      try { await supabase.from('pending_extra_demands').delete().eq('id', id); } catch(e) {}
+  },
+
   runRetentionPolicy: () => {}
 };
