@@ -1,13 +1,13 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StorageService, NotificationItem } from '../services/storage';
+import { StorageService } from '../services/storage';
 import { ActiveMaintenance, MaintenanceLog, OMRecord, DocumentRecord, RegisteredART } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { 
   Clock, AlertOctagon, PauseCircle, 
-  StopCircle, Bell, X, Activity, 
-  ShieldCheck, WifiOff, Database, Wrench, PlayCircle, Timer, Lock, 
-  Volume2, VolumeX, Eye, Info, CheckSquare, CloudLightning, FileText, Box, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Calendar, Link as LinkIcon, Search, ClipboardList, Loader2
+  StopCircle, X, Activity, 
+  ShieldCheck, WifiOff, Wrench, PlayCircle, Timer, Lock, 
+  Volume2, VolumeX, FileText, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Link as LinkIcon, Search, ClipboardList, Loader2, Info, CheckSquare
 } from 'lucide-react';
 import { checkConnection } from '../services/supabase';
 
@@ -61,8 +61,7 @@ export const Dashboard: React.FC = () => {
   const [activeTasks, setActiveTasks] = useState<ActiveMaintenance[]>([]);
   const [history, setHistory] = useState<MaintenanceLog[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [showNotifications, setShowNotifications] = useState(false);
+  
   const [closingTask, setClosingTask] = useState<ActiveMaintenance | null>(null);
   
   // Viewer State (Generic for OM or ART)
@@ -82,9 +81,7 @@ export const Dashboard: React.FC = () => {
   const [omSearch, setOmSearch] = useState('');
   
   const [currentUser, setCurrentUser] = useState('');
-  const [currentRole, setCurrentRole] = useState('');
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem('safemaint_sound_muted') === 'true');
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const refreshData = useCallback(() => {
     const tasks = StorageService.getActiveMaintenances();
@@ -97,17 +94,12 @@ export const Dashboard: React.FC = () => {
     setAllDocs(docs);
     setAllArts(arts);
     setHistory(StorageService.getHistory());
-    setNotifications(StorageService.getNotifications());
   }, []);
 
   useEffect(() => {
     const user = localStorage.getItem('safemaint_user');
-    const role = localStorage.getItem('safemaint_role');
     if(user) setCurrentUser(user.toUpperCase());
-    if(role) setCurrentRole(role.toUpperCase());
     
-    audioRef.current = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-
     refreshData();
     const validateConn = async () => setIsOnline(await checkConnection());
     validateConn();
@@ -208,21 +200,6 @@ export const Dashboard: React.FC = () => {
       refreshData();
   };
 
-  const handleNotificationClick = (n: NotificationItem) => {
-      if (n.source === 'DEMAND') {
-          navigate('/extra-demands');
-          setShowNotifications(false);
-          return;
-      }
-      
-      const omsList = StorageService.getOMs();
-      const om = omsList.find(o => o.id === n.id);
-      if (om && om.pdfUrl) {
-          setViewingDoc({ url: om.pdfUrl, title: om.omNumber, type: 'OM', id: om.id });
-          setShowNotifications(false);
-      }
-  };
-
   return (
     <div className="max-w-[1600px] mx-auto pb-10">
       {/* HEADER */}
@@ -254,32 +231,6 @@ export const Dashboard: React.FC = () => {
             <button onClick={toggleMute} className={`p-2.5 rounded-lg border transition-all ${isMuted ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-white text-[#007e7a] border-[#007e7a]/30 shadow-sm'}`}>
                 {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
-            <div className="relative">
-                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2.5 bg-white rounded-lg border border-gray-200 relative hover:bg-gray-50 transition-colors shadow-sm">
-                    <Bell size={18} className="text-gray-600" />
-                    {notifications.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-bounce">{notifications.length}</span>}
-                </button>
-                {showNotifications && (
-                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-[9999] overflow-hidden ring-1 ring-black/5 animate-fadeIn">
-                        <div className="bg-gray-50 p-3 flex justify-between items-center border-b">
-                            <span className="font-black text-[10px] uppercase text-gray-500 tracking-wider">Notificações ({notifications.length})</span>
-                            <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
-                        </div>
-                        <div className="max-h-80 overflow-y-auto custom-scrollbar">
-                            {notifications.length === 0 ? <div className="p-6 text-center text-gray-400 text-[10px] font-bold uppercase">Sem alertas pendentes</div> : notifications.map(n => (
-                                <div key={n.id} onClick={() => handleNotificationClick(n)} className="p-3 border-b border-gray-50 cursor-pointer hover:bg-blue-50 transition-colors group">
-                                    <div className="flex justify-between mb-1">
-                                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${n.type === 'URGENT' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{n.type}</span>
-                                        <span className="text-[9px] text-gray-400">{n.date}</span>
-                                    </div>
-                                    <p className="text-xs font-black text-gray-800 truncate group-hover:text-blue-700">{n.title}</p>
-                                    <p className="text-[10px] font-bold text-gray-500 line-clamp-2 leading-tight mt-0.5 group-hover:text-gray-600 uppercase">{n.message}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
         </div>
       </div>
 
