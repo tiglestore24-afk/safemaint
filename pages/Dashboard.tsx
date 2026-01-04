@@ -183,7 +183,8 @@ export const Dashboard: React.FC = () => {
 
   const handleConfirmLink = async (om: OMRecord) => {
       if(!linkTargetTaskId) return;
-      await StorageService.linkOmToMaintenance(linkTargetTaskId, om.id, om.omNumber, om.description);
+      // CRUCIAL: Passa o TAG da OM para garantir atualização
+      await StorageService.linkOmToMaintenance(linkTargetTaskId, om.id, om.omNumber, om.description, om.tag);
       setIsLinkingOm(false);
       setLinkTargetTaskId('');
   };
@@ -331,15 +332,18 @@ export const Dashboard: React.FC = () => {
 
                         const needsOmLink = task.header.om === 'DEMANDA-EXTRA';
 
-                        // --- LÓGICA ROBUSTA PARA PDF ---
-                        // 1. Tenta pegar da OM Vinculada
+                        // --- LÓGICA ROBUSTA PARA PDF E TAG ---
                         const linkedOm = allOms.find(o => o.id === task.omId);
+                        
+                        // FORÇAR TAG DA OM VINCULADA (Se existir)
+                        // Isso garante que mesmo se a tarefa começou com tag genérica, ao vincular, exibe o correto.
+                        const displayTag = linkedOm ? linkedOm.tag : task.header.tag;
+
                         let pdfUrl = linkedOm?.pdfUrl;
                         let pdfTitle = linkedOm?.omNumber || 'DOCUMENTO ORIGINAL';
                         let pdfType = 'OM';
                         let docId = linkedOm?.id || '';
 
-                        // 2. Se não achou na OM, tenta pegar da ART Vinculada (Procedimento Padrão)
                         if (!pdfUrl && task.artId) {
                             const linkedDoc = allDocs.find(d => d.id === task.artId);
                             if (linkedDoc?.content?.artId) {
@@ -353,7 +357,6 @@ export const Dashboard: React.FC = () => {
                             }
                         }
 
-                        // Has PDF = either has URL locally OR has an ID to fetch from server
                         const hasPdf = !!pdfUrl || !!docId;
 
                         return (
@@ -421,7 +424,7 @@ export const Dashboard: React.FC = () => {
                                         
                                         <div className="flex-1 text-center md:text-left w-full">
                                             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EQUIPAMENTO & DESCRIÇÃO</p>
-                                            <p className="text-base font-black text-[#007e7a] uppercase leading-none mb-1">{task.header.tag}</p>
+                                            <p className="text-base font-black text-[#007e7a] uppercase leading-none mb-1">{displayTag}</p>
                                             <p className="text-xs font-medium text-gray-600 uppercase truncate whitespace-pre-wrap">{task.header.description || 'Sem descrição'}</p>
                                         </div>
                                     </div>

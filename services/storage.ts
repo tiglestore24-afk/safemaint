@@ -235,10 +235,16 @@ export const StorageService = {
                   
                   const merged = [...data];
                   
-                  // Preserva itens locais que ainda não subiram (opcional, mas seguro)
+                  // LOGICA DE PRESERVAÇÃO DE DADOS LOCAIS NÃO SINCRONIZADOS
+                  // Se existir localmente mas não no servidor, mantemos (para Active Maintenance é crucial)
                   localData.forEach((lItem: any) => {
                       if (!remoteIds.has(lItem.id)) {
-                          // merged.push(lItem); // Comentado para forçar a verdade do servidor na inicialização
+                          if (t.local === KEYS.ACTIVE) {
+                              // Se for tarefa ativa, NUNCA apaga se não estiver no servidor ainda
+                              // Isso previne que a tarefa suma do dashboard se a internet falhar no start
+                              merged.push(lItem);
+                          }
+                          // Outras tabelas podem ter lógica diferente se necessário
                       }
                   });
 
@@ -463,16 +469,29 @@ export const StorageService = {
   getActiveMaintenances: (): ActiveMaintenance[] => JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]'),
   getActiveMaintenanceById: (id: string) => StorageService.getActiveMaintenances().find(m => m.id === id),
   startMaintenance: async (task: ActiveMaintenance) => {
+    // 1. SALVAR LOCALMENTE PRIMEIRO
     const tasks = StorageService.getActiveMaintenances();
-    tasks.push(task);
-    trySaveLocal(KEYS.ACTIVE, tasks);
-    triggerUpdate();
+    // Evita duplicatas se já existir (mesmo ID)
+    const existingIdx = tasks.findIndex(t => t.id === task.id);
+    if (existingIdx > -1) tasks[existingIdx] = task; else tasks.push(task);
     
-    try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
+    trySaveLocal(KEYS.ACTIVE, tasks);
+    triggerUpdate(); // Atualiza a UI imediatamente
+    
+    // 2. TENTAR SALVAR NO SERVIDOR
+    // O UPSERT deve lidar com o ID. Se a coluna scheduleId não existir no DB, pode dar erro.
+    // O try/catch previne crash do app, e a lógica de initialSync modificada previne delete local posterior.
+    try { 
+        const { error } = await supabase.from('active_maintenance').upsert(task);
+        if (error) console.error("Supabase active_maintenance error:", error);
+    } catch(e) {
+        console.error("Erro ao salvar active_maintenance no Supabase", e);
+    }
+    
     if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
   },
   
-  linkOmToMaintenance: async (taskId: string, omId: string, omNumber: string, omDesc: string) => {
+  linkOmToMaintenance: async (taskId: string, omId: string, omNumber: string, omDesc: string, omTag: string) => {
       const tasks = StorageService.getActiveMaintenances();
       const task = tasks.find(t => t.id === taskId);
       
@@ -480,6 +499,9 @@ export const StorageService = {
           // Atualiza a Tarefa
           task.omId = omId;
           task.header.om = omNumber;
+          // FORÇA ATUALIZAÇÃO DO TAG PARA O DA OM VINCULADA
+          task.header.tag = omTag;
+          
           // Preserva descrição manual da demanda extra se necessário, ou concatena
           task.header.description = `${task.header.description} | ${omDesc}`; 
           
@@ -491,6 +513,7 @@ export const StorageService = {
               const doc = docs.find(d => d.id === task.artId);
               if (doc) {
                   doc.header.om = omNumber;
+                  doc.header.tag = omTag; // Atualiza Tag no Documento também
                   doc.header.description = task.header.description;
                   trySaveLocal(KEYS.DOCS, docs, ['manualFileUrl']);
                   try { await supabase.from('documents').upsert(doc); } catch(e) {}

@@ -67,10 +67,10 @@ export const Schedule: React.FC = () => {
           return;
       }
 
-      // Lógica de Extração e Busca de OM
+      // Lógica de Extração (Defensive Coding)
       let omNumber = '';
       let tag = '';
-      const fullText = item.frotaOm.toUpperCase();
+      const fullText = (item.frotaOm || '').toUpperCase();
 
       // Tenta extrair TAG e OM via Regex ou Split
       // Ex: "CA5302 / 12345678" ou "12345678"
@@ -92,26 +92,13 @@ export const Schedule: React.FC = () => {
           tag = fullText.split('/')[0].trim();
       }
 
-      // BUSCA AUTOMÁTICA NO BANCO DE OMs
-      const allOms = StorageService.getOMs();
-      const existingOm = allOms.find(o => o.omNumber === omNumber && o.status !== 'CONCLUIDA');
-
+      // NAVEGA PARA ART COM DADOS BRUTOS
+      // A tela de ART fará a validação obrigatória de vínculo (Search & Link)
       const params = new URLSearchParams();
-      
-      if (existingOm) {
-          // SE ACHOU A OM CADASTRADA, VINCULA PELO ID
-          params.append('omId', existingOm.id);
-          params.append('om', existingOm.omNumber);
-          params.append('tag', existingOm.tag); // Usa a TAG correta da OM cadastrada
-          params.append('desc', existingOm.description || item.description); // Prioriza descrição da OM
-      } else {
-          // SE NÃO ACHOU, LEVA O TEXTO DA AGENDA
-          params.append('om', omNumber);
-          params.append('tag', tag);
-          params.append('desc', item.description || 'Manutenção Programada');
-      }
-      
-      params.append('scheduleId', item.id); // VÍNCULO CRUCIAL PARA SUMIR DA AGENDA
+      params.append('om', omNumber);
+      params.append('tag', tag);
+      params.append('desc', item.description || 'Manutenção Programada');
+      params.append('scheduleId', item.id); // VÍNCULO CRUCIAL PARA SUMIR DA AGENDA APÓS INÍCIO
       
       navigate(`/art-atividade?${params.toString()}`);
   };
@@ -145,8 +132,6 @@ export const Schedule: React.FC = () => {
 
   const filteredAndPaginatedItems = useMemo(() => {
     // Filtragem para remover itens que já estão em execução (Visualmente somem da lista disponível)
-    // Opcional: Se quiser ver eles bloqueados, remova o filtro !activeScheduleIds.has(item.id)
-    // Conforme pedido: "APOS INICIAR ELA SUMIRAR DA PAGINA DE AGENDA"
     const visibleItems = scheduleItems.filter(item => !activeScheduleIds.has(item.id));
 
     let list = [];
@@ -157,7 +142,7 @@ export const Schedule: React.FC = () => {
     } else {
         for (let i = 0; i < visibleItems.length; i++) {
             const item = visibleItems[i];
-            if (item.frotaOm?.includes(q) || item.description?.includes(q)) {
+            if ((item.frotaOm && item.frotaOm.includes(q)) || (item.description && item.description.includes(q))) {
                 list.push(item);
             }
         }

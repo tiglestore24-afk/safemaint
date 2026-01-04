@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { CommonHeader } from '../components/CommonHeader';
 import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
-import { HeaderData, DocumentRecord, RegisteredART, SignatureRecord, ActiveMaintenance } from '../types';
+import { HeaderData, DocumentRecord, RegisteredART, SignatureRecord, ActiveMaintenance, OMRecord } from '../types';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { FileText, Eye, CheckCircle, X, ShieldCheck, Save, Download, ShieldAlert, ArrowRight, BookOpen, Loader2 } from 'lucide-react';
+import { FileText, Eye, CheckCircle, X, ShieldCheck, Save, Download, ShieldAlert, ArrowRight, BookOpen, Loader2, Link as LinkIcon, Search, Database, Lock } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 
@@ -19,7 +19,7 @@ export const ARTAtividade: React.FC = () => {
   });
   
   const [omId, setOmId] = useState<string | undefined>(undefined);
-  const [scheduleId, setScheduleId] = useState<string | undefined>(undefined); // Novo state
+  const [scheduleId, setScheduleId] = useState<string | undefined>(undefined); 
   const [registeredARTs, setRegisteredARTs] = useState<RegisteredART[]>([]);
   const [selectedART, setSelectedART] = useState<RegisteredART | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -27,19 +27,17 @@ export const ARTAtividade: React.FC = () => {
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   
-  // Feedback States (Replaced custom overlay with standard modal logic)
+  // SCHEDULE LINKING STATES
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [matchingOms, setMatchingOms] = useState<OMRecord[]>([]);
+  const [linkSearchQuery, setLinkSearchQuery] = useState('');
+  
+  // Feedback States 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
     setRegisteredARTs(StorageService.getARTs());
-    
-    if (location.state) {
-        const stateData = location.state as any;
-        setHeader(prev => ({ ...prev, ...stateData }));
-        if (stateData.omId) setOmId(stateData.omId);
-        // Tenta pegar scheduleId do state (navegação direta) ou params
-    } 
     
     // Check params for schedule data
     const paramOm = searchParams.get('om');
@@ -48,8 +46,29 @@ export const ARTAtividade: React.FC = () => {
     const paramScheduleId = searchParams.get('scheduleId');
     const paramOmId = searchParams.get('omId');
 
-    if (paramScheduleId) setScheduleId(paramScheduleId);
-    if (paramOmId) setOmId(paramOmId);
+    if (paramScheduleId) {
+        setScheduleId(paramScheduleId);
+        // SE VIER DA AGENDA E AINDA NÃO TIVER OM VINCULADA, ABRE O MODAL
+        if (!paramOmId) {
+            setShowLinkModal(true);
+            // Pre-fill search with OM number from Schedule
+            if (paramOm) {
+                setLinkSearchQuery(paramOm);
+                // Perform Auto-Search
+                const allOms = StorageService.getOMs();
+                // Match criteria: OM Number OR Tag matches
+                const matches = allOms.filter(o => 
+                    o.omNumber.includes(paramOm) || 
+                    (paramTag && o.tag.includes(paramTag))
+                );
+                setMatchingOms(matches);
+            }
+        } else {
+            setOmId(paramOmId);
+        }
+    } else if (paramOmId) {
+        setOmId(paramOmId);
+    }
 
     if (paramOm || paramTag) {
         const now = new Date();
@@ -61,7 +80,7 @@ export const ARTAtividade: React.FC = () => {
             time: now.toTimeString().slice(0,5)
         }));
     }
-  }, [searchParams, location]);
+  }, [searchParams]);
 
   useEffect(() => {
       if (selectedART?.pdfUrl && showPreviewModal) {
@@ -97,6 +116,39 @@ export const ARTAtividade: React.FC = () => {
       setShowPreviewModal(false);
   };
 
+  const handleLinkOm = (om: OMRecord) => {
+      // --- VALIDAÇÃO RIGOROSA: OM AGENDA vs OM BANCO ---
+      if (scheduleId) {
+          // Limpa strings para comparar apenas números (remove espaços, traços, etc)
+          const scheduleOmClean = header.om ? header.om.trim().replace(/\D/g, '') : '';
+          const selectedOmClean = om.omNumber.trim().replace(/\D/g, '');
+
+          // Lógica: Se a agenda tem um número definido (mais de 5 dígitos), TEM QUE BATER.
+          if (scheduleOmClean.length >= 5 && scheduleOmClean !== selectedOmClean) {
+              alert(`⛔ BLOQUEIO DE SEGURANÇA\n\nA OM selecionada (${om.omNumber}) não é a mesma programada na Agenda (${header.om}).\n\nRegra: O número da OM deve ser idêntico para prosseguir.`);
+              return;
+          }
+      }
+      // -------------------------------------------------
+
+      setOmId(om.id);
+      setHeader(prev => ({
+          ...prev,
+          om: om.omNumber,
+          tag: om.tag,
+          description: om.description || prev.description,
+          type: om.type === 'CORRETIVA' ? 'MECANICA' : prev.type // Simple logic for now
+      }));
+      setShowLinkModal(false);
+  };
+
+  const handleLinkSearch = (val: string) => {
+      setLinkSearchQuery(val);
+      const allOms = StorageService.getOMs();
+      const q = val.toUpperCase();
+      setMatchingOms(allOms.filter(o => o.omNumber.includes(q) || o.tag.includes(q)));
+  };
+
   const handleSave = async () => {
     if(!selectedART || !isConfirmed || signatures.length === 0) {
         alert("POR FAVOR, SELECIONE O PROCEDIMENTO, LEIA O PDF ORIGINAL E COLETE AS ASSINATURAS.");
@@ -127,10 +179,12 @@ export const ARTAtividade: React.FC = () => {
         await StorageService.saveDocument(doc);
         
         const nowIso = new Date().toISOString();
+        
+        // START MAINTENANCE - THIS WILL CONSUME THE SCHEDULE ID
         await StorageService.startMaintenance({
             id: crypto.randomUUID(),
             omId: omId,
-            scheduleId: scheduleId, // Passa o ID da agenda se existir
+            scheduleId: scheduleId, // Passa o ID da agenda se existir (isso faz sumir da agenda)
             header,
             startTime: nowIso,
             artId: artId,
@@ -347,6 +401,93 @@ export const ARTAtividade: React.FC = () => {
               </div>
           </div>
       </div>
+
+      {/* SCHEDULE LINK MODAL - MANDATORY IF FROM SCHEDULE */}
+      {showLinkModal && (
+          <div className="fixed inset-0 z-[100] bg-gray-900/90 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white w-full max-w-2xl rounded-2xl p-6 shadow-2xl border-t-8 border-blue-600 flex flex-col max-h-[85vh]">
+                  <div className="border-b pb-4 mb-4">
+                      <h3 className="text-xl font-black text-gray-800 uppercase flex items-center gap-2">
+                          <LinkIcon className="text-blue-600" />
+                          Vinculação de Ordem (Agenda)
+                      </h3>
+                      <p className="text-xs font-bold text-gray-500 mt-1 uppercase">
+                          Para iniciar, confirme a OM correspondente no banco de dados.
+                      </p>
+                  </div>
+
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6">
+                      <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                          <Lock size={10} /> DADOS DA AGENDA (BLOQUEIO ATIVO)
+                      </p>
+                      <div className="flex gap-4">
+                          <div>
+                              <span className="block text-[10px] font-bold text-gray-500 uppercase">OM PREVISTA</span>
+                              <span className="block text-lg font-black text-gray-800 uppercase">{header.om || '---'}</span>
+                          </div>
+                          <div>
+                              <span className="block text-[10px] font-bold text-gray-500 uppercase">TAG</span>
+                              <span className="block text-lg font-black text-blue-600 uppercase">{header.tag}</span>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="mb-4">
+                      <div className="relative">
+                          <Search className="absolute left-3 top-3 text-gray-400" size={16} />
+                          <input 
+                              type="text" 
+                              value={linkSearchQuery}
+                              onChange={e => handleLinkSearch(e.target.value)}
+                              placeholder="Pesquisar OM no Banco..."
+                              className="w-full bg-gray-50 border-2 border-gray-200 pl-10 pr-4 py-3 rounded-xl font-bold uppercase text-sm focus:border-blue-500 outline-none"
+                              autoFocus
+                          />
+                      </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 border rounded-xl p-2 bg-gray-50 min-h-[150px]">
+                      {matchingOms.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+                              <Database size={24} className="mb-2 opacity-30"/>
+                              <p className="text-xs font-bold uppercase">Nenhuma OM encontrada</p>
+                          </div>
+                      ) : (
+                          matchingOms.map(om => (
+                              <button 
+                                  key={om.id}
+                                  onClick={() => handleLinkOm(om)}
+                                  className="w-full text-left bg-white p-4 rounded-xl border border-gray-200 hover:border-green-500 hover:shadow-md transition-all group flex justify-between items-center"
+                              >
+                                  <div>
+                                      <div className="flex items-center gap-2 mb-1">
+                                          <span className="font-black text-gray-800 text-sm">{om.omNumber}</span>
+                                          <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${om.type === 'CORRETIVA' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{om.type}</span>
+                                      </div>
+                                      <div className="text-xs font-bold text-gray-500 uppercase truncate max-w-[300px]">{om.tag} - {om.description}</div>
+                                  </div>
+                                  <div className="bg-green-50 text-green-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                      <CheckCircle size={12}/> Confirmar
+                                  </div>
+                              </button>
+                          ))
+                      )}
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                      <button 
+                          onClick={() => setShowLinkModal(false)}
+                          className="text-gray-400 hover:text-gray-600 font-bold text-xs uppercase"
+                      >
+                          Voltar (Cancelar)
+                      </button>
+                      <div className="text-[9px] font-bold text-gray-400 uppercase italic">
+                          O número da OM deve ser idêntico.
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* PREVIEW MODAL - FULL MODE */}
       {showPreviewModal && selectedART && (

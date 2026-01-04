@@ -22,7 +22,7 @@ const GENERATED_SQL = `
 -- SCRIPT SETUP TOTAL SAFEMAINT V4 (ALL TABLES + REALTIME)
 -- ============================================================
 
--- 1. CRIAÇÃO DAS TABELAS
+-- 1. CRIAÇÃO DAS TABELAS (ESTRUTURA BÁSICA)
 CREATE TABLE IF NOT EXISTS users (
     id text PRIMARY KEY, name text, matricula text, login text, password text, role text, is_active_session boolean default false
 );
@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS oms (
     "createdAt" text, 
     "pdfUrl" text, 
     "createdBy" text,
-    "linkedScheduleOm" text
+    "linkedScheduleOm" text,
+    "installationLocation" text
 );
 
 CREATE TABLE IF NOT EXISTS arts (
@@ -57,7 +58,18 @@ CREATE TABLE IF NOT EXISTS schedule (
 );
 
 CREATE TABLE IF NOT EXISTS active_maintenance (
-    id text PRIMARY KEY, "omId" text, header jsonb, "startTime" text, "artId" text, "artType" text, origin text, status text, "currentSessionStart" text, "accumulatedTime" numeric, "openedBy" text
+    id text PRIMARY KEY, 
+    "omId" text, 
+    "scheduleId" text, 
+    header jsonb, 
+    "startTime" text, 
+    "artId" text, 
+    "artType" text, 
+    origin text, 
+    status text, 
+    "currentSessionStart" text, 
+    "accumulatedTime" numeric, 
+    "openedBy" text
 );
 
 CREATE TABLE IF NOT EXISTS history (
@@ -80,7 +92,26 @@ CREATE TABLE IF NOT EXISTS pending_extra_demands (
     id text PRIMARY KEY, tag text, description text, "createdAt" text, status text
 );
 
--- 2. HABILITAR REALTIME (ATUALIZAÇÃO EM TEMPO REAL)
+-- 2. GARANTIA DE COLUNAS NOVAS (ATUALIZAÇÃO DE BANCO EXISTENTE)
+DO $$
+BEGIN
+    -- Adiciona scheduleId em active_maintenance se não existir
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'active_maintenance' AND column_name = 'scheduleId') THEN
+        ALTER TABLE active_maintenance ADD COLUMN "scheduleId" text;
+    END IF;
+
+    -- Adiciona linkedScheduleOm em oms se não existir
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'oms' AND column_name = 'linkedScheduleOm') THEN
+        ALTER TABLE oms ADD COLUMN "linkedScheduleOm" text;
+    END IF;
+
+    -- Adiciona installationLocation em oms se não existir
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'oms' AND column_name = 'installationLocation') THEN
+        ALTER TABLE oms ADD COLUMN "installationLocation" text;
+    END IF;
+END $$;
+
+-- 3. HABILITAR REALTIME (ATUALIZAÇÃO EM TEMPO REAL)
 DO $$
 DECLARE
   t text;
@@ -104,13 +135,13 @@ BEGIN
     BEGIN
       EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', t);
     EXCEPTION 
-      WHEN duplicate_object THEN NULL; -- Ignora se já estiver adicionada
-      WHEN undefined_object THEN NULL; -- Ignora se a publicação não existir
+      WHEN duplicate_object THEN NULL; 
+      WHEN undefined_object THEN NULL; 
     END;
   END LOOP;
 END $$;
 
--- 3. PERMISSÕES DE ACESSO (RLS - POLÍTICA PÚBLICA PARA O APP)
+-- 4. PERMISSÕES DE ACESSO (RLS - POLÍTICA PÚBLICA PARA O APP)
 DO $$
 DECLARE
   t text;
@@ -123,7 +154,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- 4. INSERIR DADOS PADRÃO (CHECKLIST MESTRE E USUÁRIO ADMIN)
+-- 5. INSERIR DADOS PADRÃO (CHECKLIST MESTRE E USUÁRIO ADMIN)
 INSERT INTO users (id, name, matricula, login, password, role, is_active_session) VALUES
 ('default-admin', 'ADMINISTRADOR', '81025901', '81025901', '123', 'ADMIN', false)
 ON CONFLICT (id) DO NOTHING;
