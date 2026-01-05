@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { CommonHeader } from '../components/CommonHeader';
 import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
-import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord } from '../types';
+import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord, RegisteredART } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, CheckCircle, AlertTriangle, MapPin, List, ArrowRight } from 'lucide-react';
+import { ShieldCheck, CheckCircle, AlertTriangle, MapPin, List, ArrowRight, FileText, X, Eye } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 
@@ -16,6 +16,10 @@ export const ARTEmergencial: React.FC = () => {
     om: '', tag: '', date: new Date().toISOString().split('T')[0], time: '', type: 'MECANICA', description: ''
   });
   
+  // Data for ART Selection
+  const [registeredARTs, setRegisteredARTs] = useState<RegisteredART[]>([]);
+  const [selectedArtId, setSelectedArtId] = useState<string>('');
+
   // Feedback States
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -26,14 +30,20 @@ export const ARTEmergencial: React.FC = () => {
 
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
 
+  // Risk Map States
   const [selectedRiskId, setSelectedRiskId] = useState<number | null>(null);
   const [quadrantRisks, setQuadrantRisks] = useState<Record<string, number[]>>({
       'FRENTE': [], 'TRAS': [], 'ESQUERDA': [], 'DIREITA': []
   });
-
   const [checklistRisks, setChecklistRisks] = useState<Record<number, { checked: boolean; control: string }>>({});
 
+  // PDF Attachment State (From Registered ART)
+  const [attachedPdf, setAttachedPdf] = useState<string | null>(null);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+
   useEffect(() => {
+    setRegisteredARTs(StorageService.getARTs());
+
     if (location.state) {
         const stateData = location.state as any;
         setHeader(prev => ({ ...prev, ...stateData }));
@@ -83,9 +93,27 @@ export const ARTEmergencial: React.FC = () => {
     }
   };
 
+  const handleARTSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const id = e.target.value;
+      setSelectedArtId(id);
+      if (!id) {
+          setAttachedPdf(null);
+      } else {
+          const art = registeredARTs.find(a => a.id === id);
+          setAttachedPdf(art?.pdfUrl || null);
+      }
+  };
+
   const handleSave = async () => {
     if(!header.om || !header.tag) { alert("PREENCHA OM E TAG."); return; }
     if(signatures.length === 0) { alert("ASSINATURA OBRIGATÓRIA."); return; }
+    
+    // Validação flexível: Ou tem riscos mapeados OU tem PDF anexo
+    const hasRisks = Object.values(checklistRisks).some((r: any) => r.checked);
+    if (!hasRisks && !attachedPdf) {
+        alert("É NECESSÁRIO MAPEAMENTO DE RISCOS OU VINCULAR UMA ART PADRÃO.");
+        return;
+    }
 
     setIsProcessing(true);
 
@@ -99,7 +127,12 @@ export const ARTEmergencial: React.FC = () => {
           header,
           createdAt: new Date().toISOString(),
           status: 'RASCUNHO',
-          content: { quadrantRisks, checklistRisks },
+          content: { 
+              quadrantRisks, 
+              checklistRisks,
+              manualFileUrl: attachedPdf, // Salva o PDF da ART selecionada
+              linkedArtId: selectedArtId
+          },
           signatures
         };
         
@@ -176,12 +209,42 @@ export const ARTEmergencial: React.FC = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           
-          {/* LEFT CONTENT - EXPANDIDO PARA 9/12 (75%) */}
+          {/* LEFT CONTENT - 9/12 (75%) */}
           <div className="xl:col-span-9 space-y-6">
               <CommonHeader data={header} onChange={setHeader} title="Identificação do Equipamento" />
 
-              {/* UNIFIED RISK COCKPIT */}
-              <section className="bg-white rounded-[1.5rem] shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+              {/* SINGLE LINE ART SELECTOR */}
+              <div className="bg-blue-50/50 border border-blue-100 p-3 rounded-xl flex flex-col md:flex-row items-center gap-4 shadow-sm">
+                  <div className="flex items-center gap-2 text-blue-600 shrink-0">
+                      <FileText size={20} />
+                      <span className="text-[10px] font-black uppercase tracking-wide">Vincular ART Padrão (Opcional):</span>
+                  </div>
+                  
+                  <div className="flex-1 w-full">
+                      <select 
+                          value={selectedArtId} 
+                          onChange={handleARTSelect} 
+                          className="w-full bg-white border border-blue-200 text-gray-700 text-xs font-bold p-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-200 uppercase"
+                      >
+                          <option value="">-- SELECIONE SE HOUVER PROCEDIMENTO --</option>
+                          {registeredARTs.map(art => (
+                              <option key={art.id} value={art.id}>[{art.code}] {art.taskName}</option>
+                          ))}
+                      </select>
+                  </div>
+
+                  {attachedPdf && (
+                      <button 
+                          onClick={() => setShowPdfPreview(true)} 
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm shrink-0"
+                      >
+                          <Eye size={14}/> Visualizar PDF
+                      </button>
+                  )}
+              </div>
+
+              {/* RISK MAPPING SECTION (ALWAYS VISIBLE) */}
+              <section className="bg-white rounded-[1.5rem] shadow-sm border border-gray-200 overflow-hidden flex flex-col animate-fadeIn">
                   {/* Cockpit Header */}
                   <div className="bg-gray-50 p-4 border-b flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -254,7 +317,7 @@ export const ARTEmergencial: React.FC = () => {
 
                       {/* Right: 360 Map */}
                       <div className="lg:w-[45%] bg-gray-50/30 flex flex-col relative">
-                           <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                          <div className="p-3 bg-gray-50/50 border-b border-gray-100 text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-2">
                               <MapPin size={14}/> Radar 360º (Entorno)
                           </div>
                           
@@ -294,10 +357,10 @@ export const ARTEmergencial: React.FC = () => {
 
                                     {/* Risk Bubbles Overlay */}
                                     <div className="absolute inset-0 pointer-events-none">
-                                         <div className="absolute top-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['FRENTE'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
-                                         <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['TRAS'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
-                                         <div className="absolute top-0 bottom-0 right-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['DIREITA'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
-                                         <div className="absolute top-0 bottom-0 left-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['ESQUERDA'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                        <div className="absolute top-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['FRENTE'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                        <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-1 flex-wrap px-10">{quadrantRisks['TRAS'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                        <div className="absolute top-0 bottom-0 right-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['DIREITA'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
+                                        <div className="absolute top-0 bottom-0 left-2 flex flex-col justify-center gap-1 py-10 w-6 items-center">{quadrantRisks['ESQUERDA'].map(r => <span key={r} className="w-4 h-4 rounded-full bg-red-600 text-white text-[8px] font-black flex items-center justify-center shadow border border-white">{r}</span>)}</div>
                                     </div>
                                 </div>
 
@@ -314,7 +377,7 @@ export const ARTEmergencial: React.FC = () => {
               <SignatureSection signatures={signatures} onUpdate={setSignatures} />
           </div>
 
-          {/* RIGHT COLUMN - STATUS - REDUZIDO PARA 3/12 (25%) */}
+          {/* RIGHT COLUMN - STATUS - 3/12 (25%) */}
           <div className="xl:col-span-3">
               <div className="sticky top-6">
                   <div className="bg-white rounded-2xl shadow-lg p-5 border border-gray-200 relative overflow-hidden">
@@ -329,9 +392,11 @@ export const ARTEmergencial: React.FC = () => {
                               <div className="font-black text-[10px] uppercase">1. Identificação</div>
                           </div>
                           
-                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${hasRisks ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
-                              {hasRisks ? <CheckCircle size={16} className="fill-green-200 text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
-                              <div className="font-black text-[10px] uppercase">2. Riscos</div>
+                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${hasRisks || attachedPdf ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+                              {hasRisks || attachedPdf ? <CheckCircle size={16} className="fill-green-200 text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
+                              <div className="font-black text-[10px] uppercase">
+                                  2. Riscos {attachedPdf && '(ART VINC)'} {hasRisks && !attachedPdf && '(MAPA)'}
+                              </div>
                           </div>
 
                           <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${hasSignatures ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
@@ -357,6 +422,19 @@ export const ARTEmergencial: React.FC = () => {
               </div>
           </div>
       </div>
+
+      {/* PDF PREVIEW MODAL */}
+      {showPdfPreview && attachedPdf && (
+          <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col animate-fadeIn overflow-hidden h-[100dvh]">
+              <div className="bg-gray-900 px-4 py-2 flex justify-between items-center text-white shrink-0 border-b border-gray-800">
+                  <h3 className="font-black text-sm uppercase">Procedimento Vinculado</h3>
+                  <button onClick={() => setShowPdfPreview(false)} className="p-2 hover:bg-red-600 rounded"><X size={18}/></button>
+              </div>
+              <div className="flex-1 bg-black relative">
+                  <iframe src={attachedPdf} className="w-full h-full border-none" title="Preview" />
+              </div>
+          </div>
+      )}
     </div>
   );
 };

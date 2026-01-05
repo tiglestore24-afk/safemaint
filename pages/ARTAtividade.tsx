@@ -5,7 +5,7 @@ import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
 import { HeaderData, DocumentRecord, RegisteredART, SignatureRecord, ActiveMaintenance, OMRecord } from '../types';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { FileText, Eye, CheckCircle, X, ShieldCheck, Save, Download, ShieldAlert, ArrowRight, BookOpen, Loader2, Link as LinkIcon, Search, Database, Lock } from 'lucide-react';
+import { FileText, Eye, CheckCircle, X, ShieldCheck, Save, Download, ShieldAlert, ArrowRight, BookOpen, Loader2, Link as LinkIcon, Search, Database, Lock, ExternalLink } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
 
@@ -402,21 +402,26 @@ export const ARTAtividade: React.FC = () => {
           </div>
       </div>
 
-      {/* SCHEDULE LINK MODAL - MANDATORY IF FROM SCHEDULE */}
+      {/* SCHEDULE LINK MODAL - MOBILE OPTIMIZED (FULL SCREEN ON SMALL DEVICES) */}
       {showLinkModal && (
-          <div className="fixed inset-0 z-[100] bg-gray-900/90 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white w-full max-w-2xl rounded-2xl p-6 shadow-2xl border-t-8 border-blue-600 flex flex-col max-h-[85vh]">
-                  <div className="border-b pb-4 mb-4">
-                      <h3 className="text-xl font-black text-gray-800 uppercase flex items-center gap-2">
-                          <LinkIcon className="text-blue-600" />
-                          Vinculação de Ordem (Agenda)
-                      </h3>
-                      <p className="text-xs font-bold text-gray-500 mt-1 uppercase">
-                          Para iniciar, confirme a OM correspondente no banco de dados.
-                      </p>
+          <div className="fixed inset-0 z-[100] bg-gray-900/90 flex items-end md:items-center justify-center md:p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white w-full md:max-w-2xl h-[100dvh] md:h-auto md:max-h-[85vh] md:rounded-2xl p-6 shadow-2xl border-t-8 border-blue-600 flex flex-col">
+                  <div className="border-b pb-4 mb-4 shrink-0">
+                      <div className="flex justify-between items-start">
+                          <div>
+                              <h3 className="text-xl font-black text-gray-800 uppercase flex items-center gap-2">
+                                  <LinkIcon className="text-blue-600" />
+                                  Vinculação de Ordem (Agenda)
+                              </h3>
+                              <p className="text-xs font-bold text-gray-500 mt-1 uppercase">
+                                  Para iniciar, confirme a OM correspondente no banco de dados.
+                              </p>
+                          </div>
+                          <button onClick={() => setShowLinkModal(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500"><X size={24}/></button>
+                      </div>
                   </div>
 
-                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6">
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6 shrink-0">
                       <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1 flex items-center gap-2">
                           <Lock size={10} /> DADOS DA AGENDA (BLOQUEIO ATIVO)
                       </p>
@@ -432,7 +437,7 @@ export const ARTAtividade: React.FC = () => {
                       </div>
                   </div>
 
-                  <div className="mb-4">
+                  <div className="mb-4 shrink-0">
                       <div className="relative">
                           <Search className="absolute left-3 top-3 text-gray-400" size={16} />
                           <input 
@@ -448,7 +453,7 @@ export const ARTAtividade: React.FC = () => {
 
                   <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 border rounded-xl p-2 bg-gray-50 min-h-[150px]">
                       {matchingOms.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+                          <div className="flex flex-col items-center justify-center h-full text-gray-400">
                               <Database size={24} className="mb-2 opacity-30"/>
                               <p className="text-xs font-bold uppercase">Nenhuma OM encontrada</p>
                           </div>
@@ -459,14 +464,14 @@ export const ARTAtividade: React.FC = () => {
                                   onClick={() => handleLinkOm(om)}
                                   className="w-full text-left bg-white p-4 rounded-xl border border-gray-200 hover:border-green-500 hover:shadow-md transition-all group flex justify-between items-center"
                               >
-                                  <div>
+                                  <div className="flex-1">
                                       <div className="flex items-center gap-2 mb-1">
                                           <span className="font-black text-gray-800 text-sm">{om.omNumber}</span>
                                           <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${om.type === 'CORRETIVA' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{om.type}</span>
                                       </div>
-                                      <div className="text-xs font-bold text-gray-500 uppercase truncate max-w-[300px]">{om.tag} - {om.description}</div>
+                                      <div className="text-xs font-bold text-gray-500 uppercase truncate max-w-[200px] md:max-w-[300px]">{om.tag} - {om.description}</div>
                                   </div>
-                                  <div className="bg-green-50 text-green-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                  <div className="bg-green-50 text-green-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
                                       <CheckCircle size={12}/> Confirmar
                                   </div>
                               </button>
@@ -474,7 +479,7 @@ export const ARTAtividade: React.FC = () => {
                       )}
                   </div>
 
-                  <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center shrink-0">
                       <button 
                           onClick={() => setShowLinkModal(false)}
                           className="text-gray-400 hover:text-gray-600 font-bold text-xs uppercase"
@@ -489,9 +494,9 @@ export const ARTAtividade: React.FC = () => {
           </div>
       )}
 
-      {/* PREVIEW MODAL - FULL MODE */}
+      {/* PREVIEW MODAL - MOBILE OPTIMIZED (100dvh + EXTERNAL LINK) */}
       {showPreviewModal && selectedART && (
-          <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden">
+          <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden h-[100dvh]">
               <div className="bg-gray-900 px-4 py-2 flex justify-between items-center text-white shrink-0 border-b border-gray-800">
                   <div className="flex items-center gap-3">
                       <FileText size={18} className="text-vale-green"/>
@@ -502,15 +507,20 @@ export const ARTAtividade: React.FC = () => {
                   </div>
                   <div className="flex gap-2">
                        {pdfBlobUrl && (
-                        <a href={pdfBlobUrl} download className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors" title="Baixar">
-                            <Download size={16}/>
-                        </a>
+                        <>
+                            <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors md:hidden" title="Abrir em Nova Aba (Melhor para Mobile)">
+                                <ExternalLink size={16}/>
+                            </a>
+                            <a href={pdfBlobUrl} download className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors hidden md:block" title="Baixar">
+                                <Download size={16}/>
+                            </a>
+                        </>
                        )}
                        <button onClick={() => setShowPreviewModal(false)} className="p-2 bg-white/10 rounded hover:bg-red-600 transition-colors"><X size={16}/></button>
                   </div>
               </div>
               
-              <div className="flex-1 bg-black relative">
+              <div className="flex-1 bg-black relative w-full h-full overflow-hidden">
                   {pdfBlobUrl ? (
                       <iframe src={pdfBlobUrl} className="w-full h-full border-none" title="PDF Viewer" />
                   ) : (
@@ -521,7 +531,7 @@ export const ARTAtividade: React.FC = () => {
                   )}
               </div>
 
-              <div className="p-3 bg-gray-900 border-t border-gray-800 flex justify-between items-center shrink-0">
+              <div className="p-3 bg-gray-900 border-t border-gray-800 flex justify-between items-center shrink-0 safe-area-bottom">
                   <div className="text-[10px] font-bold text-gray-400 uppercase hidden md:block">
                       Confirme a leitura e compreensão dos riscos.
                   </div>

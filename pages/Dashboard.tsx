@@ -7,7 +7,7 @@ import {
   Clock, AlertOctagon, PauseCircle, 
   StopCircle, X, Activity, 
   ShieldCheck, WifiOff, Wrench, PlayCircle, Timer, Lock, 
-  Volume2, VolumeX, FileText, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Link as LinkIcon, Search, ClipboardList, Loader2, Info, CheckSquare
+  Volume2, VolumeX, FileText, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Link as LinkIcon, Search, ClipboardList, Loader2, Info, CheckSquare, ExternalLink
 } from 'lucide-react';
 import { checkConnection } from '../services/supabase';
 
@@ -562,9 +562,9 @@ export const Dashboard: React.FC = () => {
           </div>
       )}
 
-      {/* PDF VIEWER OVERLAY (GENERIC - MAXIMIZED FOR SAFETY) */}
+      {/* PDF VIEWER OVERLAY - MOBILE OPTIMIZED (100dvh + EXTERNAL LINK) */}
       {viewingDoc && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden">
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden h-[100dvh]">
             <div className="bg-gray-900 px-4 py-2 flex justify-between items-center text-white shrink-0 border-b border-gray-800">
                 <div className="flex items-center gap-3">
                     <FileText size={18} className="text-[#007e7a]"/>
@@ -573,10 +573,17 @@ export const Dashboard: React.FC = () => {
                         <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{viewingDoc.title}</p>
                     </div>
                 </div>
-                <button onClick={() => setViewingDoc(null)} className="p-2 bg-white/10 rounded hover:bg-red-600 transition-colors"><X size={16}/></button>
+                <div className="flex gap-2">
+                    {pdfBlobUrl && (
+                        <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors md:hidden" title="Abrir em Nova Aba">
+                            <ExternalLink size={16}/>
+                        </a>
+                    )}
+                    <button onClick={() => setViewingDoc(null)} className="p-2 bg-white/10 rounded hover:bg-red-600 transition-colors"><X size={16}/></button>
+                </div>
             </div>
             
-            <div className="flex-1 bg-black relative">
+            <div className="flex-1 bg-black relative w-full h-full overflow-hidden">
                 {isLoadingPdf ? (
                     <div className="flex flex-col items-center justify-center h-full text-gray-500">
                         <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   FileInput, PlayCircle, Trash2, Search, CalendarDays, User,
   Wrench, AlertOctagon, Clock, CheckCircle2, Eye, X, Info, FileText,
-  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download, Link, LayoutGrid, List as ListIcon, Lock, ClipboardList
+  StopCircle, Filter, SortDesc, SortAsc, XCircle, ListFilter, Plus, Save, Sparkles, Loader2, FileSearch, ArrowRight, Download, Link, LayoutGrid, List as ListIcon, Lock, ClipboardList, ExternalLink
 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal'; // Importado
@@ -694,15 +694,22 @@ export const OMManagement: React.FC = () => {
       )}
 
       {(viewingOM) && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-0 backdrop-blur-sm">
-            <div className="w-[98vw] h-[98vh] bg-white flex flex-col rounded-lg overflow-hidden border-4 border-gray-900">
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-0 backdrop-blur-sm h-[100dvh]">
+            <div className="w-[98vw] h-[98vh] md:h-[95vh] bg-white flex flex-col rounded-lg overflow-hidden border-4 border-gray-900">
                 <div className="bg-gray-900 text-white p-3 flex justify-between items-center shrink-0">
                     <span className="font-bold text-xs">
                         VISUALIZAR DOCUMENTO - {viewingOM.omNumber}
                     </span>
-                    <button onClick={() => setViewingOM(null)} className="p-1 hover:bg-red-600 rounded"><X size={24}/></button>
+                    <div className="flex gap-2">
+                        {pdfBlobUrl && (
+                            <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors md:hidden" title="Abrir em Nova Aba">
+                                <ExternalLink size={16}/>
+                            </a>
+                        )}
+                        <button onClick={() => setViewingOM(null)} className="p-1 hover:bg-red-600 rounded"><X size={24}/></button>
+                    </div>
                 </div>
-                <div className="flex-1 bg-gray-200 relative">
+                <div className="flex-1 bg-gray-200 relative w-full h-full overflow-hidden">
                     {isLoadingPdf ? (
                         <div className="flex flex-col items-center justify-center h-full text-gray-500">
                             <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
