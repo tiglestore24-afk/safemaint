@@ -8,7 +8,6 @@ import { ARTEmergencial } from './pages/ARTEmergencial';
 import { ARTAtividade } from './pages/ARTAtividade';
 import { Checklist } from './pages/Checklist';
 import { Schedule } from './pages/Schedule';
-import { AvailabilityBoard } from './pages/AvailabilityBoard';
 import { TVSchedule } from './pages/TVSchedule';
 import { Archive } from './pages/Archive';
 import { Trash } from './pages/Trash';
@@ -18,6 +17,8 @@ import { ExtraDemands } from './pages/ExtraDemands'; // Importado
 import { OMManagement } from './pages/OMManagement';
 import { StorageService } from './services/storage';
 import { SplashScreen } from './components/SplashScreen';
+import { AvailabilityBoard } from './pages/AvailabilityBoard';
+import { AppHeader } from './components/AppHeader';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -96,6 +97,7 @@ const App: React.FC = () => {
             }}
         >
           <div className="max-w-[1920px] mx-auto">
+            <AppHeader />
             <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" />} />
                 <Route path="/login" element={<Navigate to="/dashboard" />} />
@@ -104,8 +106,8 @@ const App: React.FC = () => {
                 <Route path="/art-emergencial" element={<ARTEmergencial />} />
                 <Route path="/art-atividade" element={<ARTAtividade />} />
                 <Route path="/checklist" element={<Checklist />} />
+                <Route path="/availability" element={<AvailabilityBoard />} />
                 <Route path="/schedule" element={<Schedule />} />
-                <Route path="/availability" element={<AvailabilityBoard />} /> 
                 <Route path="/tv-schedule" element={<TVSchedule />} />
                 <Route path="/archive" element={<Archive />} />
                 <Route path="/trash" element={<Trash />} />

@@ -1,3 +1,4 @@
+
 <?php
   header("Access-Control-Allow-Origin: *");
   header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
@@ -24,6 +25,9 @@
       tailwind.config = {
         theme: {
           extend: {
+            screens: {
+              'print': {'raw': 'print'},
+            },
             colors: {
               'vale': {
                 green: '#007e7a',
@@ -66,6 +70,8 @@
       }
       * {
         text-transform: uppercase !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
       body {
         background-color: #111827;
@@ -88,6 +94,44 @@
       }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background: #edb111;
+      }
+
+      /* ESTILOS DE IMPRESSÃO PROFISSIONAL A4 */
+      @media print {
+        @page {
+          size: A4;
+          margin: 0;
+        }
+        body {
+          background-color: white;
+          margin: 0;
+          padding: 0;
+        }
+        /* Esconde elementos de UI na impressão */
+        nav, header, button, .no-print, .fixed, .sidebar-container {
+          display: none !important;
+        }
+        /* Classe específica para área imprimível */
+        .print-area {
+          display: block !important;
+          width: 210mm;
+          min-height: 297mm;
+          margin: 0 auto;
+          padding: 10mm 15mm;
+          background: white;
+          box-shadow: none;
+          border: none;
+          position: absolute;
+          top: 0;
+          left: 0;
+        }
+        /* Quebras de página inteligentes */
+        .page-break {
+          page-break-before: always;
+        }
+        .avoid-break {
+          page-break-inside: avoid;
+        }
       }
     </style>
 <script type="importmap">

@@ -49,6 +49,11 @@ self.addEventListener('fetch', event => {
           });
         }
         return networkResponse;
+      }).catch(err => {
+          // Captura erros de rede no background para evitar Unhandled Promise Rejection
+          // Se não houver cache, o erro será propagado para a view pelo return cachedResponse || fetchPromise
+          // Se houver cache, isso silencia o erro de atualização em background
+          if (!cachedResponse) throw err;
       });
       return cachedResponse || fetchPromise;
     })

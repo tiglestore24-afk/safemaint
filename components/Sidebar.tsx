@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   AlertTriangle, FileText, CheckSquare, Calendar, Archive,
   Settings, Menu, LayoutDashboard, ChevronLeft, ChevronRight,
-  FileInput, BarChart2, LogOut, ClipboardList, Bell, X
+  FileInput, BarChart2, LogOut, ClipboardList, Bell, X, Eraser, Volume2, VolumeX, Volume1
 } from 'lucide-react';
 import { Cube3D } from './Cube3D';
 import { StorageService, NotificationItem } from '../services/storage';
@@ -25,6 +25,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifList, setShowNotifList] = useState(false);
   const [hasUrgent, setHasUrgent] = useState(false);
+  
+  // Volume State (Default 50%)
+  const [volume, setVolume] = useState(0.5);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -34,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
       // Setup Audio (Siren Sound)
       audioRef.current = new Audio('https://actions.google.com/sounds/v1/alarms/spaceship_alarm.ogg');
       audioRef.current.loop = true;
-      audioRef.current.volume = 1.0; // Max volume
+      audioRef.current.volume = volume; // Set initial volume
 
       checkNotifications();
       window.addEventListener('safemaint_storage_update', checkNotifications);
@@ -48,6 +51,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
       };
   }, []);
 
+  // Update volume dynamically when slider changes
+  useEffect(() => {
+      if (audioRef.current) {
+          audioRef.current.volume = volume;
+      }
+  }, [volume]);
+
   const checkNotifications = () => {
       const notifs = StorageService.getNotifications();
       setNotifications(notifs);
@@ -58,7 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
       // Trigger Sound if Urgent
       if (urgent && audioRef.current) {
           // Play only if not already playing to avoid overlap
-          if (audioRef.current.paused) {
+          if (audioRef.current.paused && volume > 0) {
               audioRef.current.play().catch(e => console.log("Audio autoplay blocked by browser", e));
           }
       } else if (audioRef.current) {
@@ -69,21 +79,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
 
   const handleNotificationClick = (n: NotificationItem) => {
       setShowNotifList(false);
-      // Stop sound temporarily or permanently depending on logic. 
-      // For now, navigating away might solve it if data updates.
-      
       if (n.source === 'DEMAND') {
           navigate('/extra-demands');
       } else {
-          // Logic to view OM (Generic redirect to management for now)
           navigate('/om-management');
       }
   };
 
   const toggleNotifList = () => {
       setShowNotifList(!showNotifList);
-      // If opening list, maybe silence alarm? 
-      // Let's keep alarm until action is taken, or user can mute via system volume.
   };
   
   const handleLogoutClick = async () => {
@@ -142,6 +146,63 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
         />
       )}
 
+      {/* Painel de Notificações (Mobile/Desktop Popup) */}
+      {showNotifList && (
+          <div className="fixed top-20 left-4 right-4 md:left-24 md:w-80 md:right-auto z-[100] bg-white rounded-xl shadow-2xl border-2 border-red-600 animate-fadeIn overflow-hidden">
+              {/* Header Notificações */}
+              <div className="bg-red-600 text-white p-3 flex justify-between items-center shadow-md">
+                  <span className="font-black text-xs uppercase flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-white"/> CENTRO DE ALERTA ({notifications.length})
+                  </span>
+                  <button onClick={() => setShowNotifList(false)} className="bg-white/20 p-1 rounded hover:bg-white/30"><X size={14}/></button>
+              </div>
+
+              {/* CONTROLE DE VOLUME DA SIRENE */}
+              <div className="bg-gray-50 p-3 border-b border-gray-200">
+                  <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setVolume(v => v === 0 ? 0.5 : 0)} 
+                        className="text-gray-500 hover:text-gray-800 transition-colors"
+                        title={volume === 0 ? "Ativar Som" : "Silenciar"}
+                      >
+                          {volume === 0 ? <VolumeX size={18}/> : volume < 0.5 ? <Volume1 size={18}/> : <Volume2 size={18}/>}
+                      </button>
+                      <input 
+                          type="range" 
+                          min="0" 
+                          max="1" 
+                          step="0.1" 
+                          value={volume}
+                          onChange={(e) => setVolume(parseFloat(e.target.value))}
+                          className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-red-600 hover:accent-red-700"
+                      />
+                      <span className="text-[10px] font-black text-gray-500 w-8 text-right">{(volume * 100).toFixed(0)}%</span>
+                  </div>
+                  <p className="text-[8px] font-bold text-gray-400 uppercase mt-1 text-center tracking-wider">Volume da Sirene de Emergência</p>
+              </div>
+
+              {/* Lista de Itens */}
+              <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-2 bg-gray-100 space-y-2">
+                  {notifications.map(notif => (
+                      <div 
+                          key={notif.id} 
+                          onClick={() => handleNotificationClick(notif)}
+                          className={`p-3 rounded-lg border-l-4 shadow-sm cursor-pointer hover:bg-white hover:shadow-md transition-all ${notif.type === 'URGENT' ? 'bg-red-50 border-red-500' : 'bg-white border-blue-500'}`}
+                      >
+                          <div className="flex justify-between items-start mb-1">
+                              <span className={`text-[9px] font-black uppercase px-1.5 rounded ${notif.type === 'URGENT' ? 'bg-red-200 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                                  {notif.type === 'URGENT' ? 'URGENTE' : 'INFO'}
+                              </span>
+                              <span className="text-[8px] font-bold text-gray-400">{notif.date}</span>
+                          </div>
+                          <h4 className="font-black text-xs text-gray-800 uppercase leading-tight mb-0.5">{notif.title}</h4>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase line-clamp-2">{notif.message}</p>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
       {/* Sidebar Container */}
       <div 
         className={`
@@ -165,165 +226,103 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
                         onClick={toggleNotifList}
                         className={`
                             absolute -right-8 -top-2 cursor-pointer z-50
-                            w-10 h-10 rounded-full flex items-center justify-center border-4 border-[#111827] shadow-xl
+                            w-10 h-10 rounded-full flex items-center justify-center border-4 border-[#111827] shadow-xl transition-transform hover:scale-110 active:scale-95
                             ${hasUrgent ? 'bg-red-600 animate-pulse' : 'bg-blue-600'}
                         `}
+                        title="Ver Notificações"
                      >
-                         <Bell size={18} className="text-white fill-white" />
-                         {/* Ripple Effect for Urgent */}
-                         {hasUrgent && (
-                             <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping"></span>
-                         )}
-                         <span className="absolute -top-1 -right-1 bg-white text-red-600 text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-gray-200">
-                             {notifications.length}
-                         </span>
+                         <Bell size={18} className="text-white fill-current" />
+                         {hasUrgent && <span className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full animate-ping"></span>}
                      </div>
                  )}
             </div>
             
-            {/* Collapse Toggle Button (Desktop) */}
             <button 
-                onClick={() => setIsCollapsed(!isCollapsed)} 
-                className="absolute -right-3 top-1/2 -translate-y-1/2 hidden md:flex items-center justify-center w-6 h-6 bg-[#007e7a] text-white rounded-full shadow-[0_0_10px_#007e7a] hover:scale-110 transition-transform border-2 border-[#111827] z-50"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="absolute -right-3 top-1/2 -translate-y-1/2 bg-gray-800 text-gray-400 p-1 rounded-full border border-gray-700 hover:text-white hover:bg-[#007e7a] hover:border-[#007e7a] transition-all shadow-lg z-20 hidden md:block"
             >
-                {isCollapsed ? <ChevronRight size={14} strokeWidth={3} /> : <ChevronLeft size={14} strokeWidth={3} />}
+                {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             </button>
         </div>
-        
+
         {/* Navigation Items */}
-        <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-8 custom-scrollbar">
-          {sections.map((section, idx) => (
-            <div key={idx} className="space-y-2">
-              {!isCollapsed && (
-                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-2 animate-fadeIn">
-                    {section.title}
-                </h3>
-              )}
-              
-              <div className="space-y-1">
-                {section.items.map((item) => (
-                  <NavLink 
-                    key={item.path} 
-                    to={item.path} 
-                    className={({ isActive }) => `
-                        relative group flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-300 overflow-hidden
-                        ${isCollapsed ? 'justify-center px-2' : ''}
-                        ${isActive 
-                            ? 'bg-gradient-to-r from-[#007e7a] to-[#00605d] text-white shadow-[0_4px_20px_rgba(0,126,122,0.4)] translate-x-1' 
-                            : 'hover:bg-white/5 hover:text-white hover:translate-x-1'
-                        }
-                    `}
-                  >
-                    {({ isActive }) => (
-                        <>
-                            {/* Active Indicator Strip (Left) */}
-                            {isActive && (
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#edb111] shadow-[0_0_10px_#edb111]"></div>
-                            )}
-
-                            {/* Icon with 3D depth effect */}
-                            <div className={`
-                                relative z-10 transition-transform duration-300 
-                                ${isActive ? 'scale-110 drop-shadow-md' : 'group-hover:scale-110 text-gray-400 group-hover:text-white'}
-                            `}>
-                                {item.icon}
-                            </div>
-
-                            {/* Label */}
-                            {!isCollapsed && (
-                                <span className={`
-                                    text-xs font-bold uppercase tracking-wide truncate relative z-10
-                                    ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-gray-100'}
-                                `}>
-                                    {item.label}
-                                </span>
-                            )}
-                            
-                            {/* Hover Gradient Effect (Subtle) */}
-                            {!isActive && (
-                                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none"></div>
-                            )}
-                        </>
+        <nav className="flex-1 overflow-y-auto py-6 space-y-6 custom-scrollbar px-3">
+            {sections.map((section, idx) => (
+                <div key={idx} className="space-y-1">
+                    {!isCollapsed && (
+                        <h3 className="px-4 text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            {section.title}
+                            <div className="h-px bg-gray-800 flex-1"></div>
+                        </h3>
                     )}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          ))}
+                    
+                    {section.items.map((item) => (
+                        <NavLink
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => { if(window.innerWidth < 768) toggle(); }} // Close sidebar on mobile nav
+                            className={({ isActive }) => `
+                                relative flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group
+                                ${isActive 
+                                    ? 'bg-gradient-to-r from-[#007e7a]/20 to-transparent text-[#007e7a]' 
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'}
+                                ${isCollapsed ? 'justify-center' : ''}
+                            `}
+                        >
+                            {({ isActive }) => (
+                                <>
+                                    {isActive && <div className="absolute left-0 w-1 h-8 bg-[#007e7a] rounded-r-full shadow-[0_0_10px_#007e7a]"></div>}
+                                    
+                                    <div className={`transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
+                                        {item.icon}
+                                    </div>
+                                    
+                                    {!isCollapsed && (
+                                        <span className="font-bold text-xs uppercase tracking-wide">
+                                            {item.label}
+                                        </span>
+                                    )}
+
+                                    {/* Tooltip for Collapsed Mode */}
+                                    {isCollapsed && (
+                                        <div className="absolute left-full ml-4 px-3 py-1.5 bg-gray-800 text-white text-xs font-bold uppercase rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl border border-gray-700 z-50 pointer-events-none">
+                                            {item.label}
+                                            <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 border-4 border-transparent border-r-gray-800"></div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </NavLink>
+                    ))}
+                </div>
+            ))}
         </nav>
 
-        {/* Footer / Logout */}
-        <div className="p-4 bg-black/20 border-t border-gray-800/50 backdrop-blur-sm">
-            {/* User Info */}
-            {!isCollapsed && (
-                <div className="mb-4 px-2">
-                    <p className="text-xs font-black text-white truncate">{userName}</p>
-                    <p className="text-[10px] font-bold text-[#007e7a] uppercase">{userRole}</p>
+        {/* User Footer */}
+        <div className="p-4 bg-gray-900/50 border-t border-gray-800/50">
+            <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#007e7a] to-blue-600 flex items-center justify-center text-white font-black shadow-lg border-2 border-gray-800 shrink-0">
+                    {userName.slice(0,2).toUpperCase()}
                 </div>
-            )}
-
-            <button 
-                onClick={handleLogoutClick}
-                className={`
-                    w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white transition-all duration-300 group border border-red-900/30
-                    ${isCollapsed ? 'justify-center px-2' : ''}
-                `}
-            >
-                <LogOut size={20} className="group-hover:rotate-180 transition-transform duration-500" />
-                {!isCollapsed && <span className="font-bold text-xs uppercase">Sair do Sistema</span>}
-            </button>
+                
+                {!isCollapsed && (
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-black text-white uppercase truncate leading-none">{userName}</p>
+                        <div className="flex items-center justify-between mt-1">
+                            <p className="text-[10px] font-bold text-gray-500 uppercase bg-gray-800 px-1.5 rounded">{userRole}</p>
+                            <button 
+                                onClick={handleLogoutClick}
+                                className="text-gray-500 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-white/5" 
+                                title="Sair"
+                            >
+                                <LogOut size={14} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
       </div>
-
-      {/* --- NOTIFICATION LIST MODAL (ATTACHED TO SIDEBAR) --- */}
-      {showNotifList && (
-          <div className="fixed inset-0 z-[100] flex animate-fadeIn" onClick={() => setShowNotifList(false)}>
-              <div 
-                className={`
-                    relative bg-white w-80 h-full shadow-2xl border-r border-gray-200 flex flex-col
-                    ${isCollapsed ? 'ml-[5.5rem]' : 'ml-72'} 
-                    transition-all duration-300
-                `}
-                onClick={e => e.stopPropagation()}
-              >
-                  <div className={`p-4 border-b flex justify-between items-center ${hasUrgent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                      <h3 className="font-black text-sm uppercase flex items-center gap-2">
-                          <Bell size={16} fill="currentColor"/> Notificações
-                      </h3>
-                      <button onClick={() => setShowNotifList(false)}><X size={18}/></button>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto bg-gray-50 p-2 space-y-2">
-                      {notifications.length === 0 ? (
-                          <div className="p-8 text-center text-gray-400 font-bold text-xs uppercase">Sem novidades</div>
-                      ) : (
-                          notifications.map(n => (
-                              <div 
-                                key={n.id} 
-                                onClick={() => handleNotificationClick(n)}
-                                className={`
-                                    p-3 rounded-lg border cursor-pointer hover:shadow-md transition-all
-                                    ${n.type === 'URGENT' ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-white border-gray-200 hover:bg-blue-50'}
-                                `}
-                              >
-                                  <div className="flex justify-between items-start mb-1">
-                                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${n.type === 'URGENT' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>
-                                          {n.type === 'URGENT' ? 'URGENTE' : 'INFO'}
-                                      </span>
-                                      <span className="text-[9px] text-gray-400 font-bold">{n.date}</span>
-                                  </div>
-                                  <p className="text-xs font-black text-gray-800 uppercase leading-tight mb-1">{n.title}</p>
-                                  <p className="text-[10px] text-gray-500 font-bold uppercase">{n.message}</p>
-                              </div>
-                          ))
-                      )}
-                  </div>
-              </div>
-              
-              {/* BACKDROP BLUR FOR THE REST OF SCREEN */}
-              <div className="flex-1 bg-black/50 backdrop-blur-sm"></div>
-          </div>
-      )}
     </>
   );
 };

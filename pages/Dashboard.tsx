@@ -7,9 +7,19 @@ import {
   Clock, AlertOctagon, PauseCircle, 
   StopCircle, X, Activity, 
   ShieldCheck, WifiOff, Wrench, PlayCircle, Timer, Lock, 
-  Volume2, VolumeX, FileText, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Link as LinkIcon, Search, ClipboardList, Loader2, Info, CheckSquare, ExternalLink
+  Volume2, VolumeX, FileText, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Link as LinkIcon, Search, ClipboardList, Loader2, Info, CheckSquare, ExternalLink, ListChecks, BookOpen, MapPin, ShieldAlert, CheckCircle
 } from 'lucide-react';
 import { checkConnection } from '../services/supabase';
+import { Logo } from '../components/Logo';
+
+const RISK_LIST = [
+    "CONTATO COM SUPERFÍCIES CORTANTES/PERFURANTE", "PRENSAMENTO DE DEDOS OU MÃOS", "QUEDA DE PEÇAS/ESTRUTURAS/EQUIPAMENTOS",
+    "PRENSAMENTO OU AGARRAMENTO DO CORPO", "ATROPELAMENTO/ESMAGAMENTO POR VEÍCULOS", "QUEDA, TROPEÇO OU ESCORREGÃO",
+    "ANIMAIS PEÇONHENTOS/INSETOS", "DESMORONAMENTOS DE PILHAS", "QUEDA DE PLATAFORMA OU ESCADAS", "ARCO E/OU CHOQUE ELÉTRICO",
+    "FONTES DE ENERGIA (HIDRÁULICA, PNEUMÁTICA)", "EXPOSIÇÃO A VAPORES, CONDENSADOS OU QUENTES", "GASES, VAPORES, POEIRAS OU FUMOS",
+    "PRODUTOS QUÍMICOS OU QUEIMADURAS", "PROJEÇÃO DE MATERIAIS NA FACE/OLHOS", "CONDIÇÕES CLIMÁTICAS ADVERSAS",
+    "QUEDA DE HOMEM AO MAR/AFOGAMENTO", "INTERFERÊNCIA ENTRE EQUIPES", "EXCESSO OU DEFICIÊNCIA DE ILUMINAÇÃO", "OUTRAS SITUAÇÕES DE RISCO"
+];
 
 const MaintenanceTimer: React.FC<{ task: ActiveMaintenance }> = ({ task }) => {
     const [time, setTime] = useState('00:00:00');
@@ -36,23 +46,21 @@ const MaintenanceTimer: React.FC<{ task: ActiveMaintenance }> = ({ task }) => {
         return () => clearInterval(interval);
     }, [task, calculateTime]);
 
-    // Cores vibrantes baseadas no status
     let colorClass = 'text-gray-800';
-    if (task.status === 'ANDAMENTO') colorClass = 'text-[#007e7a]'; // Vale Green
-    if (task.status === 'PAUSADA') colorClass = 'text-yellow-500'; // Vibrant Yellow
-    if (task.status === 'AGUARDANDO') colorClass = 'text-orange-500'; // Vibrant Orange
+    if (task.status === 'ANDAMENTO') colorClass = 'text-[#007e7a]'; 
+    if (task.status === 'PAUSADA') colorClass = 'text-yellow-500'; 
+    if (task.status === 'AGUARDANDO') colorClass = 'text-orange-500'; 
 
     return <span className={`text-3xl font-black font-mono tracking-tighter ${colorClass}`}>{time}</span>;
 };
 
-// Ícone baseado no tipo de manutenção
 const getTaskIcon = (type: string) => {
     switch (type) {
         case 'ELETRICA': return <Zap size={18} className="text-yellow-600" />;
         case 'LUBRIFICACAO': return <Droplets size={18} className="text-blue-600" />;
         case 'SOLDA': return <Flame size={18} className="text-orange-600" />;
         case 'OUTROS': return <MoreHorizontal size={18} className="text-gray-600" />;
-        default: return <Wrench size={18} className="text-gray-600" />; // MECANICA default
+        default: return <Wrench size={18} className="text-gray-600" />; 
     }
 };
 
@@ -64,10 +72,16 @@ export const Dashboard: React.FC = () => {
   
   const [closingTask, setClosingTask] = useState<ActiveMaintenance | null>(null);
   
-  // Viewer State (Generic for OM or ART)
+  // Full ART Viewer State
+  const [viewingFullArt, setViewingFullArt] = useState<DocumentRecord | null>(null);
+  
+  // Generic Doc Viewer State (for PDFs)
   const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string; type: string; id: string } | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  
+  // Step Viewer State
+  const [viewingSteps, setViewingSteps] = useState<{ title: string; code: string; steps: any[] } | null>(null);
   
   // Data for lookups
   const [allOms, setAllOms] = useState<OMRecord[]>([]);
@@ -108,7 +122,6 @@ export const Dashboard: React.FC = () => {
     return () => window.removeEventListener('safemaint_storage_update', refreshData);
   }, [refreshData]);
 
-  // FETCH PDF SOB DEMANDA SE NÃO EXISTIR NA MEMÓRIA OU FOR MARCADOR 'TRUE'
   useEffect(() => {
     const loadPdf = async () => {
         if (!viewingDoc) {
@@ -121,7 +134,7 @@ export const Dashboard: React.FC = () => {
 
         if (!pdfData || pdfData === 'TRUE') {
             setIsLoadingPdf(true);
-            const table = viewingDoc.type === 'PROCEDIMENTO' ? 'arts' : 'oms'; // Mapeia 'OM'->oms e 'PROCEDIMENTO'->arts
+            const table = viewingDoc.type === 'PROCEDIMENTO' ? 'arts' : 'oms'; 
             const remotePdf = await StorageService.getRecordPdf(table as any, viewingDoc.id);
             if (remotePdf) pdfData = remotePdf;
             setIsLoadingPdf(false);
@@ -157,9 +170,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleAction = (task: ActiveMaintenance) => {
-      // Retomar para status 'ANDAMENTO'
       if (task.status === 'PAUSADA' || task.status === 'AGUARDANDO') {
-          // Passamos o currentUser para que a posse da atividade seja transferida para quem está retomando
           StorageService.resumeMaintenance(task.id, currentUser);
       } else {
           setClosingTask(task);
@@ -175,7 +186,6 @@ export const Dashboard: React.FC = () => {
 
   const handleConfirmLink = async (om: OMRecord) => {
       if(!linkTargetTaskId) return;
-      // CRUCIAL: Passa o TAG da OM para garantir atualização
       await StorageService.linkOmToMaintenance(linkTargetTaskId, om.id, om.omNumber, om.description, om.tag);
       setIsLinkingOm(false);
       setLinkTargetTaskId('');
@@ -188,7 +198,6 @@ export const Dashboard: React.FC = () => {
       const startTime = closingTask.startTime;
 
       if(type === 'PARCIAL') {
-          // Parada Parcial libera o LOCK
           await StorageService.setMaintenancePartial(taskId);
       } else if(type === 'TOTAL') {
           await StorageService.completeMaintenance(taskId, 'TOTAL (MANUAL)', true);
@@ -198,6 +207,15 @@ export const Dashboard: React.FC = () => {
       }
       setClosingTask(null);
       refreshData();
+  };
+
+  const handleViewFullArt = (taskId: string, artId: string) => {
+      const doc = allDocs.find(d => d.id === artId);
+      if (doc) {
+          setViewingFullArt(doc);
+      } else {
+          alert("Documento original não encontrado.");
+      }
   };
 
   return (
@@ -211,7 +229,6 @@ export const Dashboard: React.FC = () => {
             <div>
                 <h2 className="text-xl font-bold text-gray-800 uppercase leading-none tracking-tight">Painel de Controle</h2>
                 <div className="flex items-center gap-2 mt-1">
-                    {/* Visual Connection Indicator */}
                     {isOnline ? (
                         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 border border-green-200 rounded-full" title="Conexão de Dados Ativa">
                             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
@@ -258,11 +275,9 @@ export const Dashboard: React.FC = () => {
                         const isPaused = task.status === 'PAUSADA';
                         const taskOwner = task.openedBy?.toUpperCase() || 'SISTEMA';
                         
-                        // --- LÓGICA DE BLOQUEIO (LOCK) ---
                         const isOwner = taskOwner === currentUser;
                         const canControl = isOwner || isPartial;
 
-                        // Cores
                         let statusColor = 'bg-[#007e7a]'; 
                         let statusText = 'PREVENTIVA';
                         
@@ -283,40 +298,24 @@ export const Dashboard: React.FC = () => {
 
                         const needsOmLink = task.header.om === 'DEMANDA-EXTRA';
 
-                        // --- LÓGICA ROBUSTA PARA PDF E TAG ---
+                        // --- RESOLUÇÃO DE DADOS VINCULADOS ---
                         const linkedOm = allOms.find(o => o.id === task.omId);
-                        
-                        // FORÇAR TAG DA OM VINCULADA (Se existir)
-                        // Isso garante que mesmo se a tarefa começou com tag genérica, ao vincular, exibe o correto.
                         const displayTag = linkedOm ? linkedOm.tag : task.header.tag;
 
-                        let pdfUrl = linkedOm?.pdfUrl;
-                        let pdfTitle = linkedOm?.omNumber || 'DOCUMENTO ORIGINAL';
-                        let pdfType = 'OM';
-                        let docId = linkedOm?.id || '';
-
-                        if (!pdfUrl && task.artId) {
-                            const linkedDoc = allDocs.find(d => d.id === task.artId);
-                            if (linkedDoc?.content?.artId) {
-                                const linkedArt = allArts.find(a => a.id === linkedDoc.content.artId);
-                                if (linkedArt?.pdfUrl) {
-                                    pdfUrl = linkedArt.pdfUrl;
-                                    pdfTitle = linkedArt.taskName;
-                                    pdfType = 'PROCEDIMENTO';
-                                    docId = linkedArt.id;
-                                }
-                            }
+                        // Resolve ART
+                        const linkedDoc = allDocs.find(d => d.id === task.artId);
+                        let linkedArt: RegisteredART | undefined = undefined;
+                        if (linkedDoc?.content?.linkedArtId) {
+                            linkedArt = allArts.find(a => a.id === linkedDoc.content.linkedArtId);
+                        } else if (linkedDoc?.content?.artId) {
+                            linkedArt = allArts.find(a => a.id === linkedDoc.content.artId);
                         }
-
-                        const hasPdf = !!pdfUrl || !!docId;
 
                         return (
                             <div key={task.id} className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-shadow border border-gray-200 overflow-hidden flex flex-col md:flex-row">
-                                {/* Lateral Colorida Status */}
                                 <div className={`w-full md:w-3 ${statusColor} shrink-0`}></div>
                                 
                                 <div className="flex-1 p-5 flex flex-col gap-4">
-                                    {/* Linha 1: Header */}
                                     <div className="flex justify-between items-start">
                                         <div className="flex items-center gap-3">
                                             <div className={`p-2 rounded-lg ${isCorretiva ? 'bg-red-50 text-red-600' : isExtraDemand ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'}`}>
@@ -337,42 +336,49 @@ export const Dashboard: React.FC = () => {
                                             </div>
                                         </div>
                                         
-                                        <div className="flex gap-2">
-                                            {/* Botão Ver PDF - INDISPENSÁVEL E VISÍVEL */}
-                                            {hasPdf && (
+                                        <div className="flex flex-col gap-1 items-end">
+                                            <button 
+                                                onClick={() => handleViewFullArt(task.id, task.artId)}
+                                                className="px-2 py-1.5 rounded bg-gray-900 text-white border border-black text-[9px] font-black uppercase flex items-center gap-1 hover:bg-black transition-colors w-40 justify-center shadow-sm"
+                                            >
+                                                <ShieldCheck size={12} className="text-vale-yellow" /> CONFERIR LIBERAÇÃO COMPLETA
+                                            </button>
+
+                                            {linkedOm?.pdfUrl && (
                                                 <button 
-                                                    onClick={() => setViewingDoc({ url: pdfUrl!, title: pdfTitle, type: pdfType, id: docId })}
-                                                    className={`
-                                                        px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all shadow-sm
-                                                        ${pdfType === 'OM' ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'}
-                                                    `}
-                                                    title={`Visualizar ${pdfType}`}
+                                                    onClick={() => setViewingDoc({ url: linkedOm.pdfUrl!, title: `OM ${linkedOm.omNumber}`, type: 'OM', id: linkedOm.id })}
+                                                    className="px-2 py-1 rounded bg-red-50 text-red-600 border border-red-200 text-[9px] font-black uppercase flex items-center gap-1 hover:bg-red-100 transition-colors w-40 justify-center"
                                                 >
-                                                    <FileText size={12} /> {pdfType === 'OM' ? 'PDF ORIGINAL (OM)' : 'PDF ORIGINAL (ART)'}
+                                                    <FileText size={10} /> PDF OM ORIGINAL
+                                                </button>
+                                            )}
+                                            
+                                            {linkedArt?.pdfUrl && (
+                                                <button 
+                                                    onClick={() => setViewingDoc({ url: linkedArt!.pdfUrl!, title: `ART ${linkedArt!.code}`, type: 'PROCEDIMENTO', id: linkedArt!.id })}
+                                                    className="px-2 py-1 rounded bg-blue-50 text-blue-600 border border-blue-200 text-[9px] font-black uppercase flex items-center gap-1 hover:bg-blue-100 transition-colors w-40 justify-center"
+                                                >
+                                                    <FileText size={10} /> PDF ART ORIGINAL
                                                 </button>
                                             )}
 
-                                            {/* Botão Vincular OM */}
                                             {needsOmLink && (
                                                 <button 
                                                     onClick={() => openLinkOmModal(task.id)}
-                                                    className="bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-colors"
+                                                    className="px-2 py-1 rounded bg-gray-100 text-gray-600 border border-gray-300 text-[9px] font-black uppercase flex items-center gap-1 hover:bg-gray-200 transition-colors w-40 justify-center"
                                                 >
-                                                    <LinkIcon size={12} /> Vincular OM
+                                                    <LinkIcon size={10} /> Vincular OM
                                                 </button>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Linha 2: Timer e Info Principal */}
                                     <div className="flex flex-col md:flex-row gap-6 items-center bg-gray-50 rounded-xl p-4 border border-gray-100">
                                         <div className="text-center md:text-left min-w-[140px]">
                                             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">TEMPO DECORRIDO</p>
                                             <MaintenanceTimer task={task} />
                                         </div>
-                                        
                                         <div className="w-px h-10 bg-gray-200 hidden md:block"></div>
-                                        
                                         <div className="flex-1 text-center md:text-left w-full">
                                             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EQUIPAMENTO & DESCRIÇÃO</p>
                                             <p className="text-base font-black text-[#007e7a] uppercase leading-none mb-1">{displayTag}</p>
@@ -380,7 +386,6 @@ export const Dashboard: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* Linha 3: Footer e Ações */}
                                     <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-2">
                                         <div className={`flex items-center gap-2 border px-3 py-1.5 rounded-full shadow-sm ${!canControl ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
                                             <div className="bg-gray-100 p-1 rounded-full"><UserCheck size={14} className="text-gray-500"/></div>
@@ -393,16 +398,10 @@ export const Dashboard: React.FC = () => {
                                             {task.status === 'ANDAMENTO' ? (
                                                 canControl ? (
                                                     <>
-                                                        <button 
-                                                            onClick={() => StorageService.pauseMaintenance(task.id)} 
-                                                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-yellow-50 text-yellow-700 font-bold text-xs uppercase hover:bg-yellow-100 transition-colors border border-yellow-200"
-                                                        >
+                                                        <button onClick={() => StorageService.pauseMaintenance(task.id)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-yellow-50 text-yellow-700 font-bold text-xs uppercase hover:bg-yellow-100 transition-colors border border-yellow-200">
                                                             <PauseCircle size={18} /> Pausar
                                                         </button>
-                                                        <button 
-                                                            onClick={() => handleAction(task)} 
-                                                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-red-600 text-white font-black text-xs uppercase hover:bg-red-700 shadow-md hover:shadow-lg transition-all active:scale-95"
-                                                        >
+                                                        <button onClick={() => handleAction(task)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-red-600 text-white font-black text-xs uppercase hover:bg-red-700 shadow-md hover:shadow-lg transition-all active:scale-95">
                                                             <StopCircle size={18} /> Encerrar
                                                         </button>
                                                     </>
@@ -413,10 +412,7 @@ export const Dashboard: React.FC = () => {
                                                 )
                                             ) : (
                                                 canControl ? (
-                                                    <button 
-                                                        onClick={() => handleAction(task)} 
-                                                        className="w-full md:w-auto flex items-center justify-center gap-2 px-8 py-3 rounded-xl bg-[#007e7a] text-white font-black text-xs uppercase hover:bg-[#00605d] shadow-md hover:shadow-lg transition-all active:scale-95"
-                                                    >
+                                                    <button onClick={() => handleAction(task)} className="w-full md:w-auto flex items-center justify-center gap-2 px-8 py-3 rounded-xl bg-[#007e7a] text-white font-black text-xs uppercase hover:bg-[#00605d] shadow-md hover:shadow-lg transition-all active:scale-95">
                                                         <PlayCircle size={18} /> {isPartial ? 'Assumir e Retomar' : 'Retomar Atividade'}
                                                     </button>
                                                 ) : (
@@ -472,6 +468,115 @@ export const Dashboard: React.FC = () => {
             </div>
         </div>
       </div>
+
+      {/* MODAL DE VISUALIZAÇÃO COMPLETA DA ART (S/ PAUSAR TEMPO) */}
+      {viewingFullArt && (
+          <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col animate-fadeIn h-[100dvh] overflow-hidden">
+              <div className="bg-white p-3 flex justify-between items-center shrink-0 shadow-md border-b border-gray-200 relative z-[110]">
+                  <div className="flex items-center gap-3">
+                      <div className="bg-[#007e7a] text-white p-1.5 rounded-lg shadow-sm">
+                          <ShieldCheck size={20} />
+                      </div>
+                      <div>
+                          <h3 className="font-black text-sm uppercase text-gray-800 leading-tight">Liberação de Segurança Ativa</h3>
+                          <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">{viewingFullArt.header.om} - {viewingFullArt.header.tag}</p>
+                      </div>
+                  </div>
+                  <button onClick={() => setViewingFullArt(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition-colors"><X size={28}/></button>
+              </div>
+
+              <div className="flex-1 overflow-auto bg-gray-100 p-4 md:p-10 flex flex-col items-center custom-scrollbar">
+                  <div className="bg-white shadow-xl mx-auto font-sans text-gray-900 border border-gray-200 p-6 md:p-12 max-w-[21cm] w-full flex flex-col mb-10">
+                      <div className="border-b-4 border-vale-green pb-4 mb-8 flex justify-between items-end">
+                          <div className="flex items-center gap-4">
+                              <Logo size="lg" />
+                              <div className="border-l-2 border-gray-300 pl-4 h-12 flex flex-col justify-center">
+                                  <h1 className="text-xl font-black text-vale-darkgray uppercase leading-none">{viewingFullArt.type.replace('_', ' ')}</h1>
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">SISTEMA INTEGRADO DE SEGURANÇA</p>
+                              </div>
+                          </div>
+                          <div className="text-right">
+                              <p className="text-[9px] font-black text-gray-400 uppercase">INÍCIO REGISTRO</p>
+                              <p className="text-lg font-black text-gray-800">{new Date(viewingFullArt.createdAt).toLocaleDateString()} {new Date(viewingFullArt.createdAt).toLocaleTimeString().slice(0,5)}</p>
+                          </div>
+                      </div>
+
+                      <div className="space-y-8">
+                          {/* IDENTIFICAÇÃO */}
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 grid grid-cols-2 gap-4">
+                              <div><span className="text-[9px] font-bold text-gray-400 block uppercase">OM/REF</span><span className="font-black text-lg">{viewingFullArt.header.om}</span></div>
+                              <div><span className="text-[9px] font-bold text-gray-400 block uppercase">TAG</span><span className="font-black text-lg text-vale-green">{viewingFullArt.header.tag}</span></div>
+                              <div className="col-span-2"><span className="text-[9px] font-bold text-gray-400 block uppercase">DESCRIÇÃO ATIVIDADE</span><span className="font-bold text-sm uppercase">{viewingFullArt.header.description}</span></div>
+                          </div>
+
+                          {/* RISCOS (SE EMERGÊNCIAL) */}
+                          {viewingFullArt.type === 'ART_EMERGENCIAL' && viewingFullArt.content?.quadrantRisks && (
+                              <div className="space-y-6 border-y py-6 border-gray-100">
+                                  <h4 className="font-black text-xs text-red-600 uppercase flex items-center gap-2"><MapPin size={16}/> Mapeamento Visual de Riscos</h4>
+                                  <div className="flex flex-col md:flex-row gap-8 items-center justify-center">
+                                      <div className="relative w-48 h-48 border-2 border-gray-200 rounded-full flex items-center justify-center bg-gray-50/50">
+                                          <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
+                                              <div className="border-r border-b border-gray-100 flex flex-col items-center justify-center p-2"><span className="text-[7px] font-black text-gray-300 absolute top-2">FRENTE</span>{viewingFullArt.content.quadrantRisks['FRENTE']?.map((r: number) => <span key={r} className="w-4 h-4 bg-red-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white m-0.5">{r}</span>)}</div>
+                                              <div className="border-b border-gray-100 flex flex-col items-center justify-center p-2"><span className="text-[7px] font-black text-gray-300 absolute top-2 right-2">DIREITA</span>{viewingFullArt.content.quadrantRisks['DIREITA']?.map((r: number) => <span key={r} className="w-4 h-4 bg-red-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white m-0.5">{r}</span>)}</div>
+                                              <div className="border-r border-gray-100 flex flex-col items-center justify-center p-2"><span className="text-[7px] font-black text-gray-300 absolute bottom-2 left-2">ESQUERDA</span>{viewingFullArt.content.quadrantRisks['ESQUERDA']?.map((r: number) => <span key={r} className="w-4 h-4 bg-red-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white m-0.5">{r}</span>)}</div>
+                                              <div className="flex flex-col items-center justify-center p-2"><span className="text-[7px] font-black text-gray-300 absolute bottom-2">TRÁS</span>{viewingFullArt.content.quadrantRisks['TRAS']?.map((r: number) => <span key={r} className="w-4 h-4 bg-red-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white m-0.5">{r}</span>)}</div>
+                                          </div>
+                                          <div className="w-4 h-4 bg-gray-800 rounded-full z-10 border-2 border-white"></div>
+                                      </div>
+                                      <div className="flex-1 space-y-2">
+                                          <h5 className="text-[10px] font-black text-gray-500 uppercase border-b pb-1">Riscos e Controles Registrados</h5>
+                                          {Object.entries(viewingFullArt.content.checklistRisks || {}).filter(([,v]:any) => v.checked).map(([id, v]:any) => (
+                                              <div key={id} className="text-[10px] bg-red-50 p-2 rounded border border-red-100">
+                                                  <p className="font-black text-red-700 uppercase">#{id} {RISK_LIST[parseInt(id)-1]}</p>
+                                                  {v.control && <p className="text-gray-600 font-bold mt-1 uppercase italic border-l-2 border-red-200 pl-2">CONTROLE: {v.control}</p>}
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* PASSOS (SE ATIVIDADE) */}
+                          {viewingFullArt.type === 'ART_ATIVIDADE' && viewingFullArt.content?.artNumber && (
+                              <div className="space-y-4">
+                                  <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-between">
+                                      <span className="font-black text-xs text-blue-700 uppercase tracking-widest">Procedimento Vinculado: {viewingFullArt.content.artNumber}</span>
+                                      <span className="text-[10px] font-bold text-blue-400 uppercase">{viewingFullArt.content.artName}</span>
+                                  </div>
+                                  <div className="text-center p-6 border-2 border-dashed border-gray-200 rounded-xl">
+                                      <BookOpen className="mx-auto mb-2 text-gray-300" size={32}/>
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase">A sequência operacional está vinculada ao arquivo PDF original.</p>
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* ASSINATURAS */}
+                          <div className="mt-8 pt-8 border-t-2 border-gray-200">
+                              <h4 className="font-black text-[10px] uppercase mb-10 text-gray-400 tracking-widest text-center">Assinaturas e Aprovações Digitais Coletadas</h4>
+                              <div className="grid grid-cols-2 gap-y-12 gap-x-12">
+                                  {viewingFullArt.signatures.map(sig => (
+                                      <div key={sig.id} className="text-center relative">
+                                          <div className="h-14 flex items-end justify-center mb-2">
+                                              <img src={sig.signatureData} alt="Sig" className="max-h-full max-w-full opacity-90 object-contain" />
+                                          </div>
+                                          <div className="border-t border-gray-300 pt-2">
+                                              <p className="font-black text-[10px] uppercase text-gray-800 leading-tight">{sig.name}</p>
+                                              <p className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{sig.matricula} • {sig.function} • {sig.role}</p>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      </div>
+
+                      <div className="mt-20 pt-4 border-t border-gray-100 text-[8px] text-gray-300 font-black uppercase flex justify-between shrink-0">
+                          <span>SAFEMAINT - CONTROLE DE EXECUÇÃO EM TEMPO REAL</span>
+                          <span>ID LIBERAÇÃO: {viewingFullArt.id.split('-')[0].toUpperCase()}</span>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* MODAL DE ENCERRAMENTO */}
       {closingTask && (
@@ -562,41 +667,87 @@ export const Dashboard: React.FC = () => {
           </div>
       )}
 
-      {/* PDF VIEWER OVERLAY - MOBILE OPTIMIZED (100dvh + EXTERNAL LINK) */}
+      {/* MODAL VISUALIZAÇÃO DE PASSOS (ART STEPS) */}
+      {viewingSteps && (
+          <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden border-t-8 border-green-600">
+                  <div className="bg-gray-50 p-4 border-b flex justify-between items-center shrink-0">
+                      <div className="flex items-center gap-3">
+                          <div className="bg-green-100 p-2 rounded-lg text-green-700"><ListChecks size={24}/></div>
+                          <div>
+                              <h3 className="text-lg font-black text-gray-800 uppercase leading-none">Passo a Passo (Procedimento)</h3>
+                              <p className="text-xs font-bold text-gray-500 uppercase mt-1">ART: {viewingSteps.code} - {viewingSteps.title}</p>
+                          </div>
+                      </div>
+                      <button onClick={() => setViewingSteps(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition-colors"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white">
+                      <div className="space-y-3">
+                          {viewingSteps.steps.map((step: any, idx: number) => (
+                              <div key={idx} className="flex gap-4 p-3 rounded-xl border border-gray-100 hover:border-green-200 hover:bg-green-50/30 transition-all">
+                                  <div className="flex flex-col items-center">
+                                      <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center font-black text-xs shadow-md">
+                                          {step.item}
+                                      </div>
+                                      {idx < viewingSteps.steps.length - 1 && <div className="w-0.5 h-full bg-gray-200 my-1"></div>}
+                                  </div>
+                                  <div className="flex-1 pb-2">
+                                      <p className="text-xs font-bold text-gray-700 uppercase leading-relaxed">{step.step}</p>
+                                      <span className={`inline-block mt-2 text-[9px] font-black px-2 py-0.5 rounded uppercase ${step.riskLevel === 'ALTO' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-yellow-100 text-yellow-700 border border-yellow-200'}`}>
+                                          RISCO {step.riskLevel}
+                                      </span>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+                  
+                  <div className="p-4 bg-gray-50 border-t text-center shrink-0">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase">Siga rigorosamente a sequência operacional.</p>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* PDF VIEWER OVERLAY */}
       {viewingDoc && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden h-[100dvh]">
-            <div className="bg-gray-900 px-4 py-2 flex justify-between items-center text-white shrink-0 border-b border-gray-800">
-                <div className="flex items-center gap-3">
-                    <FileText size={18} className="text-[#007e7a]"/>
-                    <div>
-                        <h3 className="font-black text-sm tracking-tighter uppercase">Visualizador de Documento</h3>
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{viewingDoc.title}</p>
+        <div className="fixed inset-0 z-[100] bg-gray-900/95 flex items-center justify-center p-0 backdrop-blur-md">
+            <div className="w-[98vw] h-[98vh] bg-white flex flex-col rounded-xl overflow-hidden shadow-2xl border-4 border-gray-900">
+                <div className="bg-white p-3 flex justify-between items-center shrink-0 border-b border-gray-200">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-[#007e7a] text-white p-1.5 rounded">
+                            <FileText size={18} />
+                        </div>
+                        <div>
+                            <span className="font-black text-xs text-gray-800 uppercase tracking-wide block">Visualização de Documento (Segurança)</span>
+                            <span className="font-bold text-[10px] text-[#007e7a] uppercase tracking-widest">{viewingDoc.title}</span>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        {pdfBlobUrl && (
+                            <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-100 rounded hover:bg-gray-200 text-gray-600 transition-colors md:hidden" title="Abrir em Nova Aba">
+                                <ExternalLink size={16}/>
+                            </a>
+                        )}
+                        <button onClick={() => setViewingDoc(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-all"><X size={24}/></button>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    {pdfBlobUrl && (
-                        <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors md:hidden" title="Abrir em Nova Aba">
-                            <ExternalLink size={16}/>
-                        </a>
+                <div className="flex-1 bg-gray-100 relative">
+                    {isLoadingPdf ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                            <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
+                            <h4 className="font-black text-xs uppercase">BAIXANDO ORIGINAL DO SERVIDOR...</h4>
+                        </div>
+                    ) : pdfBlobUrl ? (
+                        <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                            <Info size={40} className="opacity-20" />
+                            <span className="font-bold text-[10px] uppercase tracking-widest">Carregando Documento...</span>
+                        </div>
                     )}
-                    <button onClick={() => setViewingDoc(null)} className="p-2 bg-white/10 rounded hover:bg-red-600 transition-colors"><X size={16}/></button>
                 </div>
-            </div>
-            
-            <div className="flex-1 bg-black relative w-full h-full overflow-hidden">
-                {isLoadingPdf ? (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                        <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
-                        <h4 className="font-black text-xs uppercase">BAIXANDO ORIGINAL DO SERVIDOR...</h4>
-                    </div>
-                ) : pdfBlobUrl ? (
-                    <iframe src={pdfBlobUrl} className="w-full h-full border-none" title="Viewer" />
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                        <Info size={48} className="mx-auto mb-2 opacity-30" />
-                        <h4 className="font-black text-xs uppercase">PDF Indisponível</h4>
-                    </div>
-                )}
             </div>
         </div>
       )}

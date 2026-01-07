@@ -1,268 +1,238 @@
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { StorageService } from '../services/storage';
-import { ScheduleItem } from '../types';
+import { ScheduleItem, DocumentRecord } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { 
   PlayCircle, Maximize2, Trash2, Cloud, 
-  ShieldAlert, ChevronLeft, ChevronRight, CalendarCheck, Search, Lock
+  ShieldAlert, ChevronLeft, ChevronRight, CalendarCheck, Search, Lock, Printer, Save, FileText
 } from 'lucide-react';
 import { TVSchedule } from './TVSchedule';
 import { BackButton } from '../components/BackButton';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { FeedbackModal } from '../components/FeedbackModal';
 
 export const Schedule: React.FC = () => {
   const navigate = useNavigate();
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
-  
-  // OTIMIZAÇÃO: Armazena IDs dos itens que já estão em execução (ActiveMaintenance)
   const [activeScheduleIds, setActiveScheduleIds] = useState<Set<string>>(new Set());
-  
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
+  
+  // Feedback
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
-  const loadData = useCallback(() => {
-      setIsLoading(true);
-      
-      setTimeout(() => {
-          try {
-              const sch = StorageService.getSchedule();
-              const active = StorageService.getActiveMaintenances();
-              
-              // 1. Mapeia IDs de agenda que já estão vinculados a tarefas ativas
-              // Isso garante que o item suma da lista ou fique bloqueado se já estiver no Painel
-              const activeIds = new Set<string>();
-              active.forEach(task => {
-                  if (task.scheduleId) {
-                      activeIds.add(task.scheduleId);
-                  }
-              });
+  // Ref para rastrear se é o primeiro carregamento e evitar piscadas
+  const isInitialLoad = useRef(true);
 
-              setScheduleItems(sch);
-              setActiveScheduleIds(activeIds);
-          } catch (error) {
-              console.error("Erro ao processar agendamento:", error);
-          } finally {
-              setIsLoading(false);
-          }
-      }, 50);
+  const loadData = useCallback(async (showLoader = false) => {
+      if (showLoader) setIsLoading(true);
+      try {
+          const sch = StorageService.getSchedule();
+          const active = StorageService.getActiveMaintenances();
+          const activeIds = new Set<string>();
+          active.forEach(task => { if (task.scheduleId) activeIds.add(task.scheduleId); });
+          
+          setScheduleItems(sch);
+          setActiveScheduleIds(activeIds);
+      } catch (error) {
+          console.error("Erro ao carregar dados da agenda:", error);
+      } finally {
+          if (showLoader) setIsLoading(false);
+          isInitialLoad.current = false;
+      }
   }, []);
 
   useEffect(() => {
-    loadData();
-    window.addEventListener('safemaint_storage_update', loadData);
-    return () => {
-        window.removeEventListener('safemaint_storage_update', loadData);
-    };
+    loadData(true);
+    const handleSilentUpdate = () => loadData(false);
+    window.addEventListener('safemaint_storage_update', handleSilentUpdate);
+    return () => window.removeEventListener('safemaint_storage_update', handleSilentUpdate);
   }, [loadData]);
 
   const handleStartMaintenance = (item: ScheduleItem) => {
-      if(activeScheduleIds.has(item.id)) {
-          alert("ESTA ATIVIDADE JÁ ESTÁ EM EXECUÇÃO NO PAINEL!");
-          return;
-      }
-
-      // Lógica de Extração (Defensive Coding)
-      let omNumber = '';
-      let tag = '';
+      if(activeScheduleIds.has(item.id)) { alert("ESTA ATIVIDADE JÁ ESTÁ EM EXECUÇÃO!"); return; }
+      let omNumber = ''; let tag = '';
       const fullText = (item.frotaOm || '').toUpperCase();
-
-      // Tenta extrair TAG e OM via Regex ou Split
-      // Ex: "CA5302 / 12345678" ou "12345678"
-      const omMatch = fullText.match(/(\d{8,12})/); // Procura sequência de 8 a 12 dígitos
-      if (omMatch) {
-          omNumber = omMatch[1];
-      } else if (fullText.includes('/')) {
-          const parts = fullText.split('/');
-          omNumber = parts.length > 1 ? parts[1].trim() : parts[0].trim();
-      } else {
-          omNumber = fullText;
-      }
-
-      // Tenta extrair TAG (Geralmente começa com CA, TR, PP ou 3 letras)
+      
+      const omMatch = fullText.match(/(\d{8,12})/);
+      if (omMatch) omNumber = omMatch[1];
+      else if (fullText.includes('/')) omNumber = fullText.split('/')[1].trim();
+      else omNumber = fullText;
+      
       const tagMatch = fullText.match(/([A-Z]{2,4}-?\d+)/);
-      if (tagMatch) {
-          tag = tagMatch[1];
-      } else {
-          tag = fullText.split('/')[0].trim();
-      }
-
-      // NAVEGA PARA ART COM DADOS BRUTOS
-      // A tela de ART fará a validação obrigatória de vínculo (Search & Link)
+      if (tagMatch) tag = tagMatch[1];
+      else tag = fullText.split('/')[0].trim();
+      
       const params = new URLSearchParams();
-      params.append('om', omNumber);
-      params.append('tag', tag);
-      params.append('desc', item.description || 'Manutenção Programada');
-      params.append('scheduleId', item.id); // VÍNCULO CRUCIAL PARA SUMIR DA AGENDA APÓS INÍCIO
+      params.append('om', omNumber); 
+      params.append('tag', tag); 
+      params.append('desc', item.description || ''); 
+      params.append('scheduleId', item.id);
       
       navigate(`/art-atividade?${params.toString()}`);
   };
 
   const handleClearAll = () => {
-      if(scheduleItems.length === 0) return;
-      if (window.confirm("ATENÇÃO: DESEJA LIMPAR TODA A PROGRAMAÇÃO?")) {
-          setIsLoading(true);
-          setTimeout(() => {
-              StorageService.archiveAndClearSchedule().then(() => {
-                  setScheduleItems([]);
-                  setActiveScheduleIds(new Set());
-                  setIsLoading(false);
-                  setCurrentPage(1);
-              });
-          }, 200);
-      }
+      if(!scheduleItems.length || !window.confirm("CONFIRMA A LIMPEZA DE TODA A PROGRAMAÇÃO?")) return;
+      setIsLoading(true);
+      StorageService.archiveAndClearSchedule().then(() => {
+          setScheduleItems([]); 
+          setActiveScheduleIds(new Set()); 
+          setIsLoading(false); 
+          setCurrentPage(1);
+      });
   };
 
-  const handleDeleteItem = (id: string) => {
-      if(window.confirm("Remover este item da programação?")) {
-          setScheduleItems(prev => prev.filter(item => item.id !== id));
-          if (activeScheduleIds.has(id)) {
-              const newSet = new Set(activeScheduleIds);
-              newSet.delete(id);
-              setActiveScheduleIds(newSet);
-          }
-          StorageService.deleteScheduleItem(id);
-      }
+  const handleArchiveWeek = async () => {
+      if(scheduleItems.length === 0) return;
+      const weekNum = scheduleItems[0]?.weekNumber || 'ATUAL';
+      
+      if(!window.confirm(`Deseja salvar a programação da SEMANA ${weekNum} como PDF no arquivo?`)) return;
+
+      setIsProcessing(true);
+      await new Promise(r => setTimeout(r, 1000));
+
+      const now = new Date();
+      // Salva snapshot como DocumentRecord
+      const doc: DocumentRecord = {
+          id: crypto.randomUUID(),
+          type: 'CRONOGRAMA',
+          header: {
+              om: `SEM-${weekNum}`,
+              tag: 'GERAL',
+              date: now.toISOString().split('T')[0],
+              time: now.toLocaleTimeString().slice(0,5),
+              type: 'OUTROS',
+              description: `CRONOGRAMA SEMANAL ${weekNum} - ${scheduleItems.length} ITENS`
+          },
+          createdAt: now.toISOString(),
+          status: 'ARQUIVADO',
+          content: {
+              weekNumber: weekNum,
+              items: scheduleItems
+          },
+          signatures: []
+      };
+
+      await StorageService.saveDocument(doc);
+      
+      setIsProcessing(false);
+      setIsSuccess(true);
+      
+      // Trigger Print
+      setTimeout(() => {
+          setIsSuccess(false);
+          window.print();
+      }, 1000);
   };
 
   const filteredAndPaginatedItems = useMemo(() => {
-    // Filtragem para remover itens que já estão em execução (Visualmente somem da lista disponível)
-    const visibleItems = scheduleItems.filter(item => !activeScheduleIds.has(item.id));
-
-    let list = [];
-    const q = searchQuery.toUpperCase().trim();
+    // Na visualização normal, esconde itens ativos. Na impressão, mostra TUDO.
+    const visibleItems = scheduleItems; 
+    let list = visibleItems;
     
-    if (!q) {
-        list = visibleItems;
-    } else {
-        for (let i = 0; i < visibleItems.length; i++) {
-            const item = visibleItems[i];
-            if ((item.frotaOm && item.frotaOm.includes(q)) || (item.description && item.description.includes(q))) {
-                list.push(item);
-            }
-        }
+    const q = searchQuery.toUpperCase().trim();
+    if (q) {
+        list = visibleItems.filter(i => 
+            (i.frotaOm && i.frotaOm.includes(q)) || 
+            (i.description && i.description.includes(q))
+        );
     }
-
+    
     const totalItems = list.length;
     const start = (currentPage - 1) * itemsPerPage;
-    const data = list.slice(start, start + itemsPerPage);
-
-    return { data, totalItems };
-  }, [scheduleItems, activeScheduleIds, currentPage, searchQuery]);
+    return { data: list.slice(start, start + itemsPerPage), totalItems, allData: list };
+  }, [scheduleItems, currentPage, searchQuery]);
 
   const totalPages = Math.ceil(filteredAndPaginatedItems.totalItems / itemsPerPage);
 
-  const goToNextPage = () => setCurrentPage(p => Math.min(p + 1, totalPages));
-  const goToPrevPage = () => setCurrentPage(p => Math.max(p - 1, 1));
+  if (isLoading && isInitialLoad.current) {
+      return <LoadingSpinner text="Carregando Agenda..." fullScreen />;
+  }
 
-  if (isLoading) return <LoadingSpinner text="Carregando Agenda..." fullScreen />;
-
+  // --- PRINT MODE LOGIC ---
+  // We render a specific clean table for printing that overrides the main UI via CSS
   return (
     <>
-        <div className="max-w-[99%] mx-auto pb-10 animate-fadeIn">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-6 border-b-4 border-vale-green pb-4 gap-4">
+        <style>{`
+            @media print {
+                @page { size: landscape; margin: 5mm; }
+                body * { visibility: hidden; }
+                .print-container, .print-container * { visibility: visible; }
+                .print-container { position: absolute; left: 0; top: 0; width: 100%; }
+                .no-print { display: none !important; }
+            }
+        `}</style>
+
+        <FeedbackModal isOpen={isProcessing || isSuccess} isSuccess={isSuccess} loadingText="ARQUIVANDO SEMANA..." successText="PROGRAMAÇÃO SALVA!" />
+
+        {/* --- MAIN UI (SCREEN) --- */}
+        <div className="max-w-[99%] mx-auto pb-10 animate-fadeIn h-full flex flex-col no-print">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-6 border-b-4 border-vale-green pb-4 gap-4 bg-white md:bg-transparent p-4 md:p-0 rounded-2xl shadow-sm md:shadow-none">
                 <div className="flex items-center gap-3">
                     <BackButton />
-                    <div className="bg-vale-dark p-3 rounded-xl text-white shadow-lg">
-                        <CalendarCheck size={32} />
-                    </div>
+                    <div className="bg-vale-dark p-3 rounded-2xl text-white shadow-xl"><CalendarCheck size={32} /></div>
                     <div>
-                        <h2 className="text-2xl md:text-3xl font-black text-vale-darkgray uppercase tracking-tight">
-                        Programação Semanal
-                        </h2>
+                        <h2 className="text-2xl font-black text-vale-darkgray uppercase tracking-tighter">Programação Semanal</h2>
                         <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[9px] font-black text-gray-400 bg-gray-100 px-3 py-1 rounded-full flex items-center gap-1.5 border border-gray-200">
-                                <Cloud size={10} className="text-blue-500" />
-                                {scheduleItems.length} ITENS SINCRONIZADOS
+                            <span className="text-[9px] font-black text-gray-400 bg-gray-100 px-3 py-1 rounded-full border border-gray-200 uppercase tracking-widest">
+                                SEMANA {scheduleItems[0]?.weekNumber || '??'} | {scheduleItems.length} Itens
                             </span>
                         </div>
                     </div>
                 </div>
-                
                 <div className="flex flex-wrap gap-2 w-full lg:w-auto">
                     <div className="relative flex-1 lg:min-w-[300px]">
                         <Search className="absolute left-3 top-3 text-gray-400" size={16}/>
-                        <input 
-                            type="text" 
-                            placeholder="FILTRAR..." 
-                            value={searchQuery}
-                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="w-full bg-white border border-gray-300 pl-10 pr-4 py-2.5 rounded-xl text-xs font-bold uppercase outline-none focus:border-vale-green focus:ring-1 focus:ring-vale-green shadow-sm transition-all"
-                        />
+                        <input type="text" placeholder="PESQUISAR..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} className="w-full bg-white border-2 border-gray-100 pl-10 pr-4 py-2.5 rounded-xl text-xs font-bold uppercase outline-none focus:border-vale-green shadow-sm transition-all" />
                     </div>
-                    <button onClick={handleClearAll} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-xl font-black shadow-sm flex items-center gap-2 transition-all active:scale-95 text-[10px] uppercase tracking-widest">
-                        <ShieldAlert size={16} />
-                        <span className="hidden sm:inline">LIMPAR TUDO</span>
+                    <button onClick={handleArchiveWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 shadow-lg">
+                        <FileText size={16}/> SALVAR PDF
                     </button>
-                    <button onClick={() => setIsFullscreen(true)} className="bg-vale-dark text-white px-4 py-2 rounded-xl font-black shadow-lg flex items-center gap-2 transition-all active:scale-95 text-[10px] uppercase tracking-widest border-b-4 border-black hover:border-gray-800">
-                        <Maximize2 size={16} />
-                        <span className="hidden sm:inline">MONITOR TV</span>
-                    </button>
+                    <button onClick={handleClearAll} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors">LIMPAR</button>
+                    <button onClick={() => setIsFullscreen(true)} className="bg-vale-dark text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest border-b-4 border-black active:translate-y-0.5 transition-all">TV MODE</button>
                 </div>
             </div>
 
-            <div className="bg-white shadow-2xl rounded-[1.5rem] md:rounded-[2rem] overflow-hidden border-2 border-gray-100 min-h-[500px] flex flex-col">
+            <div className="bg-white shadow-2xl rounded-[2rem] overflow-hidden border-2 border-gray-100 flex-1 flex flex-col min-h-[500px]">
                 <div className="overflow-x-auto flex-1 custom-scrollbar">
-                    <table className="min-w-full divide-y divide-gray-300 text-[10px]">
-                        <thead className="bg-gray-100 text-gray-700 border-b-2 border-gray-300 sticky top-0 z-10">
+                    <table className="min-w-full divide-y divide-gray-200 text-[10px]">
+                        <thead className="bg-gray-50 text-gray-500 border-b-2 border-gray-200 sticky top-0 z-10 font-black uppercase">
                             <tr>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-16 bg-white shadow-sm sticky left-0 z-20">AÇÃO</th>
-                                <th className="px-2 py-3 text-left font-bold uppercase border-r border-gray-300 min-w-[100px]">FROTA/OM</th>
-                                <th className="px-2 py-3 text-left font-bold uppercase border-r border-gray-300 min-w-[250px]">DESCRIÇÃO DA ATIVIDADE</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-20">DATA MIN</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-20">DATA MAX</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-20">PRIORIDADE</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-12">N DE PESSOAS</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-12">H</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-20">DATA INICIO</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-20">DATA FIM</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-24">CENTRO DE TRABALHO</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-16">HORA INICIO</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase border-r border-gray-300 w-16">HORA FIM</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase min-w-[100px] border-r border-gray-300">RECURSOS</th>
-                                <th className="px-2 py-3 text-center font-bold uppercase min-w-[100px]">RECURSOS 2</th>
+                                <th className="p-4 text-center border-r border-gray-200 w-20 bg-gray-100 sticky left-0 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">AÇÃO</th>
+                                <th className="p-4 text-left border-r border-gray-200 min-w-[120px]">EQUIPAMENTO / OM</th>
+                                <th className="p-4 text-left border-r border-gray-200 min-w-[300px]">DESCRIÇÃO DA ATIVIDADE</th>
+                                <th className="p-4 text-center border-r border-gray-200 w-28">DATA INÍCIO</th>
+                                <th className="p-4 text-center border-r border-gray-200 w-28">LOCAL / CT</th>
+                                <th className="p-4 text-center w-24">HORÁRIO</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-100 font-bold">
+                        <tbody className="bg-white divide-y divide-gray-100 font-bold text-gray-700">
                             {filteredAndPaginatedItems.data.length === 0 ? (
-                                <tr>
-                                    <td colSpan={15} className="px-3 py-24 text-center text-gray-300 font-black uppercase tracking-[0.2em]">
-                                        {searchQuery ? "NENHUM RESULTADO PARA O FILTRO." : "TODAS AS ATIVIDADES EM EXECUÇÃO OU CONCLUÍDAS."}
-                                    </td>
-                                </tr>
+                                <tr><td colSpan={6} className="p-32 text-center text-gray-300 font-black uppercase tracking-[0.3em] italic">Aguardando dados da programação...</td></tr>
                             ) : (
                                 filteredAndPaginatedItems.data.map(item => {
+                                    const isActive = activeScheduleIds.has(item.id);
                                     return (
-                                        <tr key={item.id} className="transition-colors border-b border-gray-200 group hover:bg-blue-50/50">
-                                            <td className="px-1 py-1 text-center border-r border-gray-200 align-middle sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)] bg-white group-hover:bg-blue-50/50">
-                                                <div className="flex flex-col gap-1 items-center justify-center">
-                                                    <button onClick={() => handleStartMaintenance(item)} className="text-vale-green hover:scale-110 transition-transform p-1" title="Iniciar">
-                                                        <PlayCircle size={18} />
-                                                    </button>
-                                                    <button onClick={() => handleDeleteItem(item.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Remover">
-                                                        <Trash2 size={14} />
-                                                    </button>
+                                        <tr key={item.id} className={`transition-colors border-b border-gray-50 group hover:bg-teal-50/30 ${isActive ? 'bg-green-50 opacity-60 grayscale' : ''}`}>
+                                            <td className="p-2 text-center border-r border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-teal-50/50 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                                <div className="flex gap-2 justify-center">
+                                                    {!isActive && (
+                                                        <button onClick={() => handleStartMaintenance(item)} className="text-vale-green p-2 hover:scale-125 transition-transform bg-teal-50 rounded-lg" title="Iniciar Manutenção"><PlayCircle size={20} /></button>
+                                                    )}
+                                                    <button onClick={() => { if(window.confirm("REMOVER ITEM?")) StorageService.deleteScheduleItem(item.id).then(() => loadData(false)) }} className="text-gray-200 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button>
                                                 </div>
                                             </td>
-                                            <td className="px-2 py-1 whitespace-pre-wrap font-black text-gray-800 border-r border-gray-200 align-middle text-[10px]">{item.frotaOm}</td>
-                                            <td className="px-2 py-1 text-gray-700 border-r border-gray-200 align-middle uppercase text-[9px] truncate max-w-[300px]" title={item.description}>{item.description}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px] text-gray-500">{item.dateMin}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px] text-gray-500">{item.dateMax}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.priority}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.peopleCount}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.hours}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle font-bold text-[9px] text-blue-700">{item.dateStart}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.dateEnd}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.workCenter}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.timeStart}</td>
-                                            <td className="px-2 py-1 text-center border-r border-gray-200 align-middle text-[9px]">{item.timeEnd}</td>
-                                            <td className="px-2 py-1 text-center align-middle text-[8px] truncate max-w-[100px] border-r border-gray-200" title={item.resources}>{item.resources}</td>
-                                            <td className="px-2 py-1 text-center align-middle text-[8px] truncate max-w-[100px]" title={item.resources2}>{item.resources2}</td>
+                                            <td className="p-4 font-black text-gray-900 border-r border-gray-50 text-[11px] uppercase">{item.frotaOm}</td>
+                                            <td className="p-4 text-gray-600 border-r border-gray-50 text-[10px] uppercase font-bold leading-relaxed">{item.description}</td>
+                                            <td className="p-4 text-center border-r border-gray-50 font-black text-[10px] text-blue-700 bg-blue-50/30">{item.dateStart}</td>
+                                            <td className="p-4 text-center border-r border-gray-50 text-[10px] uppercase">{item.workCenter}</td>
+                                            <td className="p-4 text-center text-[10px] font-mono">{item.timeStart}</td>
                                         </tr>
                                     );
                                 })
@@ -271,26 +241,66 @@ export const Schedule: React.FC = () => {
                     </table>
                 </div>
                 
-                {filteredAndPaginatedItems.totalItems > 0 && totalPages > 0 && (
-                    <div className="bg-gray-50 border-t border-gray-200 p-3 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">
-                        <div>Exibindo {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredAndPaginatedItems.totalItems)} de {filteredAndPaginatedItems.totalItems} registros</div>
-                        <div className="flex items-center gap-4">
-                            <button onClick={goToPrevPage} disabled={currentPage === 1} className={`p-2 rounded-xl border transition-all ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'bg-white text-vale-green border-gray-300 hover:border-vale-green hover:shadow-md active:scale-95'}`}><ChevronLeft size={20} /></button>
-                            <span className="text-vale-darkgray">Página {currentPage} de {totalPages}</span>
-                            <button onClick={goToNextPage} disabled={currentPage === totalPages} className={`p-2 rounded-xl border transition-all ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'bg-white text-vale-green border-gray-300 hover:border-vale-green hover:shadow-md active:scale-95'}`}><ChevronRight size={20} /></button>
+                {totalPages > 0 && (
+                    <div className="bg-gray-50 border-t-2 border-gray-100 p-4 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        <div>Exibindo {filteredAndPaginatedItems.data.length} itens</div>
+                        <div className="flex items-center gap-6">
+                            <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="p-2.5 bg-white border-2 border-gray-200 rounded-xl disabled:opacity-30 hover:border-vale-green transition-all shadow-sm"><ChevronLeft size={20}/></button>
+                            <span className="text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">Página {currentPage} de {totalPages}</span>
+                            <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="p-2.5 bg-white border-2 border-gray-200 rounded-xl disabled:opacity-30 hover:border-vale-green transition-all shadow-sm"><ChevronRight size={20}/></button>
                         </div>
                     </div>
                 )}
             </div>
         </div>
-
-        {isFullscreen && (
-            <div className="fixed inset-0 z-[100] bg-gray-950 flex flex-col animate-fadeIn">
-                <div className="absolute top-4 right-8 z-50">
-                     <button onClick={() => setIsFullscreen(false)} className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white px-8 py-3 rounded-full font-black text-[10px] shadow-2xl border-2 border-white/20 uppercase tracking-[0.2em] transition-all active:scale-95">
-                        X Fechar Monitor
-                    </button>
+        
+        {/* --- PRINT CONTAINER (VISIBLE ONLY ON PRINT) --- */}
+        <div className="print-container hidden">
+            <div className="mb-4 border-b-4 border-black pb-2 flex justify-between items-end">
+                <div>
+                    <h1 className="text-2xl font-black uppercase">SAFEMAINT - CRONOGRAMA SEMANAL</h1>
+                    <p className="text-sm font-bold uppercase">SEMANA: {scheduleItems[0]?.weekNumber || '---'} | EMISSÃO: {new Date().toLocaleDateString()}</p>
                 </div>
+                <div className="text-right text-xs font-bold uppercase">
+                    TOTAL ITENS: {scheduleItems.length}
+                </div>
+            </div>
+            <table className="w-full text-left border-collapse text-[9px] font-mono">
+                <thead>
+                    <tr className="border-b-2 border-black">
+                        <th className="py-2 px-1">DATA</th>
+                        <th className="py-2 px-1">HORA</th>
+                        <th className="py-2 px-1">EQUIPAMENTO / OM</th>
+                        <th className="py-2 px-1">DESCRIÇÃO DA ATIVIDADE</th>
+                        <th className="py-2 px-1">CT</th>
+                        <th className="py-2 px-1">RESPONSÁVEL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {/* PRINT ALL ITEMS, NOT PAGINATED */}
+                    {scheduleItems.map((item, idx) => (
+                        <tr key={idx} className="border-b border-gray-300">
+                            <td className="py-1 px-1 font-bold">{item.dateStart}</td>
+                            <td className="py-1 px-1">{item.timeStart} - {item.timeEnd}</td>
+                            <td className="py-1 px-1 font-black">{item.frotaOm}</td>
+                            <td className="py-1 px-1">{item.description}</td>
+                            <td className="py-1 px-1">{item.workCenter}</td>
+                            <td className="py-1 px-1">{item.resources}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+
+        {/* MODAL MONITOR TV (AGENDA DINÂMICA) */}
+        {isFullscreen && (
+            <div className="fixed inset-0 z-[100] bg-gray-950 flex flex-col animate-fadeIn no-print">
+                <button 
+                    onClick={() => setIsFullscreen(false)} 
+                    className="absolute top-4 right-8 z-[110] bg-white/5 hover:bg-red-600 text-white px-10 py-4 rounded-full font-black text-xs uppercase border-2 border-white/20 transition-all shadow-2xl backdrop-blur-md"
+                >
+                    &times; FECHAR MONITOR
+                </button>
                 <TVSchedule />
             </div>
         )}

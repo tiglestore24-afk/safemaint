@@ -430,14 +430,9 @@ export const Settings: React.FC = () => {
       setPendingDemands(StorageService.getPendingExtraDemands());
   };
 
-  // ... (PDF Extraction logic) ...
+  // --- LÓGICA DE EXTRAÇÃO DE PDF MELHORADA ---
   const extractDataFromPdf = async (file: File, isEditMode = false) => {
     setIsExtracting(true);
-    setProcessText("ANALISANDO PDF..."); // Visual feedback
-    setIsProcessing(true); // Small modal during extraction? Optional, maybe just keep local loader
-    // Actually, keeping the local loader inside the component is better for UX here
-    // So let's disable full modal for extraction only
-    setIsProcessing(false); 
 
     try {
         const arrayBuffer = await file.arrayBuffer();
@@ -459,21 +454,38 @@ export const Settings: React.FC = () => {
         if (omMatch) foundOm = omMatch[1];
         else { const fallbackOm = fullText.match(/(\d{12})/); if (fallbackOm) foundOm = fallbackOm[1]; }
         
-        const descRegex = /(?:DESCRIÇÃO|TEXTO BREVE)[:.\s]*(.*?)(?:OBSERVAÇÕES|NOTA|EQUIPAMENTO|LOCAL|PERMISSÕES|$)/i;
+        const descRegex = /(?:DESCRIÇÃO|TEXTO BREVE|DESCRIÇÃO OM)[:.\s]*(.*?)(?:OBSERVAÇÕES|NOTA|EQUIPAMENTO|LOCAL|PERMISSÕES|$)/i;
         const descMatch = fullText.match(descRegex);
-        if (descMatch) foundDesc = descMatch[1].trim().replace(/_+/g, ' '); 
+        if (descMatch) foundDesc = descMatch[1].trim().replace(/_+/g, ' ').replace(/\bCA\d+\b/i, '').trim(); 
         
-        const localInstRegex = /(?:LOCAL DE INSTALAÇÃO|LOCAL INSTALAÇÃO)(?:[\s\S]{0,100}?)([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
-        const labeledTagRegex = /(?:TAG|EQUIPAMENTO|ITEM TÉCNICO)[:.\s]*([A-Z0-9-]{5,})/i;
-        const genericTagRegex = /([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
+        // LÓGICA DE TAG REFINADA
+        // 1. Prioridade: "Local de Instalação" + TAG CA...
+        const localInstRegex = /(?:LOCAL DE INSTALAÇÃO|LOCAL INST.)[\s\S]*?\b(CA\d+)\b/i;
+        let tagMatch = fullText.match(localInstRegex);
 
-        const localMatch = fullText.match(localInstRegex);
-        const labeledMatch = fullText.match(labeledTagRegex);
-        const genericMatch = fullText.match(genericTagRegex);
+        // 2. Fallback: "Descrição OM" + TAG CA...
+        if (!tagMatch) {
+            const descOmRegex = /(?:DESCRIÇÃO OM)[\s\S]*?\b(CA\d+)\b/i;
+            tagMatch = fullText.match(descOmRegex);
+        }
 
-        if (localMatch) foundTag = localMatch[1];
-        else if (labeledMatch) foundTag = labeledMatch[1];
-        else if (genericMatch) foundTag = genericMatch[1];
+        // 3. Fallback: Qualquer TAG CA... no documento
+        if (!tagMatch) {
+            const genericCaRegex = /\b(CA\d+)\b/i;
+            tagMatch = fullText.match(genericCaRegex);
+        }
+
+        if (tagMatch && tagMatch[1]) {
+            foundTag = tagMatch[1].toUpperCase();
+        } else {
+             // 4. Fallback final: Padrões genéricos
+            const labeledTagRegex = /(?:TAG|EQUIPAMENTO|ITEM TÉCNICO)[:.\s]*([A-Z0-9-]{5,})/i;
+            const genericTagRegex = /([A-Z]{3,4}-?[A-Z0-9]{2,}-?[A-Z0-9-]{3,})/i;
+            const labeledMatch = fullText.match(labeledTagRegex);
+            const genericMatch = fullText.match(genericTagRegex);
+            if (labeledMatch) foundTag = labeledMatch[1];
+            else if (genericMatch) foundTag = genericMatch[1];
+        }
 
         if (isEditMode) {
             setEditingOmData(prev => ({ ...prev, omNumber: foundOm || prev.omNumber, tag: foundTag || prev.tag, description: foundDesc || prev.description }));
@@ -1089,7 +1101,11 @@ export const Settings: React.FC = () => {
                                             <>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Chave</th>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Detalhes</th>
-                                                {activeTab !== 'OMS' && <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Info Adicional</th>}
+                                                {activeTab === 'OMS' ? (
+                                                    <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">DATA REGISTRO</th>
+                                                ) : (
+                                                    <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Info Adicional</th>
+                                                )}
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">Ações</th>
                                             </>
                                         )}
@@ -1100,6 +1116,7 @@ export const Settings: React.FC = () => {
                                         <tr key={om.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                             <td className="p-3"><div className="font-bold text-sm text-gray-800">{om.omNumber}</div><div className={`text-[9px] font-bold px-1.5 py-0.5 rounded inline-block mt-1 ${om.type === 'CORRETIVA' ? 'bg-red-50 text-red-600' : om.type === 'DEMANDA' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>{om.type}</div></td>
                                             <td className="p-3"><div className="font-bold text-xs text-[#007e7a]">{om.tag}</div><div className="text-[10px] text-gray-500 truncate max-w-[200px]">{om.description}</div></td>
+                                            <td className="p-3 text-[10px] font-bold text-gray-500">{new Date(om.createdAt).toLocaleDateString('pt-BR')} <span className="text-gray-300">|</span> {new Date(om.createdAt).toLocaleTimeString('pt-BR').slice(0,5)}</td>
                                             <td className="p-3 text-right"><div className="flex justify-end gap-2">{om.pdfUrl && <button onClick={() => setViewingOM(om)} className="p-1.5 text-[#007e7a] hover:bg-teal-50 rounded" title="Ver PDF"><Eye size={14}/></button>}<button onClick={() => handleOpenEditOM(om)} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded" title="Editar"><Edit2 size={14}/></button><button onClick={() => { if(window.confirm('Excluir esta OM?')) StorageService.deleteOM(om.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
                                         </tr>
                                     ))}

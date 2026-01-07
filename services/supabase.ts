@@ -19,19 +19,35 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 // Helper para verificar conexão e diagnosticar problemas
 export const checkConnection = async () => {
+    // Verifica status offline do navegador antes de tentar
+    if (!navigator.onLine) {
+        console.log('SAFEMAINT: Modo Offline - Conexão Supabase suspensa.');
+        return false;
+    }
+
     try {
         console.log('SAFEMAINT: Tentando conectar ao Supabase...');
         // Tenta buscar o cabeçalho da tabela de usuários para validar a conexão e permissões
         const { count, error } = await supabase.from('users').select('*', { count: 'exact', head: true });
         
         if (error) {
-            console.error('SAFEMAINT: Erro de conexão Supabase:', error.message, error.details);
+            // Suprime erro visual de fetch failed (comum em conexões instáveis)
+            if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))) {
+                 console.warn('SAFEMAINT: Rede instável ou bloqueada ao conectar Supabase.');
+                 return false;
+            }
+            console.error('SAFEMAINT: Erro de conexão Supabase:', error.message);
             return false;
         }
         
         console.log('SAFEMAINT: Conectado com sucesso!');
         return true;
     } catch (e: any) {
+        // Captura erros de rede não tratados pelo cliente
+        if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('Network request failed'))) {
+             console.warn('SAFEMAINT: Falha de rede ao conectar.');
+             return false;
+        }
         console.error('SAFEMAINT: Falha crítica na conexão:', e);
         return false;
     }

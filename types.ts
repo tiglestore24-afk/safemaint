@@ -63,7 +63,7 @@ export interface SignatureRecord {
 
 export interface DocumentRecord {
   id: string;
-  type: 'ART_EMERGENCIAL' | 'ART_ATIVIDADE' | 'CHECKLIST' | 'RELATORIO';
+  type: 'ART_EMERGENCIAL' | 'ART_ATIVIDADE' | 'CHECKLIST' | 'RELATORIO' | 'CRONOGRAMA';
   header: HeaderData;
   createdAt: string;
   status: 'ATIVO' | 'LIXEIRA' | 'RASCUNHO' | 'ARQUIVADO';
@@ -156,22 +156,11 @@ export interface PendingExtraDemand {
     createdAt: string;
     status: 'PENDENTE';
 }
-
-// Novos status baseados na foto do quadro branco
-export type AvailabilityStatus = 
-  | 'SEM_FALHA' 
-  | 'CORRETIVA' 
-  | 'PREV' 
-  | 'META' 
-  | 'DEMANDA_EXTRA' 
-  | 'LS' 
-  | 'PR' 
-  | 'PNEUS' 
-  | 'INSPECAO' 
-  | 'EMPTY';
+// FIX: Add Availability types for the new feature.
+export type AvailabilityStatus = 'PREV' | 'CORRETIVA' | 'DEMANDA_EXTRA' | 'SEM_FALHA' | 'INSPECAO' | 'PR' | 'LS' | 'PNEUS' | 'MOTOR' | 'META';
 
 export interface AvailabilityRecord {
   id: string;
   tag: string;
-  statusMap: Record<string, AvailabilityStatus[]>; 
+  statusMap: Record<string, AvailabilityStatus[]>;
 }

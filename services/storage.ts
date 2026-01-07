@@ -1,5 +1,6 @@
 
-import { DocumentRecord, Employee, RegisteredART, User, ScheduleItem, ActiveMaintenance, MaintenanceLog, ChatMessage, OMRecord, ChecklistTemplateItem, AvailabilityRecord, PendingExtraDemand } from '../types';
+// FIX: Add AvailabilityRecord to import for new feature
+import { DocumentRecord, Employee, RegisteredART, User, ScheduleItem, ActiveMaintenance, MaintenanceLog, ChatMessage, OMRecord, ChecklistTemplateItem, PendingExtraDemand, AvailabilityRecord } from '../types';
 import { supabase } from './supabase';
 
 export interface NotificationItem {
@@ -21,9 +22,10 @@ const KEYS = {
   CHAT: 'safemaint_chat_history',
   OMS: 'safemaint_oms',
   CHECKLIST_TEMPLATE: 'safemaint_checklist_template',
-  AVAILABILITY: 'safemaint_availability', 
   USERS: 'safemaint_users',
-  PENDING_DEMANDS: 'safemaint_pending_demands'
+  PENDING_DEMANDS: 'safemaint_pending_demands',
+  // FIX: Add AVAILABILITY key for new feature
+  AVAILABILITY: 'safemaint_availability'
 };
 
 const triggerUpdate = () => {
@@ -148,10 +150,11 @@ export const StorageService = {
           { key: KEYS.EMPLOYEES, table: 'employees' },
           { key: KEYS.USERS, table: 'users' },
           { key: KEYS.HISTORY, table: 'history' },
-          { key: KEYS.AVAILABILITY, table: 'availability' },
           { key: KEYS.CHAT, table: 'chat_messages' },
           { key: KEYS.PENDING_DEMANDS, table: 'pending_extra_demands' },
-          { key: KEYS.CHECKLIST_TEMPLATE, table: 'checklist_definitions' } // Adicionado
+          { key: KEYS.CHECKLIST_TEMPLATE, table: 'checklist_definitions' }, // Adicionado
+          // FIX: Add availability table to realtime subscriptions
+          { key: KEYS.AVAILABILITY, table: 'availability' },
       ];
 
       tablesMap.forEach(config => {
@@ -220,9 +223,10 @@ export const StorageService = {
           { local: KEYS.ACTIVE, remote: 'active_maintenance' },
           { local: KEYS.USERS, remote: 'users' },
           { local: KEYS.CHECKLIST_TEMPLATE, remote: 'checklist_definitions' },
-          { local: KEYS.AVAILABILITY, remote: 'availability' },
           { local: KEYS.CHAT, remote: 'chat_messages' },
-          { local: KEYS.PENDING_DEMANDS, remote: 'pending_extra_demands' }
+          { local: KEYS.PENDING_DEMANDS, remote: 'pending_extra_demands' },
+          // FIX: Add availability table to initial sync
+          { local: KEYS.AVAILABILITY, remote: 'availability' },
       ];
 
       for (const t of tables) {
@@ -698,12 +702,6 @@ export const StorageService = {
           date: new Date(n.date).toLocaleDateString('pt-BR') // Formata para exibição
       }));
   },
-  getAvailability: (): AvailabilityRecord[] => JSON.parse(localStorage.getItem(KEYS.AVAILABILITY) || '[]'),
-  saveAvailability: async (recs: AvailabilityRecord[]) => {
-      trySaveLocal(KEYS.AVAILABILITY, recs);
-      triggerUpdate();
-      try { await supabase.from('availability').upsert(recs); } catch(e) {}
-  },
   moveToTrash: async (id: string) => {
       const docs = StorageService.getDocuments();
       const doc = docs.find(d => d.id === id);
@@ -752,6 +750,15 @@ export const StorageService = {
       trySaveLocal(KEYS.PENDING_DEMANDS, list);
       triggerUpdate();
       try { await supabase.from('pending_extra_demands').delete().eq('id', id); } catch(e) {}
+  },
+
+  // FIX: Add methods for Availability Board feature
+  getAvailability: (): AvailabilityRecord[] => JSON.parse(localStorage.getItem(KEYS.AVAILABILITY) || '[]'),
+  saveAvailability: async (records: AvailabilityRecord[]) => {
+      trySaveLocal(KEYS.AVAILABILITY, records);
+      triggerUpdate();
+      // Supabase upsert of a full array is fine.
+      try { await supabase.from('availability').upsert(records); } catch(e) {}
   },
 
   runRetentionPolicy: () => {}

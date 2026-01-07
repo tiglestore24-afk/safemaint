@@ -212,8 +212,8 @@ export const Report: React.FC = () => {
                 </button>
             </div>
 
-            {/* DOCUMENT PAPER CONTAINER (A4 Style) */}
-            <div className="bg-white shadow-2xl w-full max-w-[21cm] min-h-[29.7cm] p-8 md:p-12 relative print:shadow-none print:w-full print:max-w-none print:p-4 animate-fadeIn flex flex-col border border-gray-200">
+            {/* DOCUMENT PAPER CONTAINER (A4 Style) - CLASSE PRINT-AREA PARA CSS GLOBAL */}
+            <div className="bg-white shadow-2xl w-full max-w-[21cm] min-h-[29.7cm] p-8 md:p-12 relative print:shadow-none print:w-[210mm] print:h-[297mm] print:max-w-none print:p-10 animate-fadeIn flex flex-col border border-gray-200 print:border-none print-area">
                 
                 {/* --- ABA DIGITAL --- */}
                 {activeTab === 'DIGITAL' && (
@@ -234,66 +234,66 @@ export const Report: React.FC = () => {
                         </div>
 
                         {/* GRID DE INFORMAÇÕES TÉCNICAS */}
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6">
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6 print:border-gray-300">
                             <h3 className="font-black text-xs text-vale-green uppercase mb-4 border-b border-gray-200 pb-2">DADOS DA ORDEM</h3>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                 <div>
                                     <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">ORDEM (OM)</label>
-                                    <input type="text" value={om} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-black text-lg text-blue-900" />
+                                    <input type="text" value={om} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-black text-lg text-blue-900 print:border-0 print:p-0 print:bg-transparent" />
                                 </div>
                                 <div>
                                     <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">TIPO</label>
-                                    <input type="text" value={type} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-bold text-sm text-gray-800" />
+                                    <input type="text" value={type} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-bold text-sm text-gray-800 print:border-0 print:p-0 print:bg-transparent" />
                                 </div>
                                 <div className="col-span-2">
                                     <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">EQUIPAMENTO (TAG)</label>
-                                    <input type="text" value={equipment} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-black text-lg text-vale-green" />
+                                    <input type="text" value={equipment} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-black text-lg text-vale-green print:border-0 print:p-0 print:bg-transparent" />
                                 </div>
                             </div>
                         </div>
 
                         {/* EXECUÇÃO E TEMPOS (DESTACADO) */}
-                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 mb-6 relative shadow-inner">
-                            <div className="absolute top-4 right-4 text-blue-300">
+                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 mb-6 relative shadow-inner print:bg-gray-50 print:border-gray-200 print:shadow-none">
+                            <div className="absolute top-4 right-4 text-blue-300 no-print">
                                 <Lock size={16} />
                             </div>
-                            <h3 className="font-black text-xs text-blue-800 uppercase mb-4 border-b border-blue-200 pb-2">REGISTRO DE EXECUÇÃO E TEMPO</h3>
+                            <h3 className="font-black text-xs text-blue-800 uppercase mb-4 border-b border-blue-200 pb-2 print:text-gray-700 print:border-gray-300">REGISTRO DE EXECUÇÃO E TEMPO</h3>
                             
                             {/* DESTAQUE TEMPO TOTAL */}
-                            <div className="mb-6 bg-white border-2 border-blue-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                            <div className="mb-6 bg-white border-2 border-blue-200 rounded-xl p-4 flex items-center justify-between shadow-sm print:border-gray-300 print:shadow-none">
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-blue-600 text-white p-3 rounded-lg">
+                                    <div className="bg-blue-600 text-white p-3 rounded-lg print:bg-gray-800">
                                         <Clock size={24} />
                                     </div>
                                     <div>
-                                        <span className="block text-[10px] font-black text-blue-400 uppercase tracking-widest">TEMPO TOTAL DE MANUTENÇÃO</span>
-                                        <span className="text-3xl font-black text-blue-900 tracking-tight">{duration || '0h 0m'}</span>
+                                        <span className="block text-[10px] font-black text-blue-400 uppercase tracking-widest print:text-gray-500">TEMPO TOTAL DE MANUTENÇÃO</span>
+                                        <span className="text-3xl font-black text-blue-900 tracking-tight print:text-black">{duration || '0h 0m'}</span>
                                     </div>
                                 </div>
-                                <div className="text-right hidden md:block">
-                                    <span className="text-xs font-bold text-blue-300 uppercase">Duração Calculada</span>
+                                <div className="text-right hidden md:block print:block">
+                                    <span className="text-xs font-bold text-blue-300 uppercase print:hidden">Duração Calculada</span>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="md:col-span-3">
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">EXECUTANTES (VINCULADOS)</label>
-                                    <input type="text" value={executors} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-bold text-sm text-gray-700" />
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">EXECUTANTES (VINCULADOS)</label>
+                                    <input type="text" value={executors} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-bold text-sm text-gray-700 print:border-0 print:p-0 print:bg-transparent" />
                                 </div>
                                 <div>
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">HORA INÍCIO (REAL)</label>
-                                    <input type="text" value={timeStart} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center" />
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">HORA INÍCIO (REAL)</label>
+                                    <input type="text" value={timeStart} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center print:border-0 print:p-0 print:bg-transparent print:text-left" />
                                 </div>
                                 <div>
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">HORA FIM (REAL)</label>
-                                    <input type="text" value={timeEnd} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center" />
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">HORA FIM (REAL)</label>
+                                    <input type="text" value={timeEnd} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center print:border-0 print:p-0 print:bg-transparent print:text-left" />
                                 </div>
                                 <div>
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1">STATUS FINAL</label>
+                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">STATUS FINAL</label>
                                     <select 
                                         value={status} 
                                         onChange={e => setStatus(e.target.value)} 
-                                        className="w-full bg-white border-2 border-blue-300 rounded p-2 font-black text-sm text-blue-900 uppercase focus:outline-none"
+                                        className="w-full bg-white border-2 border-blue-300 rounded p-2 font-black text-sm text-blue-900 uppercase focus:outline-none print:border-0 print:p-0 print:bg-transparent print:appearance-none print:text-black"
                                     >
                                         <option value="FINALIZADO">FINALIZADO</option>
                                         <option value="PARCIAL">PARCIAL</option>
@@ -303,33 +303,33 @@ export const Report: React.FC = () => {
                         </div>
 
                         {/* CAMPOS DESCRITIVOS */}
-                        <div className="space-y-4 flex-1">
-                            <div>
-                                <label className="block text-xs font-black text-gray-700 uppercase mb-1 bg-gray-100 p-1 pl-2 border-l-4 border-gray-400">MOTIVO DA PARADA</label>
+                        <div className="space-y-6 flex-1">
+                            <div className="border border-gray-300 rounded-lg overflow-hidden">
+                                <label className="block text-xs font-black text-gray-700 uppercase p-2 bg-gray-100 border-b border-gray-300">MOTIVO DA PARADA</label>
                                 <textarea 
                                     value={stopReason} 
                                     onChange={e => setStopReason(e.target.value)} 
-                                    className="w-full border border-gray-300 p-3 rounded text-sm font-medium h-20 resize-none focus:ring-1 focus:ring-vale-green focus:border-vale-green outline-none"
+                                    className="w-full p-4 text-sm font-medium h-24 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
                                     placeholder="Descreva o motivo principal..."
                                 />
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-black text-gray-700 uppercase mb-1 bg-gray-100 p-1 pl-2 border-l-4 border-vale-green">ATIVIDADES REALIZADAS</label>
+                            <div className="border border-gray-300 rounded-lg overflow-hidden">
+                                <label className="block text-xs font-black text-gray-700 uppercase p-2 bg-gray-100 border-b border-gray-300">ATIVIDADES REALIZADAS</label>
                                 <textarea 
                                     value={activities} 
                                     onChange={e => setActivities(e.target.value)} 
-                                    className="w-full border border-gray-300 p-3 rounded text-sm font-medium h-32 resize-none focus:ring-1 focus:ring-vale-green focus:border-vale-green outline-none"
+                                    className="w-full p-4 text-sm font-medium h-40 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
                                     placeholder="Detalhamento do serviço..."
                                 />
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-black text-gray-700 uppercase mb-1 bg-gray-100 p-1 pl-2 border-l-4 border-red-500">PENDÊNCIAS TÉCNICAS</label>
+                            <div className="border border-gray-300 rounded-lg overflow-hidden border-l-4 border-l-red-500">
+                                <label className="block text-xs font-black text-red-700 uppercase p-2 bg-red-50 border-b border-gray-300">PENDÊNCIAS TÉCNICAS</label>
                                 <textarea 
                                     value={pendings} 
                                     onChange={e => setPendings(e.target.value)} 
-                                    className="w-full border border-gray-300 p-3 rounded text-sm font-medium h-20 resize-none text-red-800 focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                                    className="w-full p-4 text-sm font-medium h-20 resize-none text-red-800 focus:outline-none uppercase bg-white placeholder-red-200 print:h-auto print:overflow-hidden"
                                     placeholder="Liste se houver pendências..."
                                 />
                             </div>
@@ -340,7 +340,7 @@ export const Report: React.FC = () => {
                 {/* --- ABA MANUAL (UPLOAD) --- */}
                 {activeTab === 'MANUAL' && (
                     <div className="space-y-6">
-                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-blue-900">
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-blue-900 no-print">
                             <h3 className="font-bold text-lg mb-1">RELATÓRIO MANUAL / FÍSICO</h3>
                             <p className="text-sm">Preencha os dados básicos e anexe uma foto do relatório preenchido manualmente.</p>
                         </div>
@@ -364,22 +364,22 @@ export const Report: React.FC = () => {
                              </div>
                         </div>
 
-                        <div className="border-2 border-dashed border-gray-400 rounded-xl p-8 flex flex-col items-center justify-center bg-gray-50 text-center hover:bg-gray-100 transition-colors cursor-pointer relative">
+                        <div className="border-2 border-dashed border-gray-400 rounded-xl p-8 flex flex-col items-center justify-center bg-gray-50 text-center hover:bg-gray-100 transition-colors cursor-pointer relative min-h-[400px]">
                             <input 
                                 type="file" 
                                 accept="image/*,.pdf" 
                                 onChange={handleFileUpload} 
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer no-print"
                             />
                             {manualFile ? (
-                                <div className="space-y-3">
-                                    <div className="w-full h-48 bg-gray-200 rounded overflow-hidden flex items-center justify-center">
-                                        <img src={manualFile} alt="Preview" className="max-h-full max-w-full object-contain" />
+                                <div className="space-y-3 w-full h-full flex flex-col items-center">
+                                    <div className="w-full bg-white border border-gray-200 rounded overflow-hidden flex items-center justify-center p-2">
+                                        <img src={manualFile} alt="Preview" className="max-h-[600px] w-auto object-contain" />
                                     </div>
-                                    <p className="text-green-600 font-bold flex items-center justify-center gap-2">
+                                    <p className="text-green-600 font-bold flex items-center justify-center gap-2 no-print">
                                         <CheckCircle size={20} /> ARQUIVO SELECIONADO (SALVO)
                                     </p>
-                                    <p className="text-xs text-gray-500">Clique para alterar</p>
+                                    <p className="text-xs text-gray-500 no-print">Clique para alterar</p>
                                 </div>
                             ) : (
                                 <>
@@ -407,7 +407,7 @@ export const Report: React.FC = () => {
                 )}
 
                 {/* Footer do Documento */}
-                <div className="mt-auto pt-8 border-t-2 border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase">
+                <div className="mt-auto pt-8 border-t-2 border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase print:border-gray-300">
                     <span>SAFEMAINT - SISTEMA DE GESTÃO INTEGRADA</span>
                     <span>{new Date().toISOString()}</span>
                 </div>
