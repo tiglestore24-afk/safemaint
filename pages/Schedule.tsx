@@ -5,7 +5,7 @@ import { ScheduleItem, DocumentRecord } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { 
   PlayCircle, Maximize2, Trash2, Cloud, 
-  ShieldAlert, ChevronLeft, ChevronRight, CalendarCheck, Search, Lock, Printer, Save, FileText
+  ShieldAlert, ChevronLeft, ChevronRight, CalendarCheck, Search, Lock, Printer, Save, FileText, Filter, X
 } from 'lucide-react';
 import { TVSchedule } from './TVSchedule';
 import { BackButton } from '../components/BackButton';
@@ -19,6 +19,7 @@ export const Schedule: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateFilter, setSelectedDateFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
   
@@ -136,9 +137,18 @@ export const Schedule: React.FC = () => {
     const visibleItems = scheduleItems; 
     let list = visibleItems;
     
+    // Filtro por Data
+    if (selectedDateFilter) {
+        // Converte YYYY-MM-DD para DD/MM/YYYY
+        const [y, m, d] = selectedDateFilter.split('-');
+        const filterStr = `${d}/${m}/${y}`;
+        list = list.filter(i => i.dateStart === filterStr);
+    }
+
+    // Filtro por Texto
     const q = searchQuery.toUpperCase().trim();
     if (q) {
-        list = visibleItems.filter(i => 
+        list = list.filter(i => 
             (i.frotaOm && i.frotaOm.includes(q)) || 
             (i.description && i.description.includes(q))
         );
@@ -147,7 +157,7 @@ export const Schedule: React.FC = () => {
     const totalItems = list.length;
     const start = (currentPage - 1) * itemsPerPage;
     return { data: list.slice(start, start + itemsPerPage), totalItems, allData: list };
-  }, [scheduleItems, currentPage, searchQuery]);
+  }, [scheduleItems, currentPage, searchQuery, selectedDateFilter]);
 
   const totalPages = Math.ceil(filteredAndPaginatedItems.totalItems / itemsPerPage);
 
@@ -186,16 +196,38 @@ export const Schedule: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-                    <div className="relative flex-1 lg:min-w-[300px]">
-                        <Search className="absolute left-3 top-3 text-gray-400" size={16}/>
-                        <input type="text" placeholder="PESQUISAR..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} className="w-full bg-white border-2 border-gray-100 pl-10 pr-4 py-2.5 rounded-xl text-xs font-bold uppercase outline-none focus:border-vale-green shadow-sm transition-all" />
+                <div className="flex flex-wrap gap-2 w-full lg:w-auto items-end">
+                    
+                    {/* FILTRO DE DATA */}
+                    <div className="relative">
+                        <label className="block text-[9px] font-black text-gray-400 uppercase mb-1 ml-1">Filtrar Dia</label>
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-2.5 text-gray-400" size={14}/>
+                            <input 
+                                type="date" 
+                                value={selectedDateFilter} 
+                                onChange={(e) => { setSelectedDateFilter(e.target.value); setCurrentPage(1); }} 
+                                className="pl-9 pr-3 py-2 bg-white border-2 border-gray-200 rounded-xl text-xs font-bold text-gray-700 uppercase outline-none focus:border-vale-green shadow-sm transition-all h-[42px]" 
+                            />
+                            {selectedDateFilter && (
+                                <button onClick={() => setSelectedDateFilter('')} className="absolute right-2 top-2.5 text-gray-400 hover:text-red-500"><X size={14}/></button>
+                            )}
+                        </div>
                     </div>
-                    <button onClick={handleArchiveWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 shadow-lg">
+
+                    <div className="relative flex-1 lg:min-w-[250px]">
+                        <label className="block text-[9px] font-black text-gray-400 uppercase mb-1 ml-1">Buscar Texto</label>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-3 text-gray-400" size={16}/>
+                            <input type="text" placeholder="OM, TAG, DESC..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} className="w-full bg-white border-2 border-gray-200 pl-10 pr-4 py-2.5 rounded-xl text-xs font-bold uppercase outline-none focus:border-vale-green shadow-sm transition-all h-[42px]" />
+                        </div>
+                    </div>
+                    
+                    <button onClick={handleArchiveWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 shadow-lg h-[42px]">
                         <FileText size={16}/> SALVAR PDF
                     </button>
-                    <button onClick={handleClearAll} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors">LIMPAR</button>
-                    <button onClick={() => setIsFullscreen(true)} className="bg-vale-dark text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest border-b-4 border-black active:translate-y-0.5 transition-all">TV MODE</button>
+                    <button onClick={handleClearAll} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors h-[42px]">LIMPAR</button>
+                    <button onClick={() => setIsFullscreen(true)} className="bg-vale-dark text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest border-b-4 border-black active:translate-y-0.5 transition-all h-[42px]">TV MODE</button>
                 </div>
             </div>
 
@@ -214,7 +246,7 @@ export const Schedule: React.FC = () => {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100 font-bold text-gray-700">
                             {filteredAndPaginatedItems.data.length === 0 ? (
-                                <tr><td colSpan={6} className="p-32 text-center text-gray-300 font-black uppercase tracking-[0.3em] italic">Aguardando dados da programação...</td></tr>
+                                <tr><td colSpan={6} className="p-32 text-center text-gray-300 font-black uppercase tracking-[0.3em] italic">Nenhum item encontrado para o filtro atual...</td></tr>
                             ) : (
                                 filteredAndPaginatedItems.data.map(item => {
                                     const isActive = activeScheduleIds.has(item.id);

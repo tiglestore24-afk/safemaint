@@ -268,8 +268,8 @@ export const AvailabilityBoard: React.FC = () => {
                   if(!conf) return null;
                   
                   if (isTv) {
-                      // Visual Compacto para TV
-                      return <span key={idx} className={`${conf.color} text-[14px] leading-none drop-shadow-sm`}>{conf.symbol}</span>;
+                      // Visual SUPER Compacto para TV (ajustado cor para fundo escuro)
+                      return <span key={idx} className={`${conf.color} text-[10px] leading-none drop-shadow-md`}>{conf.symbol}</span>;
                   }
 
                   // Visual Normal
@@ -283,60 +283,59 @@ export const AvailabilityBoard: React.FC = () => {
       );
   };
 
-  // --- TV MODE RENDER (COMPACTO) ---
+  // --- TV MODE RENDER (ULTRA COMPACTO) ---
   if (isTvMode) {
       return (
-          <div className="fixed inset-0 z-[200] bg-gray-950 text-white flex flex-col overflow-hidden font-sans select-none animate-fadeIn cursor-none group">
-              {/* Header TV Compacto */}
-              <div className="flex justify-between items-center px-4 py-2 border-b border-[#007e7a] bg-gray-900 shadow-xl relative z-20 h-14">
-                  <div className="flex items-center gap-4">
-                      <div className="bg-white p-1 rounded shadow-[0_0_15px_rgba(0,126,122,0.5)]">
-                          <Activity size={20} className="text-[#007e7a]" />
+          <div className="fixed inset-0 z-[200] bg-slate-900 text-white flex flex-col overflow-hidden font-sans select-none animate-fadeIn cursor-none group">
+              {/* Header TV Ultra Compacto */}
+              <div className="flex justify-between items-center px-4 py-1 border-b border-[#007e7a] bg-slate-900 shadow-xl relative z-20 h-10">
+                  <div className="flex items-center gap-3">
+                      <div className="bg-white p-0.5 rounded shadow-[0_0_10px_rgba(0,126,122,0.5)]">
+                          <Activity size={16} className="text-[#007e7a]" />
                       </div>
                       <div>
-                          <h1 className="text-xl font-black tracking-widest uppercase text-white drop-shadow-lg leading-none">
+                          <h1 className="text-sm font-black tracking-widest uppercase text-white drop-shadow-lg leading-none">
                               DISPONIBILIDADE
                           </h1>
-                          <p className="text-[#007e7a] font-bold text-[9px] tracking-[0.4em]">FROTA ESTRATÉGICA CA</p>
                       </div>
                   </div>
                   
                   <div className="flex items-center gap-4">
-                      <div className="text-right border-r border-gray-700 pr-4">
-                          <span className="block text-lg font-black">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'long' }).toUpperCase()} {selectedYear}</span>
+                      <div className="text-right border-r border-slate-700 pr-4">
+                          <span className="block text-xs font-black">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase()} {selectedYear}</span>
                       </div>
                       <button 
                           onClick={() => setIsTvMode(false)}
-                          className="p-2 bg-white/5 hover:bg-red-600 rounded-full transition-all text-gray-500 hover:text-white border border-gray-800 opacity-0 group-hover:opacity-100"
+                          className="p-1 bg-white/5 hover:bg-red-600 rounded-full transition-all text-slate-500 hover:text-white border border-slate-800 opacity-0 group-hover:opacity-100"
                       >
-                          <X size={18} />
+                          <X size={14} />
                       </button>
                   </div>
               </div>
 
-              {/* Table Content TV - Compacto */}
-              <div className="flex-1 overflow-auto custom-scrollbar p-2 bg-gray-950">
-                  <div className="border-2 border-gray-800 rounded-lg overflow-hidden shadow-2xl">
+              {/* Table Content TV - ULTRA COMPACT */}
+              <div className="flex-1 overflow-auto custom-scrollbar p-1 bg-slate-900">
+                  <div className="border border-slate-700 rounded overflow-hidden shadow-2xl">
                       <table className="w-full border-collapse">
                           <thead>
-                              <tr className="bg-gray-900 text-gray-400 text-[10px] font-black uppercase sticky top-0 z-20 shadow-lg">
-                                  <th className="p-2 text-left border-b border-gray-700 bg-gray-900 sticky left-0 z-30 min-w-[80px] shadow-[4px_0_10px_rgba(0,0,0,0.5)] border-r border-r-gray-700">TAG</th>
+                              <tr className="bg-slate-800 text-slate-300 text-[9px] font-black uppercase sticky top-0 z-20 shadow-lg h-6">
+                                  <th className="p-1 text-left border-b border-slate-700 bg-slate-800 sticky left-0 z-30 min-w-[50px] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-r border-r-slate-700">TAG</th>
                                   {daysInMonth.map(date => (
-                                      <th key={date.toString()} className={`p-1 border-b border-r border-gray-800 min-w-[30px] text-center ${date.getDay() === 0 || date.getDay() === 6 ? 'bg-gray-800/50 text-gray-500' : ''}`}>
+                                      <th key={date.toString()} className={`p-0 border-b border-r border-slate-700 min-w-[15px] text-center ${date.getDay() === 0 || date.getDay() === 6 ? 'bg-slate-800/80 text-slate-500' : ''}`}>
                                           {date.getDate()}
                                       </th>
                                   ))}
                               </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-800 font-bold text-gray-300 text-xs">
+                          <tbody className="divide-y divide-slate-800 font-bold text-slate-200 text-[9px]">
                               {records.map((record, rIdx) => (
-                                  <tr key={record.id} className={`${rIdx % 2 === 0 ? 'bg-gray-900/40' : 'bg-transparent'} hover:bg-white/5 transition-colors h-[35px]`}>
-                                      <td className="p-2 border-r border-gray-700 font-black text-[#007e7a] text-sm sticky left-0 z-10 bg-gray-900 shadow-[4px_0_10px_rgba(0,0,0,0.5)]">{record.tag}</td>
+                                  <tr key={record.id} className={`${rIdx % 2 === 0 ? 'bg-slate-800/30' : 'bg-transparent'} h-[24px]`}>
+                                      <td className="p-1 border-r border-slate-700 font-black text-[#007e7a] sticky left-0 z-10 bg-slate-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)]">{record.tag}</td>
                                       {daysInMonth.map(date => {
                                           const dateKey = normalizeDateKey(date);
                                           const statusList = record.statusMap[dateKey] || [];
                                           return (
-                                              <td key={dateKey} className="p-0 border-r border-gray-800 text-center relative align-middle">
+                                              <td key={dateKey} className="p-0 border-r border-slate-800 text-center relative align-middle">
                                                   {renderCellContent(statusList, true)} 
                                               </td>
                                           );
@@ -349,11 +348,11 @@ export const AvailabilityBoard: React.FC = () => {
               </div>
               
               {/* Footer Legend TV - Compacto */}
-              <div className="bg-gray-900 border-t border-gray-800 p-2 flex justify-center gap-4 shrink-0 flex-wrap">
+              <div className="bg-slate-900 border-t border-slate-800 p-1 flex justify-center gap-3 shrink-0 flex-wrap h-8 overflow-hidden">
                   {Object.entries(STATUS_CONFIG).map(([key, conf]) => (
                       <div key={key} className="flex items-center gap-1">
-                          <span className={`${conf.color} text-sm leading-none`}>{conf.symbol}</span>
-                          <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider">{conf.label}</span>
+                          <span className={`${conf.color} text-[10px] leading-none`}>{conf.symbol}</span>
+                          <span className="text-[7px] font-black text-slate-400 uppercase tracking-wider">{conf.label}</span>
                       </div>
                   ))}
               </div>

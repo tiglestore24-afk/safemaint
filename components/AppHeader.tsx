@@ -62,31 +62,35 @@ export const AppHeader: React.FC = () => {
   }, []);
 
   return (
-    <header className="bg-white/80 backdrop-blur-md p-3 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row justify-between items-center gap-2 animate-fadeIn print:hidden">
-      <div className="flex items-center gap-3">
+    <header className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 animate-fadeIn print:hidden">
+      <div className="flex items-center gap-4">
         {/* Date */}
-        <div className="flex items-center gap-2">
-          <Calendar size={16} className="text-gray-500" />
-          <span className="text-xs font-bold text-gray-700 uppercase">{formatDate(currentTime)}</span>
+        <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100">
+          <Calendar size={20} className="text-[#007e7a]" />
+          <span className="text-sm font-black text-gray-800 uppercase tracking-wide">{formatDate(currentTime)}</span>
         </div>
       </div>
+      
       <div className="flex items-center gap-4">
         {/* Weather */}
-        <div className="flex items-center gap-2 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 text-blue-900">
           {weather.temp !== null ? (
             <>
-              <Thermometer size={16} className="text-blue-500" />
-              <span className="text-xs font-bold text-gray-700 uppercase">{weather.temp}°C {weather.city && `EM ${weather.city}`}</span>
+              <Thermometer size={20} className="text-blue-600" />
+              <span className="text-sm font-black uppercase">{weather.temp}°C {weather.city && <span className="text-blue-600/70 ml-1 text-xs">EM {weather.city}</span>}</span>
             </>
           ) : (
-             <span className="text-xs font-bold text-gray-400 uppercase">{weatherError || 'Carregando clima...'}</span>
+             <span className="text-xs font-bold text-blue-400 uppercase">{weatherError || 'Carregando clima...'}</span>
           )}
         </div>
-        <div className="w-px h-6 bg-gray-200 hidden md:block"></div>
+        
+        {/* Divider */}
+        <div className="w-px h-8 bg-gray-200 hidden md:block"></div>
+        
         {/* Time */}
-        <div className="flex items-center gap-2">
-          <Clock size={16} className="text-gray-500" />
-          <span className="font-mono text-sm font-black text-gray-800 tracking-wider">
+        <div className="flex items-center gap-3 bg-gray-900 px-5 py-2 rounded-xl text-white shadow-lg shadow-gray-200">
+          <Clock size={20} className="text-[#edb111]" />
+          <span className="font-mono text-xl font-black tracking-widest leading-none">
             {currentTime.toLocaleTimeString('pt-BR')}
           </span>
         </div>
