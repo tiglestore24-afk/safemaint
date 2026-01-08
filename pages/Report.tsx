@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock, Copy, Share2, Users, AlertTriangle, Wrench } from 'lucide-react';
+import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock, Copy, Share2, Users, AlertTriangle, Wrench, Activity, MessageSquare } from 'lucide-react';
 import { Logo } from '../components/Logo';
 import { FeedbackModal } from '../components/FeedbackModal';
 
@@ -39,6 +39,10 @@ export const Report: React.FC = () => {
     const [timeEnd, setTimeEnd] = useState('');
     const [duration, setDuration] = useState(''); 
     
+    // Novos Campos
+    const [deviation, setDeviation] = useState('');
+    const [observation, setObservation] = useState('');
+
     const [stopReason, setStopReason] = useState('');
     const [activities, setActivities] = useState('');
     const [pendings, setPendings] = useState('');
@@ -84,6 +88,8 @@ export const Report: React.FC = () => {
             setActivities(data.activities || '');
             setStopReason(data.stopReason || '');
             setStatus(data.status || 'FINALIZADO');
+            setDeviation(data.deviation || '');
+            setObservation(data.observation || '');
 
             if (data.duration) {
                 setDuration(data.duration);
@@ -119,6 +125,8 @@ export const Report: React.FC = () => {
 🏁 TÉRMINO: ${timeEnd}
 ⏳ DURAÇÃO: ${duration}
 📊 STATUS FINAL: ${status}
+📉 DESVIO: ${deviation || 'NENHUM'}
+📝 OBS: ${observation || '---'}
 
 *DETALHAMENTO TÉCNICO*
 🛑 *MOTIVO DA INTERVENÇÃO:*
@@ -173,7 +181,9 @@ ${pendings || 'NENHUMA'}
                     duration, 
                     startTime: timeStart,
                     endTime: timeEnd,
-                    executorsList: executors, // Explicitly saving executors list
+                    deviation,    // SAVED
+                    observation,  // SAVED
+                    executorsList: executors, 
                     rawText: isManual ? 'Relatório em Anexo (Manual)' : generateText(),
                     manualFileUrl: manualFile,
                     isManualUpload: isManual
@@ -293,7 +303,7 @@ ${pendings || 'NENHUMA'}
                                     <input type="text" value={timeEnd} onChange={e => setTimeEnd(e.target.value)} className="w-full font-black text-lg text-gray-800 bg-transparent outline-none" />
                                 </div>
                                 <div className="bg-blue-600 p-3 rounded-lg shadow-sm text-white">
-                                    <label className="block text-[8px] font-black text-blue-200 uppercase mb-1">TEMPO TOTAL</label>
+                                    <label className="block text-[8px] font-black text-blue-200 uppercase mb-1">DURAÇÃO TOTAL</label>
                                     <div className="font-black text-xl">{duration || '00:00'}</div>
                                 </div>
                                 <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
@@ -306,6 +316,34 @@ ${pendings || 'NENHUMA'}
                                         <option value="FINALIZADO">FINALIZADO</option>
                                         <option value="PARCIAL">PARCIAL</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            {/* LINHA DE DESVIO E OBSERVAÇÃO (NOVOS CAMPOS) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                                    <label className="block text-[8px] font-black text-red-400 uppercase mb-1 flex items-center gap-1">
+                                        <Activity size={10}/> DESVIO (SE HOUVER)
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        value={deviation} 
+                                        onChange={e => setDeviation(e.target.value)} 
+                                        className="w-full font-bold text-sm text-gray-700 bg-transparent outline-none uppercase placeholder-gray-300"
+                                        placeholder="Ex: Atraso por chuva..."
+                                    />
+                                </div>
+                                <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                                    <label className="block text-[8px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1">
+                                        <MessageSquare size={10}/> OBSERVAÇÃO GERAL
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        value={observation} 
+                                        onChange={e => setObservation(e.target.value)} 
+                                        className="w-full font-bold text-sm text-gray-700 bg-transparent outline-none uppercase placeholder-gray-300"
+                                        placeholder="Obs. adicionais..."
+                                    />
                                 </div>
                             </div>
 
