@@ -17,7 +17,7 @@ export const AppHeader: React.FC = () => {
   const [weather, setWeather] = useState<{ temp: number | null, city: string | null }>({ temp: null, city: null });
   const [weatherError, setWeatherError] = useState<string | null>(null);
 
-  // Clock tick
+  // Clock tick - Atualização em tempo real
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -87,11 +87,11 @@ export const AppHeader: React.FC = () => {
         {/* Divider */}
         <div className="w-px h-8 bg-gray-200 hidden md:block"></div>
         
-        {/* Time */}
-        <div className="flex items-center gap-3 bg-gray-900 px-5 py-2 rounded-xl text-white shadow-lg shadow-gray-200">
+        {/* Time - HORA REAL COM SEGUNDOS */}
+        <div className="flex items-center gap-3 bg-gray-900 px-5 py-2 rounded-xl text-white shadow-lg shadow-gray-200 min-w-[140px] justify-center">
           <Clock size={20} className="text-[#edb111]" />
           <span className="font-mono text-xl font-black tracking-widest leading-none">
-            {currentTime.toLocaleTimeString('pt-BR')}
+            {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
         </div>
       </div>

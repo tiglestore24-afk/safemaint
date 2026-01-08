@@ -57,18 +57,40 @@ export const Schedule: React.FC = () => {
 
   const handleStartMaintenance = (item: ScheduleItem) => {
       if(activeScheduleIds.has(item.id)) { alert("ESTA ATIVIDADE JÁ ESTÁ EM EXECUÇÃO!"); return; }
-      let omNumber = ''; let tag = '';
+      
+      let omNumber = ''; 
+      let tag = '';
       const fullText = (item.frotaOm || '').toUpperCase();
       
+      // 1. Extração de TAG (Prioridade: Padrão CA + Digitos)
+      // Conforme regra: "o número do tag onde se encontra na primeiro coluna onde o dia se inicia com CA"
+      // Assumindo que a importação (Settings) já fez o "Fill Down", o campo frotaOm contém essa info.
+      const caMatch = fullText.match(/\b(CA-?\d+)\b/);
+      
+      if (caMatch) {
+          tag = caMatch[1].replace('-', '');
+      } else {
+          // Fallback para padrões gerais tipo TR-500, EQ-100, etc. se não achar CA
+          const genericTagMatch = fullText.match(/^([A-Z]{2,4}-?\d+)/);
+          if (genericTagMatch) tag = genericTagMatch[1];
+          else tag = fullText.split('/')[0].trim();
+      }
+
+      // 2. Extração de OM (8 a 12 dígitos numéricos)
       const omMatch = fullText.match(/(\d{8,12})/);
-      if (omMatch) omNumber = omMatch[1];
-      else if (fullText.includes('/')) omNumber = fullText.split('/')[1].trim();
-      else omNumber = fullText;
+      if (omMatch) {
+          omNumber = omMatch[1];
+      } else if (fullText.includes('/')) {
+          // Tenta pegar a parte depois da barra se não achar numeração padrão
+          omNumber = fullText.split('/')[1].trim();
+      } else {
+          // Se não tiver padrão de OM, usa o texto original como referência mas avisa
+          if (!tag.includes(fullText)) omNumber = fullText; 
+      }
       
-      const tagMatch = fullText.match(/([A-Z]{2,4}-?\d+)/);
-      if (tagMatch) tag = tagMatch[1];
-      else tag = fullText.split('/')[0].trim();
-      
+      // Garante que o TAG não ficou vazio
+      if (!tag) tag = 'TAG-INDEFINIDO';
+
       const params = new URLSearchParams();
       params.append('om', omNumber); 
       params.append('tag', tag); 
@@ -327,12 +349,6 @@ export const Schedule: React.FC = () => {
         {/* MODAL MONITOR TV (AGENDA DINÂMICA) */}
         {isFullscreen && (
             <div className="fixed inset-0 z-[100] bg-gray-950 flex flex-col animate-fadeIn no-print">
-                <button 
-                    onClick={() => setIsFullscreen(false)} 
-                    className="absolute top-4 right-8 z-[110] bg-white/5 hover:bg-red-600 text-white px-10 py-4 rounded-full font-black text-xs uppercase border-2 border-white/20 transition-all shadow-2xl backdrop-blur-md"
-                >
-                    &times; FECHAR MONITOR
-                </button>
                 <TVSchedule />
             </div>
         )}

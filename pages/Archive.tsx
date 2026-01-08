@@ -178,12 +178,12 @@ export const Archive: React.FC = () => {
           );
       }
 
-      // === LAYOUT DE DOCUMENTO OFICIAL (A4) ===
+      // === LAYOUT DE DOCUMENTO OFICIAL (A4 MULTI-PAGE) ===
       return (
-          <div className="bg-white shadow-2xl mx-auto font-sans text-gray-900 border border-gray-200 print:border-none p-10 max-w-[21cm] w-full min-h-[29.7cm] flex flex-col mb-10 print:mb-0 print:shadow-none print:w-[210mm] print:h-[297mm] print:absolute print:top-0 print:left-0 print-area">
+          <div className="bg-white shadow-2xl mx-auto font-sans text-gray-900 border border-gray-200 print:border-none p-10 max-w-[21cm] w-full min-h-[29.7cm] flex flex-col mb-10 print:mb-0 print:shadow-none print:w-full print:max-w-none print:min-h-0 print:h-auto print:absolute print:top-0 print:left-0 print-area">
               
-              {/* HEADER OFICIAL */}
-              <div className="border-b-4 border-vale-green pb-4 mb-6 flex justify-between items-center">
+              {/* HEADER OFICIAL - AVOID BREAK */}
+              <div className="border-b-4 border-vale-green pb-4 mb-6 flex justify-between items-center avoid-break">
                   <div className="flex items-center gap-4">
                       <Logo size="lg" />
                       <div className="border-l-2 border-gray-300 pl-4 flex flex-col justify-center h-10">
@@ -202,8 +202,8 @@ export const Archive: React.FC = () => {
               {/* CONTEÚDO PRINCIPAL */}
               <div className="flex-1 space-y-6">
                   
-                  {/* IDENTIFICAÇÃO (GRID DENSO) */}
-                  <div className="bg-gray-50 p-4 border border-gray-300 rounded-none print:border-gray-300">
+                  {/* IDENTIFICAÇÃO (GRID DENSO) - AVOID BREAK */}
+                  <div className="bg-gray-50 p-4 border border-gray-300 rounded-none print:border-gray-300 avoid-break">
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 border-b border-gray-200 pb-1">DADOS DA ATIVIDADE</h4>
                       <div className="grid grid-cols-4 gap-4">
                           <div className="col-span-1"><span className="text-[8px] font-bold text-gray-500 block uppercase">EQUIPAMENTO (TAG)</span><span className="font-black text-base text-vale-green">{doc.header.tag}</span></div>
@@ -283,50 +283,48 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
-                  {/* CHECKLIST - FORMATO 2 COLUNAS OTIMIZADO */}
+                  {/* CHECKLIST - AGRUPADO POR SEÇÃO (MOTOR, HIDRÁULICO, ETC) */}
                   {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
-                      <div className="avoid-break">
-                        <div className="bg-gray-100 p-2 font-black text-xs text-gray-700 uppercase border border-gray-300 border-b-0">VERIFICAÇÃO DE ITENS</div>
-                        {/* Grid container para simular 2 colunas na impressão */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 border border-gray-300 p-0">
-                            {/* Dividir itens em duas colunas lógicas se houver muitos */}
-                            {Array.from({ length: 2 }).map((_, colIndex) => {
-                                const itemsPerCol = Math.ceil(doc.content.checklistItems.length / 2);
-                                const colItems = doc.content.checklistItems.slice(colIndex * itemsPerCol, (colIndex + 1) * itemsPerCol);
-                                
-                                return (
-                                    <table key={colIndex} className="w-full text-[9px] border-collapse h-fit">
-                                        <thead className="bg-gray-50 border-b border-gray-300">
-                                            <tr>
-                                                <th className="p-1.5 text-left border-r border-gray-200 w-8">ID</th>
-                                                <th className="p-1.5 text-left border-r border-gray-200">ITEM</th>
-                                                <th className="p-1.5 text-center w-12">ST</th>
+                      <div className="space-y-4">
+                        {Object.entries(doc.content.checklistItems.reduce((acc: any, item: any) => {
+                            (acc[item.section] = acc[item.section] || []).push(item);
+                            return acc;
+                        }, {})).map(([section, items]: any) => (
+                            <div key={section} className="border border-gray-300 avoid-break">
+                                <div className="bg-gray-100 p-2 font-black text-xs text-gray-800 uppercase border-b border-gray-300">
+                                    {section}
+                                </div>
+                                <table className="w-full text-[9px] border-collapse">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr>
+                                            <th className="p-1.5 text-left border-r border-gray-200 w-10 text-center">ITEM</th>
+                                            <th className="p-1.5 text-left border-r border-gray-200">VERIFICAÇÃO</th>
+                                            <th className="p-1.5 text-center w-16">STATUS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        {items.map((item: any, idx: number) => (
+                                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}>
+                                                <td className="p-1.5 font-bold text-gray-500 border-r border-gray-200 text-center">{item.id || item.legacyId}</td>
+                                                <td className="p-1.5 font-bold text-gray-700 border-r border-gray-200 leading-tight">
+                                                    {item.desc}
+                                                    {item.obs && <div className="text-[8px] text-red-600 italic mt-0.5 border-l-2 border-red-300 pl-1">OBS: {item.obs}</div>}
+                                                </td>
+                                                <td className="p-1.5 text-center">
+                                                    {item.status === 'ATENDE' ? (
+                                                        <span className="font-black text-green-700">CONFORME</span>
+                                                    ) : item.status === 'NAO_ATENDE' ? (
+                                                        <span className="font-black text-white bg-red-600 px-1.5 py-0.5 rounded text-[8px]">FALHA</span>
+                                                    ) : (
+                                                        <span className="text-gray-300">-</span>
+                                                    )}
+                                                </td>
                                             </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-200">
-                                            {colItems.map((item: any, idx: number) => (
-                                                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}>
-                                                    <td className="p-1.5 font-bold text-gray-400 border-r border-gray-200 text-center">{item.id || item.legacyId}</td>
-                                                    <td className="p-1.5 font-bold text-gray-700 border-r border-gray-200 leading-tight">
-                                                        {item.desc}
-                                                        {item.obs && <div className="text-[8px] text-red-600 italic mt-0.5 border-l-2 border-red-300 pl-1">{item.obs}</div>}
-                                                    </td>
-                                                    <td className="p-1.5 text-center">
-                                                        {item.status === 'ATENDE' ? (
-                                                            <span className="font-black text-green-700">OK</span>
-                                                        ) : item.status === 'NAO_ATENDE' ? (
-                                                            <span className="font-black text-white bg-red-600 px-1 rounded">NOK</span>
-                                                        ) : (
-                                                            <span className="text-gray-300">-</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                );
-                            })}
-                        </div>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ))}
                       </div>
                   )}
 
@@ -357,10 +355,18 @@ export const Archive: React.FC = () => {
                                   <p className="text-[10px] font-bold text-red-800 uppercase leading-tight">{doc.content.pendings}</p>
                               </div>
                           )}
+                          
+                          {/* LISTA DE EXECUTANTES NO RELATÓRIO */}
+                          {doc.content.executorsList && (
+                              <div className="p-3 border border-blue-100 bg-blue-50">
+                                  <h4 className="text-[10px] font-black text-blue-600 uppercase mb-1">EQUIPE EXECUTANTE REGISTRADA</h4>
+                                  <p className="text-[10px] font-bold text-gray-800 uppercase">{doc.content.executorsList}</p>
+                              </div>
+                          )}
                       </div>
                   )}
 
-                  {/* ASSINATURAS (LAYOUT COMPACTO DE RODAPÉ) */}
+                  {/* ASSINATURAS (LAYOUT COMPACTO DE RODAPÉ) - AVOID BREAK */}
                   {doc.signatures && doc.signatures.length > 0 && (
                       <div className="mt-8 pt-4 border-t-2 border-gray-300 avoid-break">
                           <h4 className="font-black text-[9px] uppercase mb-4 text-gray-400 tracking-widest">RESPONSABILIDADE TÉCNICA E EXECUÇÃO</h4>
@@ -381,10 +387,10 @@ export const Archive: React.FC = () => {
                   )}
               </div>
               
-              {/* FOOTER OFICIAL */}
-              <div className="mt-auto pt-2 border-t border-gray-300 text-[8px] text-gray-400 font-bold uppercase flex justify-between shrink-0">
+              {/* FOOTER OFICIAL - AVOID BREAK */}
+              <div className="mt-auto pt-2 border-t border-gray-300 text-[8px] text-gray-400 font-bold uppercase flex justify-between shrink-0 avoid-break">
                   <span>SAFEMAINT V4 • SISTEMA DE GESTÃO DE ATIVOS</span>
-                  <span>ID: {doc.id.split('-')[0].toUpperCase()} | PÁGINA 1/1</span>
+                  <span>ID: {doc.id.split('-')[0].toUpperCase()}</span>
               </div>
           </div>
       );

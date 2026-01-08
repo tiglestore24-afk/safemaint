@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { StorageService } from '../services/storage';
-import { Clock, X, AlertTriangle, ClipboardList, Wrench } from 'lucide-react';
+import { Clock, X, AlertTriangle, ClipboardList, Wrench, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface TVItem {
@@ -27,11 +27,16 @@ export const TVSchedule: React.FC = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<TVItem[]>([]);
   const [now, setNow] = useState(new Date());
+  
+  // Estado para a data selecionada na visualização (padrão: hoje)
+  const [viewDate, setViewDate] = useState(new Date());
+  
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const clockInterval = setInterval(() => setNow(new Date()), 1000);
-    const dataInterval = setInterval(refreshData, 5000);
+    const dataInterval = setInterval(refreshData, 5000); // Atualiza dados a cada 5s
+    
     window.addEventListener('safemaint_storage_update', refreshData);
     refreshData();
 
@@ -40,11 +45,15 @@ export const TVSchedule: React.FC = () => {
         clearInterval(dataInterval);
         window.removeEventListener('safemaint_storage_update', refreshData);
     };
-  }, []);
+  }, [viewDate]); // Recarrega se a data de visualização mudar
 
+  // Auto-scroll logic
   useEffect(() => {
     const scrollContainer = scrollRef.current;
     if (!scrollContainer) return;
+
+    // Reseta o scroll quando os itens mudam (nova data)
+    scrollContainer.scrollTop = 0;
 
     let scrollAmount = 0;
     const speed = 0.5; // Velocidade lenta constante
@@ -53,6 +62,7 @@ export const TVSchedule: React.FC = () => {
 
     const scrollInterval = setInterval(() => {
         if (!scrollContainer) return;
+        // Se não tem scroll, não faz nada
         if (scrollContainer.scrollHeight <= scrollContainer.clientHeight) return;
 
         if (pauseCounter > 0) {
@@ -79,49 +89,53 @@ export const TVSchedule: React.FC = () => {
     const activeTasks = StorageService.getActiveMaintenances();
     const schedule = StorageService.getSchedule();
     const tvItems: TVItem[] = [];
-    const todayStr = new Date().toLocaleDateString('pt-BR');
+    
+    // Data formatada da visualização selecionada
+    const viewDateStr = viewDate.toLocaleDateString('pt-BR');
+    const isToday = viewDate.toDateString() === new Date().toDateString();
 
-    // 1. CARDS EM EXECUÇÃO (Prioridade Máxima)
-    activeTasks.forEach(task => {
-        let statusColor: 'CORRETIVA' | 'PREVENTIVA' | 'DEMANDA' | 'PAUSED' = 'PREVENTIVA'; // Default Blue
+    // 1. CARDS EM EXECUÇÃO (Prioridade Máxima - Apenas se estiver vendo HOJE)
+    if (isToday) {
+        activeTasks.forEach(task => {
+            let statusColor: 'CORRETIVA' | 'PREVENTIVA' | 'DEMANDA' | 'PAUSED' = 'PREVENTIVA'; 
 
-        // Definição Rigorosa de Cores
-        if (task.status === 'PAUSADA') {
-            statusColor = 'PAUSED';
-        } else if (task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL') {
-            statusColor = 'CORRETIVA'; // RED
-        } else if (task.origin === 'DEMANDA_EXTRA') {
-            statusColor = 'DEMANDA'; // PINK
-        } else {
-            statusColor = 'PREVENTIVA'; // BLUE
-        }
+            if (task.status === 'PAUSADA') {
+                statusColor = 'PAUSED';
+            } else if (task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL') {
+                statusColor = 'CORRETIVA';
+            } else if (task.origin === 'DEMANDA_EXTRA') {
+                statusColor = 'DEMANDA';
+            } else {
+                statusColor = 'PREVENTIVA';
+            }
 
-        const startDate = new Date(task.startTime);
-        
-        tvItems.push({
-            id: task.id,
-            frotaOm: `${task.header.tag} / ${task.header.om}`,
-            description: task.header.description,
-            dateMin: startDate.toLocaleDateString(),
-            dateMax: startDate.toLocaleDateString(),
-            priority: "EXEC",
-            peopleCount: 1,
-            hours: "AGORA",
-            dateStart: startDate.toLocaleDateString(),
-            dateEnd: "---",
-            workCenter: "MANUTENÇÃO",
-            timeStart: startDate.toLocaleTimeString().slice(0,5),
-            timeEnd: "---",
-            resources: task.openedBy || "EQUIPE",
-            resources2: task.header.type,
-            statusColor: statusColor
+            const startDate = new Date(task.startTime);
+            
+            tvItems.push({
+                id: task.id,
+                frotaOm: `${task.header.tag} / ${task.header.om}`,
+                description: task.header.description,
+                dateMin: startDate.toLocaleDateString(),
+                dateMax: startDate.toLocaleDateString(),
+                priority: "EXEC",
+                peopleCount: 1,
+                hours: "AGORA",
+                dateStart: startDate.toLocaleDateString(),
+                dateEnd: "---",
+                workCenter: "MANUTENÇÃO",
+                timeStart: startDate.toLocaleTimeString().slice(0,5),
+                timeEnd: "---",
+                resources: task.openedBy || "EQUIPE",
+                resources2: task.header.type,
+                statusColor: statusColor
+            });
         });
-    });
+    }
 
-    // 2. PROGRAMAÇÃO DO DIA (Filtrado estritamente pela Coluna 8 = dateStart)
-    const todaysSchedule = schedule.filter(item => item.dateStart === todayStr);
+    // 2. PROGRAMAÇÃO DO DIA SELECIONADO
+    const selectedSchedule = schedule.filter(item => item.dateStart === viewDateStr);
 
-    todaysSchedule.forEach(item => {
+    selectedSchedule.forEach(item => {
         let om = item.frotaOm;
         if (item.frotaOm.includes('\n')) {
             om = item.frotaOm.replace('\n', ' / ');
@@ -161,11 +175,21 @@ export const TVSchedule: React.FC = () => {
     setItems(tvItems);
   };
 
+  const changeDate = (days: number) => {
+      const newDate = new Date(viewDate);
+      newDate.setDate(newDate.getDate() + days);
+      setViewDate(newDate);
+  };
+
+  const goToToday = () => {
+      setViewDate(new Date());
+  };
+
   // Define column widths
   const colWidths = {
       om: '12%',
       desc: '25%',
-      dMin: '0%', // Hidden on TV to save space if needed
+      dMin: '0%', 
       dMax: '0%',
       prio: '6%',
       people: '4%',
@@ -179,9 +203,8 @@ export const TVSchedule: React.FC = () => {
       res2: '7%'
   };
 
-  // Cor de Fundo Mais Leve que Preto (Slate-900) e Texto com mais Contraste
   return (
-    <div className="bg-slate-900 h-screen w-full overflow-hidden flex flex-col font-sans text-white select-none cursor-none group">
+    <div className="bg-slate-900 h-screen w-full overflow-hidden flex flex-col font-sans text-white select-none group">
         <div className="flex justify-between items-center bg-slate-800 border-b-2 border-[#007e7a] px-6 py-2 shadow-2xl shrink-0 h-16 z-20 w-full relative">
             <div className="flex items-center gap-4">
                 <div className="bg-white p-1 rounded w-10 h-10 flex items-center justify-center shadow border border-gray-400">
@@ -189,10 +212,24 @@ export const TVSchedule: React.FC = () => {
                 </div>
                 <div>
                     <h1 className="font-black text-white text-xl tracking-widest uppercase mb-0 drop-shadow-md leading-none">SAFEMAINT TV</h1>
-                    <p className="text-[#10b981] font-bold text-[10px] tracking-[0.3em]">ALERTA DE PROGRAMAÇÃO</p>
+                    <div className="flex items-center gap-2">
+                        <p className="text-[#10b981] font-bold text-[10px] tracking-[0.2em]">
+                            EXIBINDO: {viewDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}
+                        </p>
+                        {viewDate.toDateString() !== new Date().toDateString() && (
+                            <span className="bg-yellow-500 text-black text-[8px] font-black px-1.5 rounded uppercase blink">Não é hoje</span>
+                        )}
+                    </div>
                 </div>
             </div>
             
+            {/* CONTROLES DE DATA (CENTRAL) */}
+            <div className="flex items-center gap-2 bg-black/30 p-1 rounded-lg border border-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => changeDate(-1)} className="p-2 hover:bg-white/10 rounded text-slate-300 hover:text-white"><ChevronLeft size={24}/></button>
+                <button onClick={goToToday} className="flex items-center gap-1 px-3 py-1.5 bg-[#007e7a] hover:bg-[#00605d] rounded text-[10px] font-black uppercase"><Calendar size={12}/> Hoje</button>
+                <button onClick={() => changeDate(1)} className="p-2 hover:bg-white/10 rounded text-slate-300 hover:text-white"><ChevronRight size={24}/></button>
+            </div>
+
             <div className="flex items-center gap-4">
                  {/* ALERTAS LEGENDA */}
                  <div className="flex gap-3 bg-black/40 p-2 rounded-lg border border-slate-600">
@@ -222,7 +259,9 @@ export const TVSchedule: React.FC = () => {
                 </div>
 
                 <div className="text-right leading-none border-l border-slate-600 pl-4 mr-4">
-                    <span className="font-mono font-black text-2xl block text-white drop-shadow-lg">{now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    <span className="font-mono font-black text-2xl block text-white drop-shadow-lg">
+                        {now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
                     <span className="text-[10px] font-bold text-[#10b981] uppercase block mt-0.5">{now.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
                 </div>
             </div>
@@ -244,7 +283,6 @@ export const TVSchedule: React.FC = () => {
                 <div className="flex bg-slate-800 text-slate-300 text-[11px] font-black py-2 border-b border-slate-600 shadow-md z-10 uppercase tracking-wider w-full shrink-0">
                     <div style={{width: colWidths.om}} className="px-2 text-left border-r border-slate-700">FROTA/OM</div>
                     <div style={{width: colWidths.desc}} className="px-2 text-left border-r border-slate-700">ATIVIDADE</div>
-                    {/* Hidden Cols */}
                     <div style={{width: colWidths.prio}} className="px-2 text-center border-r border-slate-700">TIPO</div>
                     <div style={{width: colWidths.people}} className="px-2 text-center border-r border-slate-700">EXEC</div>
                     <div style={{width: colWidths.h}} className="px-2 text-center border-r border-slate-700">H</div>
@@ -262,7 +300,7 @@ export const TVSchedule: React.FC = () => {
                         <div className="flex items-center justify-center h-full">
                             <div className="text-center opacity-50">
                                 <Clock size={64} className="mx-auto mb-4 text-slate-500"/>
-                                <p className="text-slate-400 font-bold uppercase text-lg tracking-widest">Sem programação ativa para hoje</p>
+                                <p className="text-slate-400 font-bold uppercase text-lg tracking-widest">Sem programação para {viewDate.toLocaleDateString('pt-BR')}</p>
                             </div>
                         </div>
                     ) : (

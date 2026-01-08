@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock } from 'lucide-react';
+import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock, Copy, Share2, Users, AlertTriangle, Wrench } from 'lucide-react';
 import { Logo } from '../components/Logo';
-import { FeedbackModal } from '../components/FeedbackModal'; // Importado
+import { FeedbackModal } from '../components/FeedbackModal';
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -32,6 +32,8 @@ export const Report: React.FC = () => {
     const [type, setType] = useState('');
     const [equipment, setEquipment] = useState('');
     const [date, setDate] = useState('');
+    
+    // Detailed Fields
     const [executors, setExecutors] = useState('');
     const [timeStart, setTimeStart] = useState('');
     const [timeEnd, setTimeEnd] = useState('');
@@ -70,6 +72,7 @@ export const Report: React.FC = () => {
             setEquipment(data.tag || '');
             setDate(data.date || new Date().toLocaleDateString('pt-BR'));
             
+            // Logic to get all executors from signatures if passed as array
             if(Array.isArray(data.executors)) {
                 setExecutors(data.executors.join(', '));
             } else {
@@ -98,34 +101,52 @@ export const Report: React.FC = () => {
         }
     }, [timeStart, timeEnd]);
 
+    // GERAÇÃO DO TEXTO PADRÃO COMPLETO (OLD STYLE BUT MODERN TEXT)
     const generateText = () => {
-        return `—————————————————
-📝RETORNO OM ${om}
-▪ TIPO: ${type}
-🚜 ⁠EQUIPAMENTO: ${equipment}
-🗓 DATA: ${date}
-👥 EXECUTANTE: ${executors}
-⏱⁠HORA INÍCIO: ${timeStart}
-⏱⁠HORA FIM: ${timeEnd}
-⏳ TEMPO TOTAL: ${duration}
- MOTIVO DA PARADA 
- ${stopReason}
- ATIVIDADE REALIZADA :
- ${activities}
- PENDENCIAS:
- ${pendings}
-▪ STATUS: ${status}
-—————————————————`;
+        return `*RELATÓRIO TÉCNICO - SAFEMAINT*
+──────────────────────
+*DADOS DA ORDEM*
+🆔 OM: ${om}
+🏷 TAG: ${equipment}
+🔧 TIPO: ${type}
+📅 DATA: ${date}
+
+*EQUIPE EXECUTANTE*
+👥 ${executors}
+
+*REGISTRO DE TEMPO*
+⏰ INÍCIO: ${timeStart}
+🏁 TÉRMINO: ${timeEnd}
+⏳ DURAÇÃO: ${duration}
+📊 STATUS FINAL: ${status}
+
+*DETALHAMENTO TÉCNICO*
+🛑 *MOTIVO DA INTERVENÇÃO:*
+${stopReason}
+
+🛠 *ATIVIDADES REALIZADAS:*
+${activities}
+
+⚠️ *PENDÊNCIAS:*
+${pendings || 'NENHUMA'}
+──────────────────────`;
     };
 
     const copyToWhatsapp = () => {
         const text = generateText();
-        navigator.clipboard.writeText(text).then(() => {
-            alert("Relatório copiado para a área de transferência!");
-        }).catch(err => {
-            console.error(err);
-            alert("Erro ao copiar.");
-        });
+        if (navigator.share) {
+            navigator.share({
+                title: `Relatório OM ${om}`,
+                text: text
+            }).catch(console.error);
+        } else {
+            navigator.clipboard.writeText(text).then(() => {
+                alert("Relatório copiado! Cole no WhatsApp ou E-mail.");
+            }).catch(err => {
+                console.error(err);
+                alert("Erro ao copiar.");
+            });
+        }
     };
 
     const handleSave = async () => {
@@ -152,6 +173,7 @@ export const Report: React.FC = () => {
                     duration, 
                     startTime: timeStart,
                     endTime: timeEnd,
+                    executorsList: executors, // Explicitly saving executors list
                     rawText: isManual ? 'Relatório em Anexo (Manual)' : generateText(),
                     manualFileUrl: manualFile,
                     isManualUpload: isManual
@@ -212,14 +234,14 @@ export const Report: React.FC = () => {
                 </button>
             </div>
 
-            {/* DOCUMENT PAPER CONTAINER (A4 Style) - CLASSE PRINT-AREA PARA CSS GLOBAL */}
-            <div className="bg-white shadow-2xl w-full max-w-[21cm] min-h-[29.7cm] p-8 md:p-12 relative print:shadow-none print:w-[210mm] print:h-[297mm] print:max-w-none print:p-10 animate-fadeIn flex flex-col border border-gray-200 print:border-none print-area">
+            {/* DOCUMENT PAPER CONTAINER (A4 Style - Auto Height for Print) */}
+            <div className="bg-white shadow-2xl w-full max-w-[21cm] min-h-[29.7cm] p-8 md:p-12 relative print:shadow-none print:w-full print:max-w-none print:p-0 animate-fadeIn flex flex-col border border-gray-200 print:border-none print-area">
                 
                 {/* --- ABA DIGITAL --- */}
                 {activeTab === 'DIGITAL' && (
-                    <div className="flex-1 flex flex-col h-full">
+                    <div className="flex-1 flex flex-col h-full space-y-6">
                         {/* HEADER PROFISSIONAL */}
-                        <div className="border-b-4 border-vale-green pb-4 mb-8 flex justify-between items-end">
+                        <div className="border-b-4 border-vale-green pb-4 flex justify-between items-end avoid-break">
                             <div className="flex items-center gap-4">
                                 <Logo size="lg" />
                                 <div className="border-l-2 border-gray-300 pl-4 h-12 flex flex-col justify-center">
@@ -228,21 +250,23 @@ export const Report: React.FC = () => {
                                 </div>
                             </div>
                             <div className="text-right">
-                                <p className="text-[9px] font-black text-gray-400 uppercase">DATA DO RELATÓRIO</p>
+                                <p className="text-[9px] font-black text-gray-400 uppercase">EMISSÃO</p>
                                 <p className="text-lg font-black text-gray-800">{new Date().toLocaleDateString()}</p>
                             </div>
                         </div>
 
-                        {/* GRID DE INFORMAÇÕES TÉCNICAS */}
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6 print:border-gray-300">
-                            <h3 className="font-black text-xs text-vale-green uppercase mb-4 border-b border-gray-200 pb-2">DADOS DA ORDEM</h3>
+                        {/* 1. DADOS DA ORDEM */}
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 avoid-break">
+                            <h3 className="font-black text-xs text-vale-green uppercase mb-4 border-b border-gray-200 pb-2 flex items-center gap-2">
+                                <Wrench size={14}/> DADOS DA ORDEM
+                            </h3>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                 <div>
                                     <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">ORDEM (OM)</label>
                                     <input type="text" value={om} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-black text-lg text-blue-900 print:border-0 print:p-0 print:bg-transparent" />
                                 </div>
                                 <div>
-                                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">TIPO</label>
+                                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">TIPO MANUTENÇÃO</label>
                                     <input type="text" value={type} readOnly className="w-full bg-white border border-gray-300 rounded p-2 font-bold text-sm text-gray-800 print:border-0 print:p-0 print:bg-transparent" />
                                 </div>
                                 <div className="col-span-2">
@@ -252,84 +276,88 @@ export const Report: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* EXECUÇÃO E TEMPOS (DESTACADO) */}
-                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 mb-6 relative shadow-inner print:bg-gray-50 print:border-gray-200 print:shadow-none">
-                            <div className="absolute top-4 right-4 text-blue-300 no-print">
-                                <Lock size={16} />
-                            </div>
-                            <h3 className="font-black text-xs text-blue-800 uppercase mb-4 border-b border-blue-200 pb-2 print:text-gray-700 print:border-gray-300">REGISTRO DE EXECUÇÃO E TEMPO</h3>
+                        {/* 2. REGISTRO DE EXECUÇÃO (TEMPOS & EQUIPE) */}
+                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 avoid-break">
+                            <h3 className="font-black text-xs text-blue-800 uppercase mb-4 border-b border-blue-200 pb-2 flex items-center gap-2">
+                                <Clock size={14}/> REGISTRO DE EXECUÇÃO
+                            </h3>
                             
-                            {/* DESTAQUE TEMPO TOTAL */}
-                            <div className="mb-6 bg-white border-2 border-blue-200 rounded-xl p-4 flex items-center justify-between shadow-sm print:border-gray-300 print:shadow-none">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-blue-600 text-white p-3 rounded-lg print:bg-gray-800">
-                                        <Clock size={24} />
-                                    </div>
-                                    <div>
-                                        <span className="block text-[10px] font-black text-blue-400 uppercase tracking-widest print:text-gray-500">TEMPO TOTAL DE MANUTENÇÃO</span>
-                                        <span className="text-3xl font-black text-blue-900 tracking-tight print:text-black">{duration || '0h 0m'}</span>
-                                    </div>
+                            {/* LINHA DE TEMPO E STATUS */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                                    <label className="block text-[8px] font-black text-blue-400 uppercase mb-1">INÍCIO</label>
+                                    <input type="text" value={timeStart} onChange={e => setTimeStart(e.target.value)} className="w-full font-black text-lg text-gray-800 bg-transparent outline-none" />
                                 </div>
-                                <div className="text-right hidden md:block print:block">
-                                    <span className="text-xs font-bold text-blue-300 uppercase print:hidden">Duração Calculada</span>
+                                <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                                    <label className="block text-[8px] font-black text-blue-400 uppercase mb-1">TÉRMINO</label>
+                                    <input type="text" value={timeEnd} onChange={e => setTimeEnd(e.target.value)} className="w-full font-black text-lg text-gray-800 bg-transparent outline-none" />
                                 </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="md:col-span-3">
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">EXECUTANTES (VINCULADOS)</label>
-                                    <input type="text" value={executors} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-bold text-sm text-gray-700 print:border-0 print:p-0 print:bg-transparent" />
+                                <div className="bg-blue-600 p-3 rounded-lg shadow-sm text-white">
+                                    <label className="block text-[8px] font-black text-blue-200 uppercase mb-1">TEMPO TOTAL</label>
+                                    <div className="font-black text-xl">{duration || '00:00'}</div>
                                 </div>
-                                <div>
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">HORA INÍCIO (REAL)</label>
-                                    <input type="text" value={timeStart} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center print:border-0 print:p-0 print:bg-transparent print:text-left" />
-                                </div>
-                                <div>
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">HORA FIM (REAL)</label>
-                                    <input type="text" value={timeEnd} readOnly className="w-full bg-white border border-blue-200 rounded p-2 font-mono font-black text-lg text-gray-800 text-center print:border-0 print:p-0 print:bg-transparent print:text-left" />
-                                </div>
-                                <div>
-                                    <label className="block text-[9px] font-black text-blue-400 uppercase mb-1 print:text-gray-500">STATUS FINAL</label>
+                                <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                                    <label className="block text-[8px] font-black text-blue-400 uppercase mb-1">STATUS FINAL</label>
                                     <select 
                                         value={status} 
                                         onChange={e => setStatus(e.target.value)} 
-                                        className="w-full bg-white border-2 border-blue-300 rounded p-2 font-black text-sm text-blue-900 uppercase focus:outline-none print:border-0 print:p-0 print:bg-transparent print:appearance-none print:text-black"
+                                        className="w-full font-black text-sm text-blue-900 uppercase bg-transparent outline-none"
                                     >
                                         <option value="FINALIZADO">FINALIZADO</option>
                                         <option value="PARCIAL">PARCIAL</option>
                                     </select>
                                 </div>
                             </div>
+
+                            {/* EQUIPE EXECUTANTE */}
+                            <div>
+                                <label className="block text-[9px] font-black text-blue-400 uppercase mb-2 flex items-center gap-1">
+                                    <Users size={10}/> EQUIPE TÉCNICA (EXECUTANTES QUE ASSINARAM)
+                                </label>
+                                <textarea 
+                                    rows={2} 
+                                    value={executors} 
+                                    onChange={e => setExecutors(e.target.value)}
+                                    className="w-full bg-white border border-blue-200 rounded p-3 font-bold text-sm text-gray-700 focus:ring-2 focus:ring-blue-300 outline-none resize-none uppercase" 
+                                    placeholder="Nomes dos executantes..."
+                                />
+                            </div>
                         </div>
 
-                        {/* CAMPOS DESCRITIVOS */}
-                        <div className="space-y-6 flex-1">
-                            <div className="border border-gray-300 rounded-lg overflow-hidden">
-                                <label className="block text-xs font-black text-gray-700 uppercase p-2 bg-gray-100 border-b border-gray-300">MOTIVO DA PARADA</label>
+                        {/* 3. DETALHAMENTO TÉCNICO (MOTIVOS E ATIVIDADES) */}
+                        <div className="space-y-6 flex-1 avoid-break">
+                            <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
+                                <label className="block text-xs font-black text-gray-700 uppercase p-3 bg-gray-100 border-b border-gray-300 flex items-center gap-2">
+                                    <AlertTriangle size={14}/> MOTIVO DA INTERVENÇÃO
+                                </label>
                                 <textarea 
                                     value={stopReason} 
                                     onChange={e => setStopReason(e.target.value)} 
                                     className="w-full p-4 text-sm font-medium h-24 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
-                                    placeholder="Descreva o motivo principal..."
+                                    placeholder="Descreva o motivo principal da parada ou intervenção..."
                                 />
                             </div>
 
-                            <div className="border border-gray-300 rounded-lg overflow-hidden">
-                                <label className="block text-xs font-black text-gray-700 uppercase p-2 bg-gray-100 border-b border-gray-300">ATIVIDADES REALIZADAS</label>
+                            <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
+                                <label className="block text-xs font-black text-gray-700 uppercase p-3 bg-gray-100 border-b border-gray-300 flex items-center gap-2">
+                                    <Wrench size={14}/> DESCRIÇÃO DAS ATIVIDADES REALIZADAS
+                                </label>
                                 <textarea 
                                     value={activities} 
                                     onChange={e => setActivities(e.target.value)} 
-                                    className="w-full p-4 text-sm font-medium h-40 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
-                                    placeholder="Detalhamento do serviço..."
+                                    className="w-full p-4 text-sm font-medium h-48 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
+                                    placeholder="Detalhamento do serviço executado..."
                                 />
                             </div>
 
-                            <div className="border border-gray-300 rounded-lg overflow-hidden border-l-4 border-l-red-500">
-                                <label className="block text-xs font-black text-red-700 uppercase p-2 bg-red-50 border-b border-gray-300">PENDÊNCIAS TÉCNICAS</label>
+                            <div className="border border-red-200 rounded-lg overflow-hidden border-l-4 border-l-red-500 bg-red-50/30">
+                                <label className="block text-xs font-black text-red-700 uppercase p-3 bg-red-50 border-b border-red-200">
+                                    PENDÊNCIAS TÉCNICAS (SE HOUVER)
+                                </label>
                                 <textarea 
                                     value={pendings} 
                                     onChange={e => setPendings(e.target.value)} 
-                                    className="w-full p-4 text-sm font-medium h-20 resize-none text-red-800 focus:outline-none uppercase bg-white placeholder-red-200 print:h-auto print:overflow-hidden"
+                                    className="w-full p-4 text-sm font-medium h-20 resize-none text-red-800 focus:outline-none uppercase bg-transparent placeholder-red-300 print:h-auto print:overflow-hidden"
                                     placeholder="Liste se houver pendências..."
                                 />
                             </div>
@@ -339,7 +367,7 @@ export const Report: React.FC = () => {
 
                 {/* --- ABA MANUAL (UPLOAD) --- */}
                 {activeTab === 'MANUAL' && (
-                    <div className="space-y-6">
+                    <div className="space-y-6 avoid-break">
                         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-blue-900 no-print">
                             <h3 className="font-bold text-lg mb-1">RELATÓRIO MANUAL / FÍSICO</h3>
                             <p className="text-sm">Preencha os dados básicos e anexe uma foto do relatório preenchido manualmente.</p>
@@ -407,7 +435,7 @@ export const Report: React.FC = () => {
                 )}
 
                 {/* Footer do Documento */}
-                <div className="mt-auto pt-8 border-t-2 border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase print:border-gray-300">
+                <div className="mt-auto pt-8 border-t-2 border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase print:border-gray-300 avoid-break">
                     <span>SAFEMAINT - SISTEMA DE GESTÃO INTEGRADA</span>
                     <span>{new Date().toISOString()}</span>
                 </div>
@@ -419,8 +447,8 @@ export const Report: React.FC = () => {
                             onClick={copyToWhatsapp}
                             className="bg-green-500 text-white px-6 py-4 rounded-full shadow-xl hover:bg-green-600 font-black flex items-center justify-center gap-3 transition-transform hover:scale-105 border-4 border-white"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            COPIAR (ZAP)
+                            <Share2 size={24}/>
+                            COMPARTILHAR TEXTO
                         </button>
                     )}
                     <button 

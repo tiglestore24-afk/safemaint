@@ -96,41 +96,59 @@
         background: #edb111;
       }
 
-      /* ESTILOS DE IMPRESSÃO PROFISSIONAL A4 */
+      /* ESTILOS DE IMPRESSÃO PROFISSIONAL A4 (MULTI-PAGINA) */
       @media print {
         @page {
           size: A4;
-          margin: 0;
+          margin: 10mm;
         }
-        body {
-          background-color: white;
-          margin: 0;
-          padding: 0;
+        
+        html, body {
+          height: auto;
+          overflow: visible;
+          background: white;
         }
-        /* Esconde elementos de UI na impressão */
+
+        /* Esconde elementos de UI */
         nav, header, button, .no-print, .fixed, .sidebar-container {
           display: none !important;
         }
-        /* Classe específica para área imprimível */
+
+        /* Configuração da Área de Impressão */
         .print-area {
           display: block !important;
-          width: 210mm;
-          min-height: 297mm;
-          margin: 0 auto;
-          padding: 10mm 15mm;
-          background: white;
-          box-shadow: none;
-          border: none;
-          position: absolute;
-          top: 0;
-          left: 0;
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+          box-shadow: none !important;
+          border: none !important;
+          position: relative !important;
+          overflow: visible !important;
+          min-height: 0 !important;
+          height: auto !important;
         }
+
         /* Quebras de página inteligentes */
         .page-break {
           page-break-before: always;
         }
+        
         .avoid-break {
           page-break-inside: avoid;
+          break-inside: avoid;
+        }
+
+        /* Ajustes de Fonte para Impressão */
+        body {
+          font-size: 10pt;
+          line-height: 1.3;
+        }
+        
+        /* Remove sombras */
+        .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+          box-shadow: none !important;
         }
       }
     </style>
