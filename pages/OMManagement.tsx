@@ -1,15 +1,18 @@
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { OMRecord } from '../types';
-import { FileInput, Search, Plus, Trash2, Edit2, FileText, CheckCircle2, Loader2, Save, X } from 'lucide-react';
+import { FileInput, Search, Plus, Trash2, Edit2, FileText, CheckCircle2, Loader2, Save, X, Calendar, PlayCircle, AlertOctagon, ArrowRight, ExternalLink, Download, Info, Eye } from 'lucide-react';
 import { FeedbackModal } from '../components/FeedbackModal';
+import { useNavigate } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configuração do PDF.js Worker (mesma do Settings)
+// Configuração do PDF.js Worker
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
 export const OMManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [oms, setOms] = useState<OMRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -25,11 +28,64 @@ export const OMManagement: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
 
+  // PDF Viewer States
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string; id: string } | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+
   useEffect(() => {
     loadOms();
     window.addEventListener('safemaint_storage_update', loadOms);
     return () => window.removeEventListener('safemaint_storage_update', loadOms);
   }, []);
+
+  // Lógica de Carregamento de PDF (Blob)
+  useEffect(() => {
+    const loadPdf = async () => {
+        if (!viewingDoc) {
+            setPdfBlobUrl(null);
+            return;
+        }
+
+        let pdfData = viewingDoc.url;
+        let activeUrl: string | null = null;
+
+        // Se for marcador TRUE ou vazio, busca no banco
+        if (!pdfData || pdfData === 'TRUE') {
+            setIsLoadingPdf(true);
+            const remotePdf = await StorageService.getRecordPdf('oms', viewingDoc.id);
+            if (remotePdf) pdfData = remotePdf;
+            setIsLoadingPdf(false);
+        }
+
+        if (pdfData && pdfData !== 'TRUE') {
+            try {
+                // Se for Base64, converte para Blob URL para melhor performance e compatibilidade mobile
+                if (pdfData.startsWith('data:application/pdf;base64,')) {
+                    const parts = pdfData.split(',');
+                    if (parts.length > 1) {
+                        const byteCharacters = atob(parts[1]);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+                        activeUrl = URL.createObjectURL(blob);
+                        setPdfBlobUrl(activeUrl);
+                        return () => URL.revokeObjectURL(activeUrl!);
+                    }
+                } else {
+                    setPdfBlobUrl(pdfData);
+                }
+            } catch (e) { 
+                console.error("Erro ao processar PDF", e);
+                setPdfBlobUrl(pdfData); 
+            }
+        } else {
+            setPdfBlobUrl(null);
+        }
+    };
+    
+    loadPdf();
+  }, [viewingDoc]);
 
   const loadOms = () => {
     setOms(StorageService.getOMs());
@@ -55,10 +111,38 @@ export const OMManagement: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Tem certeza que deseja excluir esta OM?")) {
+    if (window.confirm("Tem certeza que deseja excluir esta OM da fila?")) {
       await StorageService.deleteOM(id);
       loadOms();
     }
+  };
+
+  const handleStartActivity = (om: OMRecord) => {
+      // Redirecionamento Inteligente baseado no Tipo
+      if (om.status === 'EM_ANDAMENTO') {
+          navigate('/dashboard'); // Se já começou, vai pro Dashboard ver o andamento
+          return;
+      }
+
+      const params = {
+          om: om.omNumber,
+          tag: om.tag,
+          description: om.description,
+          type: om.type,
+          omId: om.id
+      };
+
+      if (om.type === 'CORRETIVA') {
+          navigate('/art-emergencial', { state: params });
+      } else {
+          // Para Preventiva/Demanda, vai para ART Padrão
+          const urlParams = new URLSearchParams();
+          urlParams.append('om', om.omNumber);
+          urlParams.append('tag', om.tag);
+          urlParams.append('desc', om.description);
+          urlParams.append('omId', om.id);
+          navigate(`/art-atividade?${urlParams.toString()}`);
+      }
   };
 
   const handleSave = async () => {
@@ -67,7 +151,7 @@ export const OMManagement: React.FC = () => {
       return;
     }
 
-    setFeedbackText(isEditMode ? "ATUALIZANDO OM..." : "CADASTRANDO OM...");
+    setFeedbackText(isEditMode ? "ATUALIZANDO OM..." : "CADASTRANDO OM NA FILA...");
     setIsProcessing(true);
 
     try {
@@ -90,7 +174,7 @@ export const OMManagement: React.FC = () => {
       
       setIsProcessing(false);
       setIsSuccess(true);
-      setFeedbackText(isEditMode ? "OM ATUALIZADA!" : "OM CADASTRADA!");
+      setFeedbackText(isEditMode ? "OM ATUALIZADA!" : "OM NA FILA!");
       
       setTimeout(() => {
         setIsSuccess(false);
@@ -181,11 +265,32 @@ export const OMManagement: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
+  // FILTRO PRINCIPAL: Oculta OMs Concluídas
   const filteredOms = oms.filter(om => 
-    om.omNumber.includes(searchQuery.toUpperCase()) || 
+    om.status !== 'CONCLUIDA' && 
+    (om.omNumber.includes(searchQuery.toUpperCase()) || 
     om.tag.includes(searchQuery.toUpperCase()) ||
-    om.description.includes(searchQuery.toUpperCase())
-  );
+    om.description.includes(searchQuery.toUpperCase()))
+  ).sort((a,b) => {
+      const statusScore = (s: string) => s === 'EM_ANDAMENTO' ? 0 : 1; 
+      return statusScore(a.status) - statusScore(b.status) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const getTypeColor = (type: string) => {
+      switch(type) {
+          case 'CORRETIVA': return 'bg-red-500';
+          case 'DEMANDA': return 'bg-purple-500';
+          default: return 'bg-blue-500';
+      }
+  };
+
+  const getTypeTextColor = (type: string) => {
+      switch(type) {
+          case 'CORRETIVA': return 'text-red-600';
+          case 'DEMANDA': return 'text-purple-600';
+          default: return 'text-blue-600';
+      }
+  };
 
   return (
     <div className="max-w-7xl mx-auto pb-20 px-4 animate-fadeIn">
@@ -196,6 +301,48 @@ export const OMManagement: React.FC = () => {
         successText={feedbackText}
       />
 
+      {/* PDF VIEWER OVERLAY */}
+      {viewingDoc && (
+        <div className="fixed inset-0 z-[100] bg-gray-900/95 flex items-center justify-center p-0 backdrop-blur-md animate-fadeIn">
+            <div className="w-[98vw] h-[98vh] bg-white flex flex-col rounded-xl overflow-hidden shadow-2xl border-4 border-gray-900">
+                <div className="bg-white p-3 flex justify-between items-center shrink-0 border-b border-gray-200">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-[#007e7a] text-white p-1.5 rounded">
+                            <FileText size={18} />
+                        </div>
+                        <div>
+                            <span className="font-black text-xs text-gray-800 uppercase tracking-wide block">Visualização de Documento</span>
+                            <span className="font-bold text-[10px] text-[#007e7a] uppercase tracking-widest">{viewingDoc.title}</span>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        {pdfBlobUrl && (
+                            <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-100 rounded hover:bg-gray-200 text-gray-600 transition-colors md:hidden" title="Abrir em Nova Aba">
+                                <ExternalLink size={16}/>
+                            </a>
+                        )}
+                        <button onClick={() => setViewingDoc(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-all"><X size={24}/></button>
+                    </div>
+                </div>
+                <div className="flex-1 bg-gray-100 relative">
+                    {isLoadingPdf ? (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                            <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
+                            <h4 className="font-black text-xs uppercase">BAIXANDO DO SERVIDOR...</h4>
+                        </div>
+                    ) : pdfBlobUrl ? (
+                        <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                            <Info size={40} className="opacity-20" />
+                            <span className="font-bold text-[10px] uppercase tracking-widest">Documento Indisponível</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 bg-white p-5 rounded-2xl shadow-sm border border-gray-200 gap-4">
         <div className="flex items-center gap-4">
             <div className="bg-blue-50 p-3 rounded-xl text-blue-600 border border-blue-100 shadow-sm">
@@ -203,10 +350,10 @@ export const OMManagement: React.FC = () => {
             </div>
             <div>
                 <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tighter leading-none">
-                    Gestão de Ordens (OM)
+                    Fila de Ordens (Backlog)
                 </h2>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
-                    Biblioteca de Ordens de Manutenção
+                    Ordens Pendentes e Em Execução
                 </p>
             </div>
         </div>
@@ -216,7 +363,7 @@ export const OMManagement: React.FC = () => {
                 <Search className="absolute left-3 top-3 text-gray-400" size={16} />
                 <input 
                     type="text" 
-                    placeholder="BUSCAR OM, TAG..." 
+                    placeholder="BUSCAR NA FILA..." 
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold uppercase outline-none focus:border-blue-500 transition-all"
@@ -224,74 +371,91 @@ export const OMManagement: React.FC = () => {
             </div>
             <button 
                 onClick={() => handleOpenModal()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 shadow-lg hover:shadow-blue-200 transition-all active:scale-95"
+                className="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 shadow-lg transition-all active:scale-95"
             >
-                <Plus size={16}/> NOVA OM
+                <Plus size={16}/> INSERIR MANUAL
             </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                          <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-wider">OM / Tipo</th>
-                          <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-wider">Equipamento / Descrição</th>
-                          <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-wider">Status / PDF</th>
-                          <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-wider text-right">Ações</th>
-                      </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                      {filteredOms.length === 0 ? (
-                          <tr>
-                              <td colSpan={4} className="p-8 text-center text-gray-400 font-bold uppercase text-xs">
-                                  Nenhuma ordem encontrada
-                              </td>
-                          </tr>
-                      ) : (
-                          filteredOms.map(om => (
-                              <tr key={om.id} className="hover:bg-blue-50/50 transition-colors group">
-                                  <td className="p-4">
-                                      <div className="font-black text-sm text-gray-800">{om.omNumber}</div>
-                                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase mt-1 inline-block ${om.type === 'CORRETIVA' ? 'bg-red-100 text-red-700' : om.type === 'DEMANDA' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                          {om.type}
-                                      </span>
-                                  </td>
-                                  <td className="p-4">
-                                      <div className="font-black text-xs text-blue-600 mb-0.5">{om.tag}</div>
-                                      <div className="text-[10px] font-bold text-gray-500 uppercase max-w-md truncate" title={om.description}>
-                                          {om.description}
-                                      </div>
-                                  </td>
-                                  <td className="p-4">
-                                      <div className="flex flex-col gap-1 items-start">
-                                          <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${om.status === 'CONCLUIDA' ? 'bg-green-50 text-green-700 border-green-200' : om.status === 'EM_ANDAMENTO' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
-                                              {om.status.replace('_', ' ')}
-                                          </span>
-                                          {om.pdfUrl && om.pdfUrl !== 'TRUE' && (
-                                              <span className="flex items-center gap-1 text-[9px] font-bold text-gray-400">
-                                                  <FileText size={10} /> PDF ANEXADO
-                                              </span>
-                                          )}
-                                      </div>
-                                  </td>
-                                  <td className="p-4 text-right">
-                                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <button onClick={() => handleOpenModal(om)} className="p-2 bg-gray-100 hover:bg-orange-100 text-gray-500 hover:text-orange-600 rounded-lg transition-colors">
-                                              <Edit2 size={16} />
-                                          </button>
-                                          <button onClick={() => handleDelete(om.id)} className="p-2 bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 rounded-lg transition-colors">
-                                              <Trash2 size={16} />
-                                          </button>
-                                      </div>
-                                  </td>
-                              </tr>
-                          ))
-                      )}
-                  </tbody>
-              </table>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredOms.length === 0 ? (
+              <div className="col-span-full py-20 text-center text-gray-400 bg-white rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center">
+                  <CheckCircle2 size={48} className="mb-2 text-green-500 opacity-50"/>
+                  <span className="font-bold text-sm uppercase text-gray-600">Fila Zerada!</span>
+                  <span className="text-[10px] uppercase mt-1">Nenhuma ordem pendente neste momento.</span>
+              </div>
+          ) : (
+              filteredOms.map(om => (
+                  <div key={om.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all group relative flex flex-col">
+                      {/* Faixa lateral colorida por tipo */}
+                      <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${getTypeColor(om.type)}`}></div>
+                      
+                      <div className="p-5 pl-6 flex-1 flex flex-col">
+                          <div className="flex justify-between items-start mb-2">
+                              <span className="font-black text-lg text-gray-800 tracking-tight">{om.omNumber}</span>
+                              <div className="flex gap-1">
+                                <span className={`text-[8px] font-black px-2 py-1 rounded border uppercase ${om.status === 'EM_ANDAMENTO' ? 'bg-green-100 text-green-700 border-green-200 animate-pulse' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                                    {om.status.replace('_', ' ')}
+                                </span>
+                              </div>
+                          </div>
+                          
+                          <div className="mb-4 flex-1">
+                              <div className="flex justify-between items-center mb-1">
+                                  <span className={`text-sm font-black ${getTypeTextColor(om.type)}`}>{om.tag}</span>
+                                  <span className="text-[8px] font-bold text-gray-400 uppercase bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">{om.type}</span>
+                              </div>
+                              <p className="text-[10px] font-bold text-gray-500 uppercase line-clamp-2 leading-relaxed min-h-[2.5em]">
+                                  {om.description}
+                              </p>
+                          </div>
+
+                          {/* BOTÕES DE AÇÃO DO CARD */}
+                          <div className="space-y-2 mb-3">
+                              {/* Botão de PDF (Documento da OM) - Corrigido para mostrar se existe URL ou marcador TRUE */}
+                              {om.pdfUrl && (
+                                  <button
+                                      onClick={() => setViewingDoc({ url: om.pdfUrl || 'TRUE', title: `DOC OM: ${om.omNumber}`, id: om.id })}
+                                      className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors shadow-sm"
+                                  >
+                                      <FileText size={14} /> VER DOCUMENTO (OM/ART)
+                                  </button>
+                              )}
+
+                              {/* Botão Principal de Início */}
+                              <button 
+                                onClick={() => handleStartActivity(om)}
+                                className={`w-full py-2.5 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 ${om.status === 'EM_ANDAMENTO' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                              >
+                                  {om.status === 'EM_ANDAMENTO' ? (
+                                      <>VER NO DASHBOARD <ArrowRight size={14}/></>
+                                  ) : (
+                                      <>{om.type === 'CORRETIVA' ? <AlertOctagon size={14}/> : <PlayCircle size={14}/>} INICIAR ATIVIDADE</>
+                                  )}
+                              </button>
+                          </div>
+
+                          <div className="flex justify-between items-center border-t border-gray-100 pt-3 mt-auto">
+                              <div className="flex items-center gap-3">
+                                  <span className="text-[9px] font-bold text-gray-300 flex items-center gap-1">
+                                      <Calendar size={10}/> {new Date(om.createdAt).toLocaleDateString()}
+                                  </span>
+                              </div>
+                              
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-4 group-hover:translate-x-0">
+                                  <button onClick={() => handleOpenModal(om)} className="p-2 bg-gray-50 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition-colors" title="Editar">
+                                      <Edit2 size={14}/>
+                                  </button>
+                                  <button onClick={() => handleDelete(om.id)} className="p-2 bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
+                                      <Trash2 size={14}/>
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              ))
+          )}
       </div>
 
       {/* Modal Cadastro/Edição */}
@@ -301,7 +465,7 @@ export const OMManagement: React.FC = () => {
                   <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                       <h3 className="font-black text-lg text-gray-800 uppercase flex items-center gap-2">
                           {isEditMode ? <Edit2 size={20} className="text-blue-600"/> : <Plus size={20} className="text-blue-600"/>}
-                          {isEditMode ? 'Editar Ordem' : 'Nova Ordem'}
+                          {isEditMode ? 'Editar Ordem' : 'Nova Ordem Manual'}
                       </h3>
                       <button onClick={() => setIsModalOpen(false)} className="p-2 bg-white rounded-full text-gray-400 hover:text-red-500 shadow-sm transition-colors">
                           <X size={20} />
@@ -386,7 +550,7 @@ export const OMManagement: React.FC = () => {
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl font-black text-xs uppercase shadow-lg hover:shadow-blue-200 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
                       >
                           {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                          {isEditMode ? 'Salvar Alterações' : 'Cadastrar OM'}
+                          {isEditMode ? 'Salvar Alterações' : 'Cadastrar na Fila'}
                       </button>
                   </div>
               </div>

@@ -117,6 +117,7 @@ export const Dashboard: React.FC = () => {
     return () => window.removeEventListener('safemaint_storage_update', refreshData);
   }, [refreshData]);
 
+  // LÓGICA DE CARREGAMENTO DE PDF (CORRIGIDA PARA DOCUMENTOS)
   useEffect(() => {
     const loadPdf = async () => {
         if (!viewingDoc) {
@@ -127,10 +128,17 @@ export const Dashboard: React.FC = () => {
         let pdfData = viewingDoc.url;
         let activeUrl: string | null = null;
 
+        // Se for marcador TRUE ou vazio, busca no banco
         if (!pdfData || pdfData === 'TRUE') {
             setIsLoadingPdf(true);
-            const table = viewingDoc.title.includes('OM') ? 'oms' : 'arts'; 
-            const remotePdf = await StorageService.getRecordPdf(table as any, viewingDoc.id);
+            
+            // Lógica de tabela correta: se for OM, tabela 'oms'. Se for ART/DOC, tabela 'documents'.
+            let table: 'oms' | 'documents' = 'oms';
+            if (viewingDoc.type === 'PROCEDIMENTO' || viewingDoc.type === 'DOCUMENT') {
+                table = 'documents';
+            }
+
+            const remotePdf = await StorageService.getRecordPdf(table, viewingDoc.id);
             if (remotePdf) pdfData = remotePdf;
             setIsLoadingPdf(false);
         }
@@ -299,9 +307,11 @@ export const Dashboard: React.FC = () => {
                         const linkedDoc = allDocs.find(d => d.id === task.artId);
                         const displayTag = linkedOm ? linkedOm.tag : task.header.tag;
 
-                        // Check for PDFs - Robust Checks
-                        const hasOmPdf = linkedOm && (linkedOm.pdfUrl && linkedOm.pdfUrl.length > 5);
-                        const hasArtPdf = linkedDoc && linkedDoc.content && (linkedDoc.content.manualFileUrl && linkedDoc.content.manualFileUrl.length > 5);
+                        // VERIFICAÇÃO DE PDF ROBUSTA (Incluindo marcador 'TRUE')
+                        const hasOmPdf = linkedOm && (linkedOm.pdfUrl === 'TRUE' || (linkedOm.pdfUrl && linkedOm.pdfUrl.length > 5));
+                        
+                        // VERIFICA SE EXISTE PDF DA ART (PROCEDIMENTO PADRÃO)
+                        const hasArtPdf = linkedDoc && linkedDoc.content && (linkedDoc.content.manualFileUrl === 'TRUE' || (linkedDoc.content.manualFileUrl && linkedDoc.content.manualFileUrl.length > 5));
 
                         return (
                             <div key={task.id} className={`rounded-xl shadow-sm border p-3 flex flex-col gap-2 transition-all hover:shadow-md ${cardStyle}`}>
@@ -339,7 +349,7 @@ export const Dashboard: React.FC = () => {
 
                                 {/* FOOTER DE AÇÕES */}
                                 <div className="flex flex-col gap-2 mt-auto pt-2 border-t border-black/5">
-                                    {/* LINHA DE BOTÕES DE PDF (SE HOUVER) */}
+                                    {/* LINHA DE BOTÕES DE PDF (OM e ART/PROCEDIMENTO) */}
                                     {(hasOmPdf || hasArtPdf) && (
                                         <div className="flex gap-2">
                                             {hasOmPdf && (
@@ -354,9 +364,9 @@ export const Dashboard: React.FC = () => {
                                             )}
                                             {hasArtPdf && (
                                                 <button 
-                                                    onClick={() => setViewingDoc({ url: linkedDoc?.content.manualFileUrl, title: `ART: ${linkedDoc?.header.tag}`, type: 'PROCEDIMENTO', id: linkedDoc?.id! })} 
+                                                    onClick={() => setViewingDoc({ url: linkedDoc?.content.manualFileUrl, title: `ART PADRÃO: ${linkedDoc?.content.artNumber || 'DOC'}`, type: 'PROCEDIMENTO', id: linkedDoc?.id! })} 
                                                     className="flex-1 bg-white hover:bg-gray-50 border border-black/10 rounded-lg py-1.5 flex items-center justify-center gap-1.5 text-gray-700 transition-colors shadow-sm"
-                                                    title="Ver Procedimento Padrão"
+                                                    title="Ver Procedimento Padrão Cadastrado"
                                                 >
                                                     <BookOpen size={12} className="text-blue-500"/>
                                                     <span className="text-[9px] font-black uppercase">VER ART</span>
@@ -364,6 +374,16 @@ export const Dashboard: React.FC = () => {
                                             )}
                                         </div>
                                     )}
+
+                                    {/* BOTÃO DE VER REGISTRO PREENCHIDO (NOVO) */}
+                                    <button 
+                                        onClick={() => handleViewFullArt(task.id, task.artId)}
+                                        className="w-full bg-white hover:bg-gray-50 border border-black/10 text-gray-800 py-1.5 rounded-lg font-black text-[9px] uppercase flex items-center justify-center gap-2 transition-colors shadow-sm"
+                                        title="Visualizar documento preenchido digitalmente"
+                                    >
+                                        <ClipboardList size={14} className="text-[#007e7a]" /> 
+                                        VER DOCUMENTO PREENCHIDO
+                                    </button>
 
                                     {/* LINHA DE CONTROLE PRINCIPAL */}
                                     <div className="flex gap-2">
@@ -395,9 +415,6 @@ export const Dashboard: React.FC = () => {
                                         )}
                                         
                                         {/* VIEW DETAILS & LINK OM BUTTONS */}
-                                        <button onClick={() => handleViewFullArt(task.id, task.artId)} className="px-2 bg-white/50 hover:bg-white border border-black/5 rounded-lg text-gray-600 transition-colors" title="Ver Detalhes do Registro">
-                                            <Info size={14}/>
-                                        </button>
                                         {needsOmLink && (
                                             <button onClick={() => openLinkOmModal(task.id)} className="px-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 rounded-lg font-bold text-[9px] animate-pulse" title="Vincular OM">
                                                 <LinkIcon size={14}/>
