@@ -167,7 +167,7 @@ export const ARTAtividade: React.FC = () => {
           type: 'ART_ATIVIDADE',
           header,
           createdAt: new Date().toISOString(),
-          status: 'RASCUNHO',
+          status: 'ATIVO', // MUDANÇA: ATIVO para aparecer no Arquivo imediatamente
           content: { 
               artId: selectedART.id, 
               artNumber: selectedART.code, 

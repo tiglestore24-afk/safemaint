@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Thermometer } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 // Helper to format date
 const formatDate = (date: Date) => {
@@ -13,11 +14,12 @@ const formatDate = (date: Date) => {
 };
 
 export const AppHeader: React.FC = () => {
+  const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [weather, setWeather] = useState<{ temp: number | null, city: string | null }>({ temp: null, city: null });
   const [weatherError, setWeatherError] = useState<string | null>(null);
 
-  // Clock tick - Atualização em tempo real
+  // Clock tick
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -30,19 +32,26 @@ export const AppHeader: React.FC = () => {
         async (position) => {
           const { latitude, longitude } = position.coords;
           try {
-            // Fetch weather data from Open-Meteo
             const weatherResponse = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
             if (!weatherResponse.ok) throw new Error('Weather API failed');
             const weatherData = await weatherResponse.json();
             
-            // Fetch city name for context using Nominatim (reverse geocoding)
-            const cityResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-            if (!cityResponse.ok) throw new Error('Geolocation API failed');
-            const cityData = await cityResponse.json();
+            const cityResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
+                headers: {
+                    'User-Agent': 'SAFEMAINT-Web-App/1.0',
+                    'Accept-Language': 'pt-BR'
+                }
+            });
+            
+            let cityName = 'Local';
+            if (cityResponse.ok) {
+                const cityData = await cityResponse.json();
+                cityName = cityData.address?.city || cityData.address?.town || cityData.address?.municipality || cityData.address?.village || 'Local';
+            }
             
             setWeather({
               temp: Math.round(weatherData.current_weather.temperature),
-              city: cityData.address?.city || cityData.address?.town || 'Local'
+              city: cityName
             });
             setWeatherError(null);
           } catch (error) {
@@ -62,18 +71,18 @@ export const AppHeader: React.FC = () => {
   }, []);
 
   return (
-    <header className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 animate-fadeIn print:hidden">
-      <div className="flex items-center gap-4">
+    <header className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 animate-fadeIn print:hidden relative z-40">
+      <div className="flex items-center gap-4 w-full md:w-auto">
         {/* Date */}
-        <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100">
+        <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100 flex-1 md:flex-none">
           <Calendar size={20} className="text-[#007e7a]" />
-          <span className="text-sm font-black text-gray-800 uppercase tracking-wide">{formatDate(currentTime)}</span>
+          <span className="text-sm font-black text-gray-800 uppercase tracking-wide truncate">{formatDate(currentTime)}</span>
         </div>
       </div>
       
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 w-full md:w-auto justify-end">
         {/* Weather */}
-        <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 text-blue-900">
+        <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 text-blue-900 hidden md:flex">
           {weather.temp !== null ? (
             <>
               <Thermometer size={20} className="text-blue-600" />
@@ -87,8 +96,8 @@ export const AppHeader: React.FC = () => {
         {/* Divider */}
         <div className="w-px h-8 bg-gray-200 hidden md:block"></div>
         
-        {/* Time - HORA REAL COM SEGUNDOS */}
-        <div className="flex items-center gap-3 bg-gray-900 px-5 py-2 rounded-xl text-white shadow-lg shadow-gray-200 min-w-[140px] justify-center">
+        {/* Time */}
+        <div className="hidden md:flex items-center gap-3 bg-gray-900 px-5 py-2 rounded-xl text-white shadow-lg shadow-gray-200 min-w-[140px] justify-center">
           <Clock size={20} className="text-[#edb111]" />
           <span className="font-mono text-xl font-black tracking-widest leading-none">
             {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

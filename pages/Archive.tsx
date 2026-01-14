@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord, RegisteredART, OMRecord } from '../types';
-import { Eye, Download, Trash2, X, FileText, CheckCircle, Clipboard, Filter, QrCode, Cloud, Archive as ArchiveIcon, Calendar, Hash, Tag, Printer, ShieldAlert, MapPin, AlertTriangle, AlertOctagon, Loader2, ExternalLink, Info, BookOpen } from 'lucide-react';
+import { Eye, Download, Trash2, X, FileText, CheckCircle, Clipboard, Filter, QrCode, Cloud, Archive as ArchiveIcon, Calendar, Hash, Tag, Printer, ShieldAlert, MapPin, AlertTriangle, AlertOctagon, Loader2, ExternalLink, Info, BookOpen, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BackButton } from '../components/BackButton';
 import { Logo } from '../components/Logo';
@@ -36,6 +36,11 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete }
         }
     };
     const styles = getTypeStyles();
+    
+    // Extrai o responsável da primeira assinatura (Executor/Responsável)
+    const signer = doc.signatures && doc.signatures.length > 0 ? doc.signatures[0] : null;
+    const signerText = signer ? `${signer.name.split(' ')[0]} (${signer.matricula})` : 'SEM ASSINATURA';
+
     return (
       <div onClick={() => onView(doc)} className={`group bg-white rounded-xl p-3 md:p-4 shadow-sm border transition-all flex flex-col md:flex-row items-center gap-3 cursor-pointer hover:shadow-md ${isArchived ? 'opacity-70 grayscale' : 'border-gray-100'} relative overflow-hidden`}>
           <div className={`absolute left-0 top-0 bottom-0 w-1 ${styles.bg}`}></div>
@@ -47,7 +52,13 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete }
               <div><span className="text-[7px] font-black text-gray-400 uppercase tracking-widest">OM/ID</span><span className="block text-sm font-black text-vale-blue leading-none">{doc.header.om || '---'}</span></div>
               <div><span className="text-[7px] font-black text-gray-400 uppercase tracking-widest">TAG</span><span className="block text-sm font-black text-vale-green leading-none">{doc.header.tag || 'N/D'}</span></div>
           </div>
-          <div className="flex-1 w-full overflow-hidden"><p className="text-[10px] font-bold text-gray-500 uppercase truncate group-hover:text-gray-700 transition-colors">{doc.header.description || 'Sem descrição'}</p></div>
+          <div className="flex-1 w-full overflow-hidden">
+              <p className="text-[10px] font-bold text-gray-500 uppercase truncate group-hover:text-gray-700 transition-colors">{doc.header.description || 'Sem descrição'}</p>
+              <div className="flex items-center gap-1 mt-1">
+                  <User size={10} className="text-gray-400"/>
+                  <span className="text-[9px] font-black text-gray-400 uppercase">{signerText}</span>
+              </div>
+          </div>
           <div className="flex items-center gap-1 shrink-0 bg-gray-50 md:bg-transparent p-1.5 rounded-lg w-full md:w-auto justify-center"><button onClick={(e) => { e.stopPropagation(); onView(doc); }} className="p-2 text-gray-400 hover:text-vale-green rounded-lg hover:bg-gray-100"><Eye size={16} /></button><button onClick={(e) => onDelete(e, doc.id)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"><Trash2 size={16} /></button></div>
       </div>
     );
@@ -55,7 +66,8 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete }
 
 export const Archive: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'ARTS' | 'DEMANDAS' | 'CHECKLISTS' | 'RELATORIOS' | 'CRONOGRAMAS'>('ARTS');
+  // REMOVIDO 'DEMANDAS' e UNIFICADO em 'ARTS'
+  const [activeTab, setActiveTab] = useState<'ARTS' | 'CHECKLISTS' | 'RELATORIOS' | 'CRONOGRAMAS'>('ARTS');
   const [recentDocs, setRecentDocs] = useState<DocumentRecord[]>([]);
   const [archivedDocs, setArchivedDocs] = useState<DocumentRecord[]>([]);
   const [viewDoc, setViewDoc] = useState<DocumentRecord | null>(null);
@@ -71,8 +83,9 @@ export const Archive: React.FC = () => {
   const refreshDocs = () => {
     const allDocs = StorageService.getDocuments();
     let filtered = allDocs.filter(d => d.status !== 'LIXEIRA' && d.status !== 'RASCUNHO');
-    if (activeTab === 'ARTS') filtered = filtered.filter(d => d.type === 'ART_ATIVIDADE');
-    else if (activeTab === 'DEMANDAS') filtered = filtered.filter(d => d.type === 'ART_EMERGENCIAL');
+    
+    // UNIFICAÇÃO: ARTS Tab agora inclui ART_ATIVIDADE e ART_EMERGENCIAL
+    if (activeTab === 'ARTS') filtered = filtered.filter(d => d.type === 'ART_ATIVIDADE' || d.type === 'ART_EMERGENCIAL');
     else if (activeTab === 'CHECKLISTS') filtered = filtered.filter(d => d.type === 'CHECKLIST');
     else if (activeTab === 'CRONOGRAMAS') filtered = filtered.filter(d => d.type === 'CRONOGRAMA');
     else filtered = filtered.filter(d => d.type === 'RELATORIO');
@@ -164,6 +177,9 @@ export const Archive: React.FC = () => {
   };
 
   const renderFullDocument = (doc: DocumentRecord) => {
+      // Extrai o signatário principal para o cabeçalho
+      const primarySigner = doc.signatures && doc.signatures.length > 0 ? doc.signatures[0] : null;
+
       // Caso Relatório ou Upload Manual, mostramos o visualizador de PDF diretamente
       if (doc.content?.isManualUpload && docBlobUrl) {
           return (
@@ -196,6 +212,12 @@ export const Archive: React.FC = () => {
                           <span className="font-mono font-black text-lg text-gray-700">{doc.header.om || 'S/N'}</span>
                       </div>
                       <p className="text-[9px] font-bold text-gray-400 uppercase">{new Date(doc.createdAt).toLocaleDateString()} • {new Date(doc.createdAt).toLocaleTimeString().slice(0,5)}</p>
+                      {primarySigner && (
+                          <div className="mt-1 border-t border-gray-200 pt-1">
+                              <p className="text-[8px] font-black text-gray-500 uppercase">RESPONSÁVEL: {primarySigner.name}</p>
+                              <p className="text-[8px] font-bold text-gray-400 uppercase">MAT: {primarySigner.matricula}</p>
+                          </div>
+                      )}
                   </div>
               </div>
 
@@ -458,8 +480,7 @@ export const Archive: React.FC = () => {
       {/* NAVEGAÇÃO DE CATEGORIAS */}
       <div className="flex overflow-x-auto gap-2 mb-8 pb-2 custom-scrollbar no-print">
           {[
-              { id: 'ARTS', label: 'ARTS PADRÃO', icon: <FileText size={16}/> },
-              { id: 'DEMANDAS', label: 'ARTS EMERGENCIAIS', icon: <AlertTriangle size={16}/> },
+              { id: 'ARTS', label: 'ARTS (GERAL)', icon: <FileText size={16}/> },
               { id: 'CHECKLISTS', label: 'CHECKLISTS', icon: <CheckCircle size={16}/> },
               { id: 'RELATORIOS', label: 'RELATÓRIOS', icon: <Clipboard size={16}/> },
               { id: 'CRONOGRAMAS', label: 'PROGRAMAÇÃO', icon: <Calendar size={16}/> },

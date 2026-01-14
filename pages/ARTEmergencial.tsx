@@ -138,7 +138,7 @@ export const ARTEmergencial: React.FC = () => {
           type: 'ART_EMERGENCIAL', 
           header, 
           createdAt: new Date().toISOString(), 
-          status: 'RASCUNHO',
+          status: 'ATIVO', // MUDANÇA: ATIVO para aparecer no Arquivo imediatamente
           content: { 
             quadrantRisks, 
             checklistRisks, 

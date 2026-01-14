@@ -69,15 +69,28 @@ export const Checklist: React.FC = () => {
     try {
         await new Promise(r => setTimeout(r, 1000)); // Delay para feedback visual
 
-        let startTimeFormatted = '';
-        let endTimeFormatted = new Date().toLocaleTimeString().slice(0,5);
+        let startTimeISO = new Date().toISOString();
+        let endTimeISO = new Date().toISOString();
+        let artIdForReport = undefined;
+        
+        // Formata Executantes: NOME - MATRICULA
+        let formattedExecutors = signatures.map(s => `${s.name} (MAT: ${s.matricula})`).join('\n');
 
         if (maintenanceId) {
             const activeTask = StorageService.getActiveMaintenanceById(maintenanceId);
-            if(activeTask) startTimeFormatted = new Date(activeTask.startTime).toLocaleTimeString().slice(0,5);
-        } else {
-            startTimeFormatted = new Date().toLocaleTimeString().slice(0,5);
+            if(activeTask) {
+                // TEMPO INICIAL REAL = CRIAÇÃO DA ART
+                startTimeISO = activeTask.startTime;
+                artIdForReport = activeTask.artId;
+            }
         }
+        
+        // TEMPO FINAL = AGORA (CONCLUSÃO DO CHECKLIST)
+        endTimeISO = new Date().toISOString();
+
+        // Formatação para exibição simples (HH:MM)
+        const startTimeFormatted = new Date(startTimeISO).toLocaleTimeString().slice(0,5);
+        const endTimeFormatted = new Date(endTimeISO).toLocaleTimeString().slice(0,5);
 
         const fullContent = checklistItems.map(item => ({
             id: item.legacyId,
@@ -87,8 +100,11 @@ export const Checklist: React.FC = () => {
             obs: checks[item.id]?.obs || ''
         }));
 
+        // GERA O ID DO DOCUMENTO ANTES DE SALVAR PARA PASSAR PARA O RELATÓRIO
+        const checklistDocId = crypto.randomUUID();
+
         const doc: DocumentRecord = {
-          id: crypto.randomUUID(),
+          id: checklistDocId,
           type: 'CHECKLIST',
           header,
           createdAt: new Date().toISOString(),
@@ -105,12 +121,24 @@ export const Checklist: React.FC = () => {
             setIsSuccess(false);
             if (maintenanceId) {
                 await StorageService.completeMaintenance(maintenanceId, 'CONCLUÍDO VIA CHECKLIST', true);
+                
+                // PREPARA DADOS COMPLETOS PARA O RELATÓRIO
                 const reportData = {
-                    om: header.om, tag: header.tag, type: header.type,
+                    om: header.om, 
+                    tag: header.tag, 
+                    type: header.type,
                     date: new Date().toLocaleDateString('pt-BR'),
-                    startTime: startTimeFormatted, endTime: endTimeFormatted,
-                    executors: signatures.map(s => s.name), activities: header.description,
-                    status: 'FINALIZADO', stopReason: 'CONFORMIDADE TÉCNICA'
+                    startTime: startTimeFormatted, 
+                    endTime: endTimeFormatted,
+                    // Passa lista formatada para o campo de texto
+                    executors: formattedExecutors,
+                    // Passa objetos de assinatura para renderização visual no rodapé
+                    signatures: signatures, 
+                    activities: header.description,
+                    status: 'FINALIZADO', 
+                    stopReason: 'MANUTENÇÃO CONCLUÍDA',
+                    artId: artIdForReport, // Pass ART ID to report
+                    checklistId: checklistDocId // PASS CHECKLIST ID TO REPORT FOR AUTO-ARCHIVING
                 };
                 navigate('/report', { state: reportData });
             } else {

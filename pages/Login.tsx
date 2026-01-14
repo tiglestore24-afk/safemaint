@@ -30,6 +30,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
 
+  // Avatar Logic
+  const displayChar = isRegistering 
+    ? (newName.trim() ? newName.trim().charAt(0).toUpperCase() : '') 
+    : (user.trim() ? user.trim().charAt(0).toUpperCase() : '');
+
   useEffect(() => {
       const verify = async () => {
           const online = await checkConnection();
@@ -173,8 +178,23 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
 
             <div className="text-center mb-6">
-                <div className="flex justify-center mb-4 scale-90">
-                    <Logo size="md" showText={true} />
+                <div className="flex justify-center mb-4 h-24 items-center">
+                    {displayChar ? (
+                        <div className="relative animate-fadeIn">
+                            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#007e7a] to-[#005c97] flex items-center justify-center shadow-xl border-4 border-white ring-4 ring-[#007e7a]/10 transition-all duration-500 transform hover:scale-105">
+                                <span className="text-5xl font-black text-white drop-shadow-md select-none">
+                                    {displayChar}
+                                </span>
+                            </div>
+                            <div className="absolute bottom-1 right-1 w-6 h-6 bg-[#edb111] rounded-full border-2 border-white shadow-sm flex items-center justify-center animate-bounce">
+                                <div className="w-2 h-2 bg-white rounded-full"></div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="scale-90 animate-fadeIn">
+                            <Logo size="md" showText={false} />
+                        </div>
+                    )}
                 </div>
                 <div className="relative inline-block">
                     <h1 className="text-xl font-black text-gray-800 uppercase tracking-tighter relative z-10">

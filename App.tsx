@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Login } from './pages/Login';
@@ -19,6 +19,11 @@ import { StorageService } from './services/storage';
 import { SplashScreen } from './components/SplashScreen';
 import { AvailabilityBoard } from './pages/AvailabilityBoard';
 import { AppHeader } from './components/AppHeader';
+import { StandbyScreen } from './components/StandbyScreen'; // Importado
+
+// --- CONFIGURAÇÃO DE TEMPO DE ESPERA (MS) ---
+// 5 Minutos = 300000 ms
+const IDLE_TIMEOUT = 300000; 
 
 // --- COMPONENTE DE LAYOUT INTERNO ---
 // Separa a lógica de layout (Sidebar/Header) do roteamento principal
@@ -81,6 +86,38 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  
+  // Standby State
+  const [isIdle, setIsIdle] = useState(false);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetIdleTimer = useCallback(() => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (isIdle) setIsIdle(false);
+      
+      // Só ativa o timer se estiver autenticado
+      if (isAuthenticated) {
+          idleTimerRef.current = setTimeout(() => {
+              setIsIdle(true);
+          }, IDLE_TIMEOUT);
+      }
+  }, [isAuthenticated, isIdle]);
+
+  useEffect(() => {
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    
+    const handleActivity = () => resetIdleTimer();
+
+    if (isAuthenticated) {
+        events.forEach(event => window.addEventListener(event, handleActivity));
+        resetIdleTimer(); // Inicia contagem
+    }
+
+    return () => {
+        events.forEach(event => window.removeEventListener(event, handleActivity));
+        if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [isAuthenticated, resetIdleTimer]);
 
   useEffect(() => {
     const auth = localStorage.getItem('safemaint_auth') === 'true';
@@ -114,6 +151,7 @@ const App: React.FC = () => {
       localStorage.removeItem('safemaint_user');
       localStorage.removeItem('safemaint_role');
       setIsAuthenticated(false);
+      setIsIdle(false); // Reseta standby ao sair
       window.location.href = '/';
   };
 
@@ -134,9 +172,12 @@ const App: React.FC = () => {
   }
 
   return (
-    <HashRouter>
-        <AppLayout onLogout={handleLogout} />
-    </HashRouter>
+    <>
+        {isIdle && <StandbyScreen onWake={resetIdleTimer} />}
+        <HashRouter>
+            <AppLayout onLogout={handleLogout} />
+        </HashRouter>
+    </>
   );
 };
 

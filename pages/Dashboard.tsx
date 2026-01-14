@@ -7,7 +7,7 @@ import {
   Clock, AlertOctagon, PauseCircle, 
   StopCircle, X, Activity, 
   ShieldCheck, WifiOff, Wrench, PlayCircle, Timer, Lock, 
-  Volume2, VolumeX, FileText, Layers, UserCheck, Zap, MoreHorizontal, Droplets, Flame, Link as LinkIcon, Search, ClipboardList, Loader2, Info, CheckSquare, ExternalLink, ListChecks, BookOpen, MapPin, ShieldAlert, CheckCircle
+  FileText, Layers, Zap, MoreHorizontal, Droplets, Flame, Link as LinkIcon, Search, ClipboardList, Loader2, Info, CheckSquare, ExternalLink, ListChecks, BookOpen, MapPin
 } from 'lucide-react';
 import { checkConnection } from '../services/supabase';
 import { Logo } from '../components/Logo';
@@ -46,7 +46,7 @@ const MaintenanceTimer: React.FC<{ task: ActiveMaintenance }> = ({ task }) => {
         return () => clearInterval(interval);
     }, [task, calculateTime]);
 
-    return <span className="text-xl font-black font-mono tracking-tighter opacity-90">{time}</span>;
+    return <span className="text-2xl font-black font-mono tracking-tighter opacity-90">{time}</span>;
 };
 
 const getTaskIcon = (type: string) => {
@@ -90,7 +90,6 @@ export const Dashboard: React.FC = () => {
   const [omSearch, setOmSearch] = useState('');
   
   const [currentUser, setCurrentUser] = useState('');
-  const [isMuted, setIsMuted] = useState(() => localStorage.getItem('safemaint_sound_muted') === 'true');
 
   const refreshData = useCallback(() => {
     const tasks = StorageService.getActiveMaintenances();
@@ -132,7 +131,6 @@ export const Dashboard: React.FC = () => {
         if (!pdfData || pdfData === 'TRUE') {
             setIsLoadingPdf(true);
             
-            // Lógica de tabela correta: se for OM, tabela 'oms'. Se for ART/DOC, tabela 'documents'.
             let table: 'oms' | 'documents' = 'oms';
             if (viewingDoc.type === 'PROCEDIMENTO' || viewingDoc.type === 'DOCUMENT') {
                 table = 'documents';
@@ -154,7 +152,6 @@ export const Dashboard: React.FC = () => {
                         const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
                         activeUrl = URL.createObjectURL(blob);
                         setPdfBlobUrl(activeUrl);
-                        // Cleanup function for blob
                         return () => URL.revokeObjectURL(activeUrl!);
                     }
                 } else setPdfBlobUrl(pdfData);
@@ -167,10 +164,19 @@ export const Dashboard: React.FC = () => {
     loadPdf();
   }, [viewingDoc]);
 
-  const toggleMute = () => {
-      const newState = !isMuted;
-      setIsMuted(newState);
-      localStorage.setItem('safemaint_sound_muted', String(newState));
+  // Helper para formatar o nome do executor (Nome + Matrícula)
+  const formatExecutor = (login?: string) => {
+      if (!login) return 'SISTEMA';
+      
+      const users = StorageService.getUsers();
+      const user = users.find(u => u.login === login);
+      if (user) return `${user.name} (MAT: ${user.matricula})`;
+      
+      const employees = StorageService.getEmployees();
+      const emp = employees.find(e => e.matricula === login);
+      if (emp) return `${emp.name} (MAT: ${emp.matricula})`;
+
+      return login; // Fallback se não encontrar
   };
 
   const handleAction = (task: ActiveMaintenance) => {
@@ -179,6 +185,38 @@ export const Dashboard: React.FC = () => {
       } else {
           setClosingTask(task);
       }
+  };
+
+  // NOVA FUNÇÃO: PAUSAR E GERAR RELATÓRIO
+  const handlePauseAndReport = async (task: ActiveMaintenance) => {
+      if(!window.confirm("Pausar a atividade e gerar relatório parcial?")) return;
+
+      // 1. Pausa no Banco
+      await StorageService.pauseMaintenance(task.id);
+
+      // 2. Prepara dados para o Relatório
+      const startTimeISO = task.startTime;
+      const endTimeISO = new Date().toISOString();
+      const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+      const executorInfo = formatExecutor(task.openedBy);
+
+      const reportData = {
+          om: task.header.om,
+          tag: task.header.tag,
+          type: task.header.type,
+          date: new Date().toLocaleDateString('pt-BR'),
+          startTime: fmtTime(startTimeISO),
+          endTime: fmtTime(endTimeISO),
+          activities: task.header.description,
+          stopReason: 'ATIVIDADE PAUSADA',
+          status: 'PARCIAL', 
+          executors: executorInfo,
+          artId: task.artId // PASS ART ID FOR ARCHIVING
+      };
+
+      // 3. Navega para Relatório
+      navigate('/report', { state: reportData });
+      refreshData();
   };
 
   const openLinkOmModal = (taskId: string) => {
@@ -198,14 +236,53 @@ export const Dashboard: React.FC = () => {
   const completeAction = async (type: 'PARCIAL' | 'TOTAL' | 'CHECKLIST') => {
       if(!closingTask) return;
       const taskId = closingTask.id;
-      const header = { ...closingTask.header };
-      const startTime = closingTask.startTime;
+
+      // DADOS COMUNS DE TEMPO
+      const startTimeISO = closingTask.startTime;
+      const endTimeISO = new Date().toISOString();
+      const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+      const executorInfo = formatExecutor(closingTask.openedBy);
 
       if(type === 'PARCIAL') {
+          // LÓGICA PARCIAL:
+          // 1. Atualiza status para 'AGUARDANDO' (libera lock) - via StorageService
           await StorageService.setMaintenancePartial(taskId);
+
+          // 2. Prepara dados para Relatório Parcial
+          const reportData = {
+              om: closingTask.header.om,
+              tag: closingTask.header.tag,
+              type: closingTask.header.type,
+              date: new Date().toLocaleDateString('pt-BR'),
+              startTime: fmtTime(startTimeISO),
+              endTime: fmtTime(endTimeISO),
+              activities: closingTask.header.description,
+              stopReason: 'PARADA PARCIAL / TROCA DE TURNO',
+              status: 'PARCIAL',
+              executors: executorInfo,
+              artId: closingTask.artId // PASS ART ID
+          };
+
+          // 3. Navega para Relatórios
+          navigate('/report', { state: reportData });
+
       } else if(type === 'TOTAL') {
+          const reportData = {
+              om: closingTask.header.om,
+              tag: closingTask.header.tag,
+              type: closingTask.header.type,
+              date: new Date().toLocaleDateString('pt-BR'),
+              startTime: fmtTime(startTimeISO),
+              endTime: fmtTime(endTimeISO),
+              activities: closingTask.header.description,
+              stopReason: 'MANUTENÇÃO CONCLUÍDA',
+              status: 'FINALIZADO',
+              executors: executorInfo,
+              artId: closingTask.artId // PASS ART ID
+          };
+
           await StorageService.completeMaintenance(taskId, 'TOTAL (MANUAL)', true);
-          navigate('/report', { state: { ...header, status: 'FINALIZADO', startTime } });
+          navigate('/report', { state: reportData });
       } else {
           navigate(`/checklist?maintenanceId=${taskId}`);
       }
@@ -247,12 +324,6 @@ export const Dashboard: React.FC = () => {
                 </div>
             </div>
         </div>
-
-        <div className="flex gap-3 items-center">
-            <button onClick={toggleMute} className={`p-2.5 rounded-lg border transition-all ${isMuted ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-white text-[#007e7a] border-[#007e7a]/30 shadow-sm'}`}>
-                {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
@@ -270,7 +341,7 @@ export const Dashboard: React.FC = () => {
                     <h3 className="text-xs font-bold text-gray-500 uppercase">Nenhuma Atividade</h3>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-fadeIn">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
                     {activeTasks.map(task => {
                         const isExtraDemand = task.origin === 'DEMANDA_EXTRA';
                         const isCorretiva = task.origin === 'CORRETIVA' || task.artType === 'ART_EMERGENCIAL';
@@ -282,142 +353,119 @@ export const Dashboard: React.FC = () => {
                         const canControl = isOwner || isPartial;
 
                         // CORES DO CARD COMPLETO
-                        let cardStyle = "bg-blue-50 border-blue-200 text-blue-900";
+                        let cardStyle = "bg-gradient-to-br from-blue-100 to-blue-50 border-blue-300 text-blue-900";
                         let iconColor = "text-blue-600";
-                        let buttonColor = "bg-blue-600 hover:bg-blue-700";
+                        let buttonColor = "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 border-b-4 border-blue-800 active:border-b-0 active:translate-y-0.5";
+                        let cardAnimation = "";
                         
                         if (isExtraDemand) {
-                            cardStyle = "bg-pink-50 border-pink-200 text-pink-900";
+                            cardStyle = "bg-gradient-to-br from-pink-100 to-pink-50 border-pink-300 text-pink-900";
                             iconColor = "text-pink-600";
-                            buttonColor = "bg-pink-600 hover:bg-pink-700";
+                            buttonColor = "bg-gradient-to-r from-pink-600 to-pink-700 hover:from-pink-700 border-b-4 border-pink-800 active:border-b-0 active:translate-y-0.5";
                         } else if (isCorretiva) {
-                            cardStyle = "bg-red-50 border-red-200 text-red-900";
+                            cardStyle = "bg-gradient-to-br from-red-100 to-red-50 border-red-300 text-red-900";
                             iconColor = "text-red-600";
-                            buttonColor = "bg-red-600 hover:bg-red-700";
+                            buttonColor = "bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 border-b-4 border-red-800 active:border-b-0 active:translate-y-0.5";
+                            cardAnimation = "animate-pulse-slow shadow-lg shadow-red-500/20";
                         } else if (isPaused) {
-                            cardStyle = "bg-yellow-50 border-yellow-200 text-yellow-900";
+                            cardStyle = "bg-gradient-to-br from-yellow-100 to-yellow-50 border-yellow-300 text-yellow-900";
                             iconColor = "text-yellow-600";
-                            buttonColor = "bg-yellow-600 hover:bg-yellow-700";
+                            buttonColor = "bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 border-b-4 border-yellow-700 active:border-b-0 active:translate-y-0.5";
                         }
 
                         const needsOmLink = task.header.om === 'DEMANDA-EXTRA';
 
-                        // Resolve Linked Data
                         const linkedOm = allOms.find(o => o.id === task.omId);
                         const linkedDoc = allDocs.find(d => d.id === task.artId);
                         const displayTag = linkedOm ? linkedOm.tag : task.header.tag;
 
-                        // VERIFICAÇÃO DE PDF ROBUSTA (Incluindo marcador 'TRUE')
                         const hasOmPdf = linkedOm && (linkedOm.pdfUrl === 'TRUE' || (linkedOm.pdfUrl && linkedOm.pdfUrl.length > 5));
-                        
-                        // VERIFICA SE EXISTE PDF DA ART (PROCEDIMENTO PADRÃO)
                         const hasArtPdf = linkedDoc && linkedDoc.content && (linkedDoc.content.manualFileUrl === 'TRUE' || (linkedDoc.content.manualFileUrl && linkedDoc.content.manualFileUrl.length > 5));
 
                         return (
-                            <div key={task.id} className={`rounded-xl shadow-sm border p-3 flex flex-col gap-2 transition-all hover:shadow-md ${cardStyle}`}>
+                            <div key={task.id} className={`rounded-2xl shadow-md border p-4 flex flex-col gap-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${cardStyle} ${cardAnimation}`}>
                                 {/* HEADER COMPACTO */}
-                                <div className="flex justify-between items-start border-b border-black/5 pb-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className={`p-1.5 rounded-md bg-white border border-black/5 ${iconColor}`}>
-                                            {isCorretiva ? <AlertOctagon size={16} /> : isExtraDemand ? <ClipboardList size={16} /> : getTaskIcon(task.header.type)}
+                                <div className="flex justify-between items-start border-b border-black/10 pb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-lg bg-white/70 border border-black/5 ${iconColor}`}>
+                                            {isCorretiva ? <AlertOctagon size={20} /> : isExtraDemand ? <ClipboardList size={20} /> : getTaskIcon(task.header.type)}
                                         </div>
                                         <div>
-                                            <h4 className="font-black text-sm leading-none">{task.header.om}</h4>
-                                            <span className="text-[9px] font-bold opacity-70 uppercase block mt-0.5">{task.header.type}</span>
+                                            <h4 className="font-black text-lg leading-none">{task.header.om}</h4>
+                                            <span className="text-[9px] font-bold opacity-70 uppercase block mt-1">{task.header.type}</span>
                                         </div>
                                     </div>
                                     <div className="text-right">
                                         <MaintenanceTimer task={task} />
-                                        <span className="text-[8px] font-bold opacity-60 block uppercase mt-0.5">
+                                        <span className="text-[9px] font-bold opacity-60 block uppercase mt-0.5">
                                             {isPaused ? 'PAUSADA' : isPartial ? 'AGUARDANDO' : 'EM ANDAMENTO'}
                                         </span>
                                     </div>
                                 </div>
 
                                 {/* CORPO DO CARD */}
-                                <div className="flex-1 min-h-[40px]">
-                                    <div className="flex justify-between items-baseline mb-1">
-                                        <span className={`text-base font-black ${iconColor}`}>{displayTag}</span>
-                                        <span className="text-[8px] font-bold bg-white/50 px-1.5 py-0.5 rounded uppercase border border-black/5 truncate max-w-[80px]">
+                                <div className="flex-1 min-h-[50px]">
+                                    <div className="flex justify-between items-baseline mb-2">
+                                        <span className={`text-xl font-black ${iconColor}`}>{displayTag}</span>
+                                        <span className="text-[9px] font-bold bg-white/50 px-2 py-1 rounded-full uppercase border border-black/10 truncate max-w-[90px]">
                                             {taskOwner.split(' ')[0]}
                                         </span>
                                     </div>
-                                    <p className="text-[10px] font-bold opacity-80 uppercase leading-tight line-clamp-2">
+                                    <p className="text-[11px] font-bold opacity-80 uppercase leading-tight line-clamp-2">
                                         {task.header.description || 'SEM DESCRIÇÃO'}
                                     </p>
                                 </div>
 
-                                {/* FOOTER DE AÇÕES */}
-                                <div className="flex flex-col gap-2 mt-auto pt-2 border-t border-black/5">
-                                    {/* LINHA DE BOTÕES DE PDF (OM e ART/PROCEDIMENTO) */}
-                                    {(hasOmPdf || hasArtPdf) && (
-                                        <div className="flex gap-2">
-                                            {hasOmPdf && (
-                                                <button 
-                                                    onClick={() => setViewingDoc({ url: linkedOm?.pdfUrl!, title: `OM: ${linkedOm?.omNumber}`, type: 'OM', id: linkedOm?.id! })} 
-                                                    className="flex-1 bg-white hover:bg-gray-50 border border-black/10 rounded-lg py-1.5 flex items-center justify-center gap-1.5 text-gray-700 transition-colors shadow-sm"
-                                                    title="Ver OM Original"
-                                                >
-                                                    <FileText size={12} className="text-red-500"/>
-                                                    <span className="text-[9px] font-black uppercase">VER OM</span>
-                                                </button>
-                                            )}
-                                            {hasArtPdf && (
-                                                <button 
-                                                    onClick={() => setViewingDoc({ url: linkedDoc?.content.manualFileUrl, title: `ART PADRÃO: ${linkedDoc?.content.artNumber || 'DOC'}`, type: 'PROCEDIMENTO', id: linkedDoc?.id! })} 
-                                                    className="flex-1 bg-white hover:bg-gray-50 border border-black/10 rounded-lg py-1.5 flex items-center justify-center gap-1.5 text-gray-700 transition-colors shadow-sm"
-                                                    title="Ver Procedimento Padrão Cadastrado"
-                                                >
-                                                    <BookOpen size={12} className="text-blue-500"/>
-                                                    <span className="text-[9px] font-black uppercase">VER ART</span>
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    {/* BOTÃO DE VER REGISTRO PREENCHIDO (NOVO) */}
-                                    <button 
-                                        onClick={() => handleViewFullArt(task.id, task.artId)}
-                                        className="w-full bg-white hover:bg-gray-50 border border-black/10 text-gray-800 py-1.5 rounded-lg font-black text-[9px] uppercase flex items-center justify-center gap-2 transition-colors shadow-sm"
-                                        title="Visualizar documento preenchido digitalmente"
-                                    >
-                                        <ClipboardList size={14} className="text-[#007e7a]" /> 
-                                        VER DOCUMENTO PREENCHIDO
-                                    </button>
-
-                                    {/* LINHA DE CONTROLE PRINCIPAL */}
+                                {/* FOOTER DE AÇÕES (REORGANIZADO) */}
+                                <div className="flex flex-col gap-2 mt-auto pt-3 border-t border-black/10">
+                                    {/* LINHA DE CONTROLE PRINCIPAL - Ação Primária */}
                                     <div className="flex gap-2">
                                         {task.status === 'ANDAMENTO' ? (
                                             canControl ? (
                                                 <>
-                                                    <button onClick={() => StorageService.pauseMaintenance(task.id)} className="flex-1 bg-white border border-black/10 hover:bg-gray-50 text-gray-700 py-1.5 rounded-lg font-black text-[9px] uppercase flex items-center justify-center gap-1 transition-colors">
-                                                        <PauseCircle size={14}/> Pausar
+                                                    <button onClick={() => handlePauseAndReport(task)} className="flex-1 bg-white border border-black/10 hover:bg-gray-50 text-gray-700 py-2.5 rounded-lg font-black text-xs uppercase flex items-center justify-center gap-2 transition-colors shadow-sm active:translate-y-0.5">
+                                                        <PauseCircle size={16}/> Pausar
                                                     </button>
-                                                    <button onClick={() => handleAction(task)} className={`flex-1 text-white py-1.5 rounded-lg font-black text-[9px] uppercase flex items-center justify-center gap-1 shadow-sm active:scale-95 transition-all ${buttonColor}`}>
-                                                        <StopCircle size={14}/> Finalizar
+                                                    <button onClick={() => handleAction(task)} className={`flex-1 text-white py-2.5 rounded-lg font-black text-xs uppercase flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all ${buttonColor}`}>
+                                                        <StopCircle size={16}/> Finalizar
                                                     </button>
                                                 </>
                                             ) : (
-                                                <div className="w-full bg-black/5 py-1.5 rounded-lg text-center text-[9px] font-bold opacity-50 flex items-center justify-center gap-1">
-                                                    <Lock size={10}/> BLOQUEADO
+                                                <div className="w-full bg-black/5 py-2 rounded-lg text-center text-xs font-bold opacity-50 flex items-center justify-center gap-2">
+                                                    <Lock size={12}/> BLOQUEADO
                                                 </div>
                                             )
                                         ) : (
                                             canControl ? (
-                                                <button onClick={() => handleAction(task)} className={`w-full text-white py-1.5 rounded-lg font-black text-[9px] uppercase flex items-center justify-center gap-1 shadow-sm active:scale-95 transition-all ${buttonColor}`}>
-                                                    <PlayCircle size={14}/> {isPartial ? 'RETOMAR' : 'REINICIAR'}
+                                                <button onClick={() => handleAction(task)} className={`w-full text-white py-3 rounded-lg font-black text-sm uppercase flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${buttonColor}`}>
+                                                    <PlayCircle size={16}/> {isPartial ? 'RETOMAR' : 'REINICIAR'}
                                                 </button>
                                             ) : (
-                                                <div className="w-full bg-black/5 py-1.5 rounded-lg text-center text-[9px] font-bold opacity-50 flex items-center justify-center gap-1">
-                                                    <Lock size={10}/> AGUARDANDO
+                                                <div className="w-full bg-black/5 py-2 rounded-lg text-center text-xs font-bold opacity-50 flex items-center justify-center gap-2">
+                                                    <Lock size={12}/> AGUARDANDO
                                                 </div>
                                             )
                                         )}
-                                        
-                                        {/* VIEW DETAILS & LINK OM BUTTONS */}
+                                    </div>
+
+                                    {/* LINHA DE AÇÕES SECUNDÁRIAS (DOCUMENTOS E VÍNCULOS) */}
+                                    <div className="flex gap-2">
+                                        {hasOmPdf && (
+                                            <button onClick={() => setViewingDoc({ url: linkedOm?.pdfUrl!, title: `OM: ${linkedOm?.omNumber}`, type: 'OM', id: linkedOm?.id! })} className="flex-1 bg-white/60 hover:bg-white border border-black/10 rounded-lg py-1.5 flex items-center justify-center gap-1.5 text-gray-600 transition-colors" title="Ver OM Original">
+                                                <FileText size={12} /> <span className="text-[9px] font-black uppercase">OM</span>
+                                            </button>
+                                        )}
+                                        {hasArtPdf && (
+                                            <button onClick={() => setViewingDoc({ url: linkedDoc?.content.manualFileUrl, title: `ART PADRÃO: ${linkedDoc?.content.artNumber || 'DOC'}`, type: 'PROCEDIMENTO', id: linkedDoc?.id! })} className="flex-1 bg-white/60 hover:bg-white border border-black/10 rounded-lg py-1.5 flex items-center justify-center gap-1.5 text-gray-600 transition-colors" title="Ver Procedimento Padrão">
+                                                <BookOpen size={12} /> <span className="text-[9px] font-black uppercase">ART</span>
+                                            </button>
+                                        )}
+                                        <button onClick={() => handleViewFullArt(task.id, task.artId)} className="flex-1 bg-white/60 hover:bg-white border border-black/10 rounded-lg py-1.5 flex items-center justify-center gap-1.5 text-gray-600 transition-colors" title="Visualizar documento preenchido">
+                                            <ClipboardList size={12} /> <span className="text-[9px] font-black uppercase">DOC</span>
+                                        </button>
                                         {needsOmLink && (
-                                            <button onClick={() => openLinkOmModal(task.id)} className="px-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 rounded-lg font-bold text-[9px] animate-pulse" title="Vincular OM">
-                                                <LinkIcon size={14}/>
+                                            <button onClick={() => openLinkOmModal(task.id)} className="flex-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded-lg py-1.5 font-bold text-[9px] flex items-center justify-center gap-1 animate-pulse border border-yellow-200" title="Vincular OM">
+                                                <LinkIcon size={12}/> VINCULAR
                                             </button>
                                         )}
                                     </div>
@@ -443,7 +491,7 @@ export const Dashboard: React.FC = () => {
                         </div>
                     )}
                     {history.slice(0, 20).map(log => (
-                        <div key={log.id} className="bg-gray-50 p-2 rounded-lg border-l-4 border-gray-300 hover:border-[#007e7a] hover:bg-white hover:shadow-sm transition-all group cursor-default">
+                        <div key={log.id} className="bg-gray-50 p-2 rounded-lg border-l-4 border-gray-300 hover:border-[#007e7a] hover:bg-white hover:shadow-md transition-all group cursor-default">
                             <div className="flex justify-between items-start mb-1">
                                 <span className="font-black text-gray-800 text-[10px] group-hover:text-[#007e7a]">{log.om}</span>
                                 <span className="text-[8px] font-bold text-gray-400 bg-white px-1 py-0.5 rounded border border-gray-200">

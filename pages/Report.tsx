@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
-import { DocumentRecord } from '../types';
+import { DocumentRecord, SignatureRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock, Copy, Share2, Users, AlertTriangle, Wrench, Activity, MessageSquare } from 'lucide-react';
+import { Printer, Camera, Upload, FileText, PenTool, CheckCircle, Lock, Clock, Copy, Share2, Users, AlertTriangle, Wrench, Activity, MessageSquare, Briefcase } from 'lucide-react';
 import { Logo } from '../components/Logo';
 import { FeedbackModal } from '../components/FeedbackModal';
 
@@ -42,12 +42,18 @@ export const Report: React.FC = () => {
     // Novos Campos
     const [deviation, setDeviation] = useState('');
     const [observation, setObservation] = useState('');
+    const [actionTaken, setActionTaken] = useState(''); // O que foi realizado para sanar
 
     const [stopReason, setStopReason] = useState('');
-    const [activities, setActivities] = useState('');
+    const [activities, setActivities] = useState(''); // Descrição da Atividade (Contexto)
     const [pendings, setPendings] = useState('');
     const [status, setStatus] = useState('');
+    const [originalArtId, setOriginalArtId] = useState<string | undefined>(undefined);
+    const [checklistId, setChecklistId] = useState<string | undefined>(undefined);
     
+    // Signatures from Checklist (For visual rendering)
+    const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
+
     // Manual State
     const [manualFile, setManualFile] = useState<string | null>(null);
 
@@ -76,11 +82,11 @@ export const Report: React.FC = () => {
             setEquipment(data.tag || '');
             setDate(data.date || new Date().toLocaleDateString('pt-BR'));
             
-            // Logic to get all executors from signatures if passed as array
-            if(Array.isArray(data.executors)) {
-                setExecutors(data.executors.join(', '));
-            } else {
-                setExecutors(data.executors || '');
+            setExecutors(data.executors || '');
+            
+            // Import Signatures for visual display
+            if (data.signatures) {
+                setSignatures(data.signatures);
             }
 
             setTimeStart(data.startTime || '');
@@ -90,6 +96,10 @@ export const Report: React.FC = () => {
             setStatus(data.status || 'FINALIZADO');
             setDeviation(data.deviation || '');
             setObservation(data.observation || '');
+            setActionTaken(data.actionTaken || '');
+            
+            if (data.artId) setOriginalArtId(data.artId);
+            if (data.checklistId) setChecklistId(data.checklistId);
 
             if (data.duration) {
                 setDuration(data.duration);
@@ -107,7 +117,7 @@ export const Report: React.FC = () => {
         }
     }, [timeStart, timeEnd]);
 
-    // GERAÇÃO DO TEXTO PADRÃO COMPLETO (OLD STYLE BUT MODERN TEXT)
+    // GERAÇÃO DO TEXTO PADRÃO COMPLETO
     const generateText = () => {
         return `*RELATÓRIO TÉCNICO - SAFEMAINT*
 ──────────────────────
@@ -118,43 +128,27 @@ export const Report: React.FC = () => {
 📅 DATA: ${date}
 
 *EQUIPE EXECUTANTE*
-👥 ${executors}
+${executors}
 
 *REGISTRO DE TEMPO*
-⏰ INÍCIO: ${timeStart}
-🏁 TÉRMINO: ${timeEnd}
+⏰ INÍCIO (ART): ${timeStart}
+🏁 TÉRMINO (CHK): ${timeEnd}
 ⏳ DURAÇÃO: ${duration}
 📊 STATUS FINAL: ${status}
-📉 DESVIO: ${deviation || 'NENHUM'}
-📝 OBS: ${observation || '---'}
 
 *DETALHAMENTO TÉCNICO*
-🛑 *MOTIVO DA INTERVENÇÃO:*
+📝 *DESCRIÇÃO DA ATIVIDADE:*
+${activities}
+
+🛑 *MOTIVO DA FALHA / CONTEXTO:*
 ${stopReason}
 
-🛠 *ATIVIDADES REALIZADAS:*
-${activities}
+🛠 *O QUE FOI REALIZADO (SOLUÇÃO):*
+${actionTaken}
 
 ⚠️ *PENDÊNCIAS:*
 ${pendings || 'NENHUMA'}
 ──────────────────────`;
-    };
-
-    const copyToWhatsapp = () => {
-        const text = generateText();
-        if (navigator.share) {
-            navigator.share({
-                title: `Relatório OM ${om}`,
-                text: text
-            }).catch(console.error);
-        } else {
-            navigator.clipboard.writeText(text).then(() => {
-                alert("Relatório copiado! Cole no WhatsApp ou E-mail.");
-            }).catch(err => {
-                console.error(err);
-                alert("Erro ao copiar.");
-            });
-        }
     };
 
     const handleSave = async () => {
@@ -177,20 +171,52 @@ ${pendings || 'NENHUMA'}
                     finalStatus: status,
                     stopReason,
                     activities,
+                    actionTaken, // Nova info
                     pendings,
                     duration, 
                     startTime: timeStart,
                     endTime: timeEnd,
-                    deviation,    // SAVED
-                    observation,  // SAVED
+                    deviation,    
+                    observation,  
                     executorsList: executors, 
                     rawText: isManual ? 'Relatório em Anexo (Manual)' : generateText(),
                     manualFileUrl: manualFile,
                     isManualUpload: isManual
                 },
-                signatures: []
+                signatures: signatures // Salva as assinaturas visuais
             };
-            StorageService.saveDocument(doc);
+            await StorageService.saveDocument(doc);
+            
+            // --- AUTOMAÇÃO DE ARQUIVAMENTO (LIMPEZA VISUAL) ---
+            if (status === 'FINALIZADO') {
+                const allDocs = StorageService.getDocuments();
+                
+                // 1. Arquiva ART Original
+                if (originalArtId) {
+                    const artDoc = allDocs.find(d => d.id === originalArtId);
+                    if (artDoc) {
+                        artDoc.status = 'ARQUIVADO';
+                        await StorageService.saveDocument(artDoc);
+                    }
+                }
+
+                // 2. Arquiva Checklist Vinculado (Se existir)
+                if (checklistId) {
+                    const checkDoc = allDocs.find(d => d.id === checklistId);
+                    if (checkDoc) {
+                        checkDoc.status = 'ARQUIVADO';
+                        await StorageService.saveDocument(checkDoc);
+                    }
+                }
+            } else if (status === 'PARCIAL' && originalArtId) {
+                 // Move a ART parcial para Arquivado para limpar o painel ativo
+                 const allDocs = StorageService.getDocuments();
+                 const artDoc = allDocs.find(d => d.id === originalArtId);
+                 if (artDoc) {
+                    artDoc.status = 'ARQUIVADO';
+                    await StorageService.saveDocument(artDoc);
+                 }
+            }
             
             setIsProcessing(false);
             setIsSuccess(true);
@@ -295,12 +321,12 @@ ${pendings || 'NENHUMA'}
                             {/* LINHA DE TEMPO E STATUS */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                                 <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
-                                    <label className="block text-[8px] font-black text-blue-400 uppercase mb-1">INÍCIO</label>
-                                    <input type="text" value={timeStart} onChange={e => setTimeStart(e.target.value)} className="w-full font-black text-lg text-gray-800 bg-transparent outline-none" />
+                                    <label className="block text-[8px] font-black text-blue-400 uppercase mb-1">INÍCIO (ART)</label>
+                                    <input type="text" value={timeStart} readOnly className="w-full font-black text-lg text-gray-800 bg-transparent outline-none" />
                                 </div>
                                 <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
-                                    <label className="block text-[8px] font-black text-blue-400 uppercase mb-1">TÉRMINO</label>
-                                    <input type="text" value={timeEnd} onChange={e => setTimeEnd(e.target.value)} className="w-full font-black text-lg text-gray-800 bg-transparent outline-none" />
+                                    <label className="block text-[8px] font-black text-blue-400 uppercase mb-1">TÉRMINO (CHK)</label>
+                                    <input type="text" value={timeEnd} readOnly className="w-full font-black text-lg text-gray-800 bg-transparent outline-none" />
                                 </div>
                                 <div className="bg-blue-600 p-3 rounded-lg shadow-sm text-white">
                                     <label className="block text-[8px] font-black text-blue-200 uppercase mb-1">DURAÇÃO TOTAL</label>
@@ -319,75 +345,49 @@ ${pendings || 'NENHUMA'}
                                 </div>
                             </div>
 
-                            {/* LINHA DE DESVIO E OBSERVAÇÃO (NOVOS CAMPOS) */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
-                                    <label className="block text-[8px] font-black text-red-400 uppercase mb-1 flex items-center gap-1">
-                                        <Activity size={10}/> DESVIO (SE HOUVER)
-                                    </label>
-                                    <input 
-                                        type="text" 
-                                        value={deviation} 
-                                        onChange={e => setDeviation(e.target.value)} 
-                                        className="w-full font-bold text-sm text-gray-700 bg-transparent outline-none uppercase placeholder-gray-300"
-                                        placeholder="Ex: Atraso por chuva..."
-                                    />
-                                </div>
-                                <div className="bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
-                                    <label className="block text-[8px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1">
-                                        <MessageSquare size={10}/> OBSERVAÇÃO GERAL
-                                    </label>
-                                    <input 
-                                        type="text" 
-                                        value={observation} 
-                                        onChange={e => setObservation(e.target.value)} 
-                                        className="w-full font-bold text-sm text-gray-700 bg-transparent outline-none uppercase placeholder-gray-300"
-                                        placeholder="Obs. adicionais..."
-                                    />
-                                </div>
-                            </div>
-
                             {/* EQUIPE EXECUTANTE */}
                             <div>
                                 <label className="block text-[9px] font-black text-blue-400 uppercase mb-2 flex items-center gap-1">
-                                    <Users size={10}/> EQUIPE TÉCNICA (EXECUTANTES QUE ASSINARAM)
+                                    <Users size={10}/> EQUIPE TÉCNICA (NOME - MATRÍCULA)
                                 </label>
                                 <textarea 
-                                    rows={2} 
+                                    rows={3} 
                                     value={executors} 
-                                    onChange={e => setExecutors(e.target.value)}
-                                    className="w-full bg-white border border-blue-200 rounded p-3 font-bold text-sm text-gray-700 focus:ring-2 focus:ring-blue-300 outline-none resize-none uppercase" 
-                                    placeholder="Nomes dos executantes..."
+                                    readOnly // Automático do Checklist
+                                    className="w-full bg-gray-100 border border-blue-200 rounded p-3 font-bold text-sm text-gray-700 outline-none resize-none uppercase" 
                                 />
                             </div>
                         </div>
 
                         {/* 3. DETALHAMENTO TÉCNICO (MOTIVOS E ATIVIDADES) */}
                         <div className="space-y-6 flex-1 avoid-break">
+                            {/* Descrição da Atividade */}
                             <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
                                 <label className="block text-xs font-black text-gray-700 uppercase p-3 bg-gray-100 border-b border-gray-300 flex items-center gap-2">
-                                    <AlertTriangle size={14}/> MOTIVO DA INTERVENÇÃO
-                                </label>
-                                <textarea 
-                                    value={stopReason} 
-                                    onChange={e => setStopReason(e.target.value)} 
-                                    className="w-full p-4 text-sm font-medium h-24 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
-                                    placeholder="Descreva o motivo principal da parada ou intervenção..."
-                                />
-                            </div>
-
-                            <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
-                                <label className="block text-xs font-black text-gray-700 uppercase p-3 bg-gray-100 border-b border-gray-300 flex items-center gap-2">
-                                    <Wrench size={14}/> DESCRIÇÃO DAS ATIVIDADES REALIZADAS
+                                    <Wrench size={14}/> DESCRIÇÃO DA ATIVIDADE (PROBLEMA/SOLICITAÇÃO)
                                 </label>
                                 <textarea 
                                     value={activities} 
                                     onChange={e => setActivities(e.target.value)} 
-                                    className="w-full p-4 text-sm font-medium h-48 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
-                                    placeholder="Detalhamento do serviço executado..."
+                                    className="w-full p-4 text-sm font-medium h-24 resize-none focus:outline-none uppercase bg-white print:h-auto print:overflow-hidden"
+                                    placeholder="Descrição da atividade planejada..."
                                 />
                             </div>
 
+                            {/* O que foi realizado (Solução) */}
+                            <div className="border-2 border-green-300 rounded-lg overflow-hidden bg-green-50/20 shadow-sm">
+                                <label className="block text-xs font-black text-green-700 uppercase p-3 bg-green-100 border-b border-green-300 flex items-center gap-2">
+                                    <Briefcase size={14}/> O QUE FOI REALIZADO PARA SANAR A FALHA (SOLUÇÃO TÉCNICA)
+                                </label>
+                                <textarea 
+                                    value={actionTaken} 
+                                    onChange={e => setActionTaken(e.target.value)} 
+                                    className="w-full p-4 text-sm font-bold h-32 resize-none focus:outline-none uppercase bg-white text-green-900 print:h-auto print:overflow-hidden placeholder-green-300"
+                                    placeholder="Descreva detalhadamente a intervenção técnica realizada..."
+                                />
+                            </div>
+
+                            {/* Pendências */}
                             <div className="border border-red-200 rounded-lg overflow-hidden border-l-4 border-l-red-500 bg-red-50/30">
                                 <label className="block text-xs font-black text-red-700 uppercase p-3 bg-red-50 border-b border-red-200">
                                     PENDÊNCIAS TÉCNICAS (SE HOUVER)
@@ -395,109 +395,76 @@ ${pendings || 'NENHUMA'}
                                 <textarea 
                                     value={pendings} 
                                     onChange={e => setPendings(e.target.value)} 
-                                    className="w-full p-4 text-sm font-medium h-20 resize-none text-red-800 focus:outline-none uppercase bg-transparent placeholder-red-300 print:h-auto print:overflow-hidden"
-                                    placeholder="Liste se houver pendências..."
+                                    className="w-full p-4 text-sm font-medium h-20 resize-none text-red-800 bg-transparent focus:outline-none uppercase placeholder-red-300"
+                                    placeholder="Peças pendentes, testes futuros..."
                                 />
                             </div>
                         </div>
-                    </div>
-                )}
 
-                {/* --- ABA MANUAL (UPLOAD) --- */}
-                {activeTab === 'MANUAL' && (
-                    <div className="space-y-6 avoid-break">
-                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-blue-900 no-print">
-                            <h3 className="font-bold text-lg mb-1">RELATÓRIO MANUAL / FÍSICO</h3>
-                            <p className="text-sm">Preencha os dados básicos e anexe uma foto do relatório preenchido manualmente.</p>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1">OM</label>
-                                <input type="text" value={om} onChange={e => setOm(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-black text-lg text-blue-900" />
-                             </div>
-                             <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1">TAG</label>
-                                <input type="text" value={equipment} onChange={e => setEquipment(e.target.value.toUpperCase().replace(/^([0-9])/, 'CA$1'))} className="w-full border-2 border-gray-300 rounded p-2 font-black text-lg text-vale-green" />
-                             </div>
-                             <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1">DATA</label>
-                                <input type="text" value={date} onChange={e => setDate(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold" />
-                             </div>
-                              <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1">EXECUTANTES</label>
-                                <input type="text" value={executors} onChange={e => setExecutors(e.target.value)} className="w-full border-2 border-gray-300 rounded p-2 font-bold" />
-                             </div>
-                        </div>
-
-                        <div className="border-2 border-dashed border-gray-400 rounded-xl p-8 flex flex-col items-center justify-center bg-gray-50 text-center hover:bg-gray-100 transition-colors cursor-pointer relative min-h-[400px]">
-                            <input 
-                                type="file" 
-                                accept="image/*,.pdf" 
-                                onChange={handleFileUpload} 
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer no-print"
-                            />
-                            {manualFile ? (
-                                <div className="space-y-3 w-full h-full flex flex-col items-center">
-                                    <div className="w-full bg-white border border-gray-200 rounded overflow-hidden flex items-center justify-center p-2">
-                                        <img src={manualFile} alt="Preview" className="max-h-[600px] w-auto object-contain" />
-                                    </div>
-                                    <p className="text-green-600 font-bold flex items-center justify-center gap-2 no-print">
-                                        <CheckCircle size={20} /> ARQUIVO SELECIONADO (SALVO)
-                                    </p>
-                                    <p className="text-xs text-gray-500 no-print">Clique para alterar</p>
+                        {/* 4. RODAPÉ DE ASSINATURAS (VISUAL) */}
+                        {signatures.length > 0 && (
+                            <div className="mt-8 pt-6 border-t-2 border-gray-300 avoid-break">
+                                <h4 className="font-black text-[10px] uppercase mb-6 text-gray-400 tracking-widest text-center">VALIDAÇÃO TÉCNICA E ENCERRAMENTO</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-8 items-end justify-center">
+                                    {signatures.map(sig => (
+                                        <div key={sig.id} className="text-center">
+                                            <div className="h-12 flex items-end justify-center mb-1">
+                                                <img src={sig.signatureData} alt="Assinatura" className="max-h-full opacity-90 object-contain" />
+                                            </div>
+                                            <div className="border-t border-gray-400 pt-1">
+                                                <p className="font-black text-[9px] uppercase text-gray-900 leading-none">{sig.name}</p>
+                                                <p className="text-[7px] font-bold text-gray-500 uppercase">{sig.matricula} • {sig.function}</p>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            ) : (
-                                <>
-                                    <div className="bg-blue-100 p-4 rounded-full text-blue-600 mb-3">
-                                        <Camera size={32} />
-                                    </div>
-                                    <h4 className="font-bold text-gray-700">CLIQUE PARA TIRAR FOTO OU UPLOAD</h4>
-                                    <p className="text-xs text-gray-500 mt-1">Formatos: JPG, PNG, PDF</p>
-                                </>
-                            )}
-                        </div>
-
-                         <div className="flex items-baseline gap-2 pt-2">
-                            <span className="font-black text-gray-800 whitespace-nowrap">STATUS:</span>
-                                <select 
-                                value={status} 
-                                onChange={e => setStatus(e.target.value)} 
-                                className="bg-transparent border-b-2 border-gray-800 font-bold text-lg focus:outline-none px-2 py-1 uppercase"
-                            >
-                                <option value="FINALIZADO">FINALIZADO</option>
-                                <option value="PARCIAL">PARCIAL</option>
-                            </select>
-                        </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* Footer do Documento */}
-                <div className="mt-auto pt-8 border-t-2 border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase print:border-gray-300 avoid-break">
-                    <span>SAFEMAINT - SISTEMA DE GESTÃO INTEGRADA</span>
-                    <span>{new Date().toISOString()}</span>
-                </div>
+                {/* --- ABA MANUAL --- */}
+                {activeTab === 'MANUAL' && (
+                    <div className="flex flex-col items-center justify-center h-full space-y-6 animate-fadeIn">
+                        <div className="text-center">
+                            <h2 className="text-2xl font-black text-gray-800 uppercase">ANEXAR RELATÓRIO MANUAL</h2>
+                            <p className="text-xs text-gray-500 font-bold uppercase mt-1">FOTO DO RELATÓRIO EM PAPEL</p>
+                        </div>
 
-                {/* Floating Actions */}
-                <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50 print:hidden">
-                    {activeTab === 'DIGITAL' && (
-                        <button 
-                            onClick={copyToWhatsapp}
-                            className="bg-green-500 text-white px-6 py-4 rounded-full shadow-xl hover:bg-green-600 font-black flex items-center justify-center gap-3 transition-transform hover:scale-105 border-4 border-white"
-                        >
-                            <Share2 size={24}/>
-                            COMPARTILHAR TEXTO
-                        </button>
-                    )}
-                    <button 
-                        onClick={handleSave}
-                        className="bg-gray-800 text-white px-6 py-4 rounded-full shadow-xl hover:bg-black font-black flex items-center justify-center gap-3 transition-transform hover:scale-105 border-4 border-white"
-                    >
-                        <CheckCircle size={20} />
-                        SALVAR E ARQUIVAR
-                    </button>
-                </div>
+                        {manualFile ? (
+                            <div className="relative w-full max-w-md aspect-[3/4] border-4 border-gray-800 rounded-xl overflow-hidden shadow-2xl group">
+                                <img src={manualFile} alt="Preview" className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => setManualFile(null)} className="bg-red-600 text-white px-6 py-3 rounded-full font-black text-xs uppercase flex items-center gap-2 hover:scale-105 transition-transform">
+                                        REMOVER IMAGEM
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <label className="w-full max-w-md aspect-video border-4 border-dashed border-gray-300 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-all group">
+                                <Camera size={64} className="text-gray-300 group-hover:text-gray-500 transition-colors mb-4" />
+                                <span className="font-black text-gray-400 group-hover:text-gray-600 uppercase">CLIQUE PARA FOTOGRAFAR</span>
+                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileUpload} />
+                            </label>
+                        )}
+                    </div>
+                )}
             </div>
+
+            {/* ACTION BAR */}
+            <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 flex justify-center gap-4 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] print:hidden z-50">
+                <button onClick={() => window.print()} className="bg-gray-800 hover:bg-black text-white px-8 py-4 rounded-xl font-black text-xs uppercase flex items-center gap-2 shadow-lg transition-all active:scale-95">
+                    <Printer size={18}/> IMPRIMIR
+                </button>
+                <button 
+                    onClick={handleSave} 
+                    className="bg-vale-green hover:bg-[#00605d] text-white px-10 py-4 rounded-xl font-black text-xs uppercase flex items-center gap-2 shadow-lg transition-all active:scale-95 border-b-4 border-[#004d4a] active:border-b-0 active:translate-y-1"
+                >
+                    <CheckCircle size={18}/> ARQUIVAR RELATÓRIO
+                </button>
+            </div>
+            
+            <div className="h-20 print:hidden"></div>
         </div>
     );
 };

@@ -200,7 +200,6 @@ ON CONFLICT (id) DO NOTHING;
 export const Settings: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'OMS' | 'PROCEDURES' | 'SCHEDULE' | 'EMPLOYEES' | 'USERS' | 'DB_LIVE' | 'DEMANDS_REGISTER'>('OMS');
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   
   // --- FEEDBACK STATES ---
@@ -380,45 +379,6 @@ export const Settings: React.FC = () => {
       } finally {
           setIsLoadingLive(false);
       }
-  };
-
-  const handleManualSync = async () => {
-      setIsSyncing(true);
-      await StorageService.initialSync();
-      await checkConn();
-      refresh();
-      setTimeout(() => setIsSyncing(false), 1000);
-  };
-
-  const handleClearCache = async () => {
-    if (window.confirm("⚠️ ATENÇÃO: Isso irá apagar todos os dados locais salvos (Cache), limpar o cache do navegador e você será deslogado. Deseja continuar?")) {
-        // Clear Local Storage
-        localStorage.clear();
-        
-        // Clear Cache API (Service Worker)
-        if ('caches' in window) {
-            try {
-                const keys = await caches.keys();
-                await Promise.all(keys.map(key => caches.delete(key)));
-            } catch (e) {
-                console.error("Erro ao limpar cache storage", e);
-            }
-        }
-        
-        // Unregister Service Worker
-        if ('serviceWorker' in navigator) {
-            try {
-                const registrations = await navigator.serviceWorker.getRegistrations();
-                for(let registration of registrations) {
-                    await registration.unregister();
-                }
-            } catch (e) {
-                console.error("Erro ao remover service worker", e);
-            }
-        }
-
-        window.location.href = '/';
-    }
   };
 
   const refresh = () => {
@@ -856,23 +816,6 @@ export const Settings: React.FC = () => {
                 <Database size={18} className="text-[#007e7a]"/> Central de Dados
               </h2>
           </div>
-          <div className="flex items-center gap-2 mt-4 md:mt-0">
-              <button 
-                onClick={handleClearCache} 
-                className="flex items-center gap-2 px-4 py-2 rounded bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold uppercase transition-all border border-red-200"
-              >
-                  <Eraser size={14} />
-                  Limpar Cache
-              </button>
-              <button 
-                onClick={handleManualSync} 
-                disabled={isSyncing} 
-                className="flex items-center gap-2 px-4 py-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold uppercase transition-all border border-gray-300"
-              >
-                  <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-                  {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
-              </button>
-          </div>
       </header>
       
       <nav className="flex bg-white p-1 rounded-lg mb-6 shadow-sm border border-gray-200 gap-1 overflow-x-auto">
@@ -1068,7 +1011,7 @@ export const Settings: React.FC = () => {
                               <br/>Esta visualização é exclusiva para inserção de dados em massa.
                           </p>
                       </div>
-                  ) : activeTab !== 'DB_LIVE' ? (
+                  ) : (
                       <>
                         <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                             <h4 className="text-sm font-bold text-gray-700 uppercase">
@@ -1079,8 +1022,9 @@ export const Settings: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-0 custom-scrollbar bg-white">
-                            <table className="w-full text-left border-collapse">
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            {/* DESKTOP TABLE VIEW */}
+                            <table className="w-full text-left border-collapse hidden lg:table">
                                 <thead className="bg-gray-100 sticky top-0 z-10 border-b border-gray-200">
                                     <tr>
                                         {activeTab === 'PROCEDURES' ? (
@@ -1097,15 +1041,13 @@ export const Settings: React.FC = () => {
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">DATA REGISTRO</th>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">AÇÕES</th>
                                             </>
+                                        ) : activeTab === 'DB_LIVE' ? (
+                                            isLoadingLive || liveData.length === 0 ? <th></th> : Object.keys(liveData[0]).map(key => <th key={key} className="p-2 text-[9px] font-black text-gray-600 uppercase border border-gray-300">{key}</th>)
                                         ) : (
                                             <>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Chave</th>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Detalhes</th>
-                                                {activeTab === 'OMS' ? (
-                                                    <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">DATA REGISTRO</th>
-                                                ) : (
-                                                    <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Info Adicional</th>
-                                                )}
+                                                <th className="p-3 text-[10px] font-bold text-gray-500 uppercase">Info Adicional</th>
                                                 <th className="p-3 text-[10px] font-bold text-gray-500 uppercase text-right">Ações</th>
                                             </>
                                         )}
@@ -1158,51 +1100,54 @@ export const Settings: React.FC = () => {
                                             <td className="p-3 text-right"><div className="flex justify-end gap-2">{art.pdfUrl && (<button onClick={() => setViewingART(art)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Ver Modelo Original"><Eye size={14}/></button>)}<button onClick={() => { if(window.confirm('Excluir ART?')) StorageService.deleteART(art.id).then(refresh) }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button></div></td>
                                         </tr>
                                     ))}
+                                     {activeTab === 'DB_LIVE' && (isLoadingLive ? (<tr><td colSpan={10} className="p-10 text-center"><Loader2 className="animate-spin text-indigo-500"/></td></tr>) : liveData.length === 0 ? (<tr><td colSpan={10} className="p-10 text-center text-gray-400 font-bold">TABELA VAZIA</td></tr>) : liveData.map((row, idx) => (<tr key={idx} className="hover:bg-indigo-50 animate-fadeIn font-mono text-[10px]"><td colSpan={Object.keys(row).length}>{Object.values(row).map((val: any, vIdx) => (<td key={vIdx} className="p-2 border border-gray-200 truncate max-w-[200px]">{typeof val === 'object' ? JSON.stringify(val).slice(0, 30) + '...' : String(val)}</td>))}</td></tr>)))}
                                 </tbody>
                             </table>
-                        </div>
-                      </>
-                  ) : (
-                      <>
-                        <div className="p-4 border-b border-gray-200 bg-indigo-50 flex justify-between items-center">
-                            <h4 className="text-sm font-black text-indigo-900 uppercase">
-                                VISUALIZAÇÃO DIRETA: <span className="text-indigo-600">{liveTable}</span>
-                            </h4>
-                            <span className="text-[10px] font-bold text-indigo-400 uppercase">Lim. 50 registros</span>
-                        </div>
-                        <div className="flex-1 overflow-auto p-0 bg-gray-50 custom-scrollbar">
-                            {isLoadingLive ? (
-                                <div className="flex flex-col items-center justify-center h-full text-indigo-400">
-                                    <Loader2 size={32} className="animate-spin mb-2" />
-                                    <span className="font-bold text-xs uppercase">Carregando dados...</span>
-                                </div>
-                            ) : liveData.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                                    <Database size={32} className="mb-2 opacity-20" />
-                                    <span className="font-bold text-xs uppercase">Tabela Vazia ou Sem Conexão</span>
-                                </div>
-                            ) : (
-                                <table className="w-full text-left border-collapse whitespace-nowrap">
-                                    <thead className="bg-gray-200 sticky top-0 z-10">
-                                        <tr>
-                                            {Object.keys(liveData[0]).map(key => (
-                                                <th key={key} className="p-2 text-[9px] font-black text-gray-600 uppercase border border-gray-300">{key}</th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white font-mono text-[10px]">
-                                        {liveData.map((row, idx) => (
-                                            <tr key={idx} className="hover:bg-indigo-50 animate-fadeIn">
-                                                {Object.values(row).map((val: any, vIdx) => (
-                                                    <td key={vIdx} className="p-2 border border-gray-200 truncate max-w-[200px]">
-                                                        {typeof val === 'object' ? JSON.stringify(val).slice(0, 30) + '...' : String(val)}
-                                                    </td>
-                                                ))}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
+                            
+                            {/* MOBILE CARD VIEW */}
+                            <div className="lg:hidden p-4 space-y-3">
+                                {activeTab === 'OMS' && oms.filter(om => om.omNumber.includes(searchQuery) || om.tag.includes(searchQuery)).map(om => (
+                                    <div key={om.id} className="bg-white rounded-lg p-3 shadow border-l-4 border-blue-500 space-y-2">
+                                        <div className="flex justify-between items-start"><h4 className="font-bold text-sm text-gray-800">{om.omNumber}</h4><span className="text-[9px] font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700">{om.type}</span></div>
+                                        <p className="text-xs text-blue-600 font-bold">{om.tag}</p><p className="text-[10px] text-gray-600 line-clamp-2">{om.description}</p>
+                                        <div className="flex justify-between items-center border-t border-gray-100 pt-2 mt-2"><span className="text-[10px] font-bold text-gray-400">{new Date(om.createdAt).toLocaleDateString()}</span><div className="flex gap-1">{om.pdfUrl && <button onClick={() => setViewingOM(om)} className="p-2 text-[#007e7a] bg-teal-50 rounded-lg"><Eye size={16}/></button>}<button onClick={() => handleOpenEditOM(om)} className="p-2 text-orange-500 bg-orange-50 rounded-lg"><Edit2 size={16}/></button><button onClick={() => { if(window.confirm('Excluir?')) StorageService.deleteOM(om.id).then(refresh) }} className="p-2 text-red-500 bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></div>
+                                    </div>
+                                ))}
+                                {activeTab === 'DEMANDS_REGISTER' && pendingDemands.filter(d => d.tag.includes(searchQuery) || d.description.includes(searchQuery)).map(demand => (
+                                    <div key={demand.id} className="bg-white rounded-lg p-3 shadow border-l-4 border-orange-500 space-y-2">
+                                        <h4 className="font-bold text-sm text-orange-600">{demand.tag}</h4><p className="text-xs text-gray-700 uppercase">{demand.description}</p>
+                                        <div className="flex justify-between items-center border-t border-gray-100 pt-2 mt-2"><span className="text-[10px] font-bold text-gray-400">{new Date(demand.createdAt).toLocaleDateString()}</span><div className="flex gap-1"><button onClick={() => handleOpenEditDemand(demand)} className="p-2 text-blue-500 bg-blue-50 rounded-lg"><Edit2 size={16}/></button><button onClick={() => { if(window.confirm('Excluir?')) StorageService.deletePendingExtraDemand(demand.id).then(refresh) }} className="p-2 text-red-500 bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></div>
+                                    </div>
+                                ))}
+                                {activeTab === 'USERS' && users.filter(u => u.name.includes(searchQuery)).map(user => (
+                                    <div key={user.id} className="bg-white rounded-lg p-3 shadow border-l-4 border-purple-500 space-y-2">
+                                        <div className="flex justify-between items-start"><h4 className="font-bold text-sm text-gray-800">{user.name}</h4><span className={`text-[9px] font-bold px-2 py-1 rounded-full ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>{user.role}</span></div>
+                                        <p className="text-xs text-gray-500 font-mono">{user.login}</p>
+                                        <div className="flex justify-end items-center border-t border-gray-100 pt-2 mt-2"><div className="flex gap-1"><button onClick={() => handleEditUser(user)} className="p-2 text-blue-500 bg-blue-50 rounded-lg"><Edit2 size={16}/></button><button onClick={() => { if(window.confirm('Excluir?')) StorageService.deleteUser(user.id).then(refresh) }} className="p-2 text-red-500 bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></div>
+                                    </div>
+                                ))}
+                                {activeTab === 'EMPLOYEES' && employees.filter(e => e.name.includes(searchQuery)).map(emp => (
+                                    <div key={emp.id} className="bg-white rounded-lg p-3 shadow border-l-4 border-yellow-500 space-y-2">
+                                        <h4 className="font-bold text-sm text-gray-800">{emp.name}</h4><p className="text-xs text-gray-500">{emp.matricula} &bull; {emp.function}</p>
+                                        <div className="flex justify-end items-center border-t border-gray-100 pt-2 mt-2"><div className="flex gap-1"><button onClick={() => handleEditEmployee(emp)} className="p-2 text-blue-500 bg-blue-50 rounded-lg"><Edit2 size={16}/></button><button onClick={() => { if(window.confirm('Excluir?')) StorageService.deleteEmployee(emp.id).then(refresh) }} className="p-2 text-red-500 bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></div>
+                                    </div>
+                                ))}
+                                {activeTab === 'PROCEDURES' && arts.filter(a => a.code.includes(searchQuery) || a.taskName.includes(searchQuery)).map(art => (
+                                    <div key={art.id} className="bg-white rounded-lg p-3 shadow border-l-4 border-green-500 space-y-2">
+                                        <div className="flex justify-between items-start"><h4 className="font-bold text-sm text-green-700">{art.code}</h4>{art.pdfUrl && <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-green-100 text-green-700">PDF OK</span>}</div>
+                                        <p className="text-xs text-gray-700">{art.taskName}</p>
+                                        <div className="flex justify-end items-center border-t border-gray-100 pt-2 mt-2"><div className="flex gap-1">{art.pdfUrl && <button onClick={() => setViewingART(art)} className="p-2 text-blue-500 bg-blue-50 rounded-lg"><Eye size={16}/></button>}<button onClick={() => { if(window.confirm('Excluir?')) StorageService.deleteART(art.id).then(refresh) }} className="p-2 text-red-500 bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></div>
+                                    </div>
+                                ))}
+                                {activeTab === 'DB_LIVE' && liveData.map((row, idx) => (
+                                    <details key={idx} className="bg-white rounded-lg shadow p-3 border-l-4 border-indigo-500">
+                                        <summary className="font-bold text-sm text-indigo-700 cursor-pointer">ID: {String(row.id).substring(0,8)}...</summary>
+                                        <div className="mt-2 pt-2 border-t text-[10px] space-y-1 font-mono">
+                                            {Object.entries(row).map(([key, value]) => (<div key={key} className="truncate"><strong className="text-gray-500">{key}:</strong><span className="text-gray-800 ml-2">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span></div>))}
+                                        </div>
+                                    </details>
+                                ))}
+                            </div>
                         </div>
                       </>
                   )}

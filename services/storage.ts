@@ -5,14 +5,15 @@ import { supabase } from './supabase';
 
 export interface NotificationItem {
     id: string;
-    type: 'URGENT' | 'INFO';
+    type: 'URGENT' | 'INFO' | 'SCHEDULE' | 'ACTIVE';
     title: string;
     message: string;
     date: string;
-    source?: 'OM' | 'DEMAND'; // Added to distinguish source
+    source?: 'OM' | 'DEMAND' | 'SCHEDULE' | 'ACTIVE'; // Added types
+    link?: string;
 }
 
-const KEYS = {
+export const KEYS = {
   DOCS: 'safemaint_docs',
   EMPLOYEES: 'safemaint_employees',
   ARTS: 'safemaint_arts',
@@ -28,9 +29,10 @@ const KEYS = {
   AVAILABILITY: 'safemaint_availability'
 };
 
-const triggerUpdate = () => {
+// MODIFICADO: Dispara CustomEvent com a chave que mudou para controle fino na UI
+const triggerUpdate = (changedKey?: string) => {
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('safemaint_storage_update'));
+        window.dispatchEvent(new CustomEvent('safemaint_storage_update', { detail: { key: changedKey } }));
     }
 };
 
@@ -66,17 +68,6 @@ const trySaveLocal = (key: string, data: any, stripFields: string[] = []) => {
     }
 };
 
-const stripDataIfNeeded = (key: string, data: any) => {
-    if (key === KEYS.OMS || key === KEYS.ARTS) {
-        if(data.pdfUrl) data.pdfUrl = 'TRUE';
-    }
-    if (key === KEYS.DOCS) {
-        if(data.manualFileUrl) data.manualFileUrl = 'TRUE';
-        if(data.content?.manualFileUrl) data.content.manualFileUrl = 'TRUE';
-    }
-    return data;
-};
-
 // CHECKLIST MESTRE - EXATAMENTE CONFORME PDF FORNECIDO (33 ITENS)
 const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
     { id: '1', legacyId: 1, section: 'MOTOR', description: 'VAZAMENTO DE ÓLEO EM GERAL E PRÓXIMO A PARTES QUENTES' },
@@ -101,18 +92,18 @@ const DEFAULT_CHECKLIST: ChecklistTemplateItem[] = [
     { id: '20', legacyId: 20, section: 'SISTEMA DE DIREÇÃO', description: 'PARAFUSOS/PINOS FOLGADOS' },
     { id: '21', legacyId: 21, section: 'SISTEMA DE DIREÇÃO', description: 'ABRAÇADEIRAS DE FIXAÇÃO' },
     { id: '22', legacyId: 22, section: 'SISTEMA DE DIREÇÃO', description: 'INTERFERÊNCIAS ENTRE TUBOS, MANGUEIRAS E CABOS' },
-    { id: '23', legacyId: 23, section: 'ILUMINAÇÃO, AR CONDICIONADO', description: 'FAROL DE ALTA E BAIXA' },
-    { id: '24', legacyId: 24, section: 'ILUMINAÇÃO, AR CONDICIONADO', description: 'SETAS' },
-    { id: '25', legacyId: 25, section: 'ILUMINAÇÃO, AR CONDICIONADO', description: 'BUZINA' },
-    { id: '26', legacyId: 26, section: 'ILUMINAÇÃO, AR CONDICIONADO', description: 'AR CONDICIONADO' },
-    { id: '27', legacyId: 27, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', description: 'ESCADAS (PRINCIPAL E DE EMERGÊNCIA)' },
-    { id: '28', legacyId: 28, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', description: 'GUARDA CORPO (PLATAFORMA)' },
-    { id: '29', legacyId: 29, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', description: 'TAGS LATERAIS E TRASEIRO' },
-    { id: '30', legacyId: 30, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', description: 'CORRIMÃO DAS ESCADAS' },
-    { id: '31', legacyId: 31, section: 'LIMPEZA E ORGANIZAÇÃO', description: 'CABINE' },
-    { id: '32', legacyId: 32, section: 'LIMPEZA E ORGANIZAÇÃO', description: 'PLATAFORMA' },
-    { id: '33', legacyId: 33, section: 'LIMPEZA E ORGANIZAÇÃO', description: 'ESCADAS E CORRIMÕES' },
-    { id: '34', legacyId: 34, section: 'LIMPEZA E ORGANIZAÇÃO', description: 'RETROVISORES' }
+    { id: '23', legacyId: 23, section: 'ILUMINAÇÃO, AR CONDICIONADO', 'description': 'FAROL DE ALTA E BAIXA' },
+    { id: '24', legacyId: 24, section: 'ILUMINAÇÃO, AR CONDICIONADO', 'description': 'SETAS' },
+    { id: '25', legacyId: 25, section: 'ILUMINAÇÃO, AR CONDICIONADO', 'description': 'BUZINA' },
+    { id: '26', legacyId: 26, section: 'ILUMINAÇÃO, AR CONDICIONADO', 'description': 'AR CONDICIONADO' },
+    { id: '27', legacyId: 27, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', 'description': 'ESCADAS (PRINCIPAL E DE EMERGÊNCIA)' },
+    { id: '28', legacyId: 28, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', 'description': 'GUARDA CORPO (PLATAFORMA)' },
+    { id: '29', legacyId: 29, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', 'description': 'TAGS LATERAIS E TRASEIRO' },
+    { id: '30', legacyId: 30, section: 'ESCADAS, CORRIMÃO, GUARDA CORPO', 'description': 'CORRIMÃO DAS ESCADAS' },
+    { id: '31', legacyId: 31, section: 'LIMPEZA E ORGANIZAÇÃO', 'description': 'CABINE' },
+    { id: '32', legacyId: 32, section: 'LIMPEZA E ORGANIZAÇÃO', 'description': 'PLATAFORMA' },
+    { id: '33', legacyId: 33, section: 'LIMPEZA E ORGANIZAÇÃO', 'description': 'ESCADAS E CORRIMÕES' },
+    { id: '34', legacyId: 34, section: 'LIMPEZA E ORGANIZAÇÃO', 'description': 'RETROVISORES' }
 ];
 
 export const StorageService = {
@@ -120,12 +111,9 @@ export const StorageService = {
   getRecordPdf: async (table: 'oms' | 'arts' | 'documents', id: string): Promise<string | null> => {
       if (!navigator.onLine) return null;
       try {
-          // Select specifically the PDF/File column based on table structure
           const col = table === 'documents' ? 'content' : 'pdfUrl';
           const { data, error } = await supabase.from(table).select(col).eq('id', id).single();
-          
           if (error || !data) return null;
-          
           if (table === 'documents') return data.content?.manualFileUrl || null;
           return data.pdfUrl;
       } catch (e) { 
@@ -134,90 +122,74 @@ export const StorageService = {
       }
   },
 
-  // CONFIGURAÇÃO DO REALTIME (AUTO-UPDATE)
   setupSubscriptions: () => {
-      if (typeof window === 'undefined') return;
-      supabase.removeAllChannels(); // Limpa anteriores para não duplicar
+    if (typeof window === 'undefined') return;
+    supabase.removeAllChannels();
+    console.log('SAFEMAINT REALTIME: Iniciando subscrição em canal único...');
 
-      const channel = supabase.channel('global-app-changes');
+    const tablesToSubscribe = [
+      { key: KEYS.OMS, table: 'oms', strip: ['pdfUrl'] },
+      { key: KEYS.ARTS, table: 'arts', strip: ['pdfUrl'] },
+      { key: KEYS.SCHEDULE, table: 'schedule', strip: [] },
+      { key: KEYS.ACTIVE, table: 'active_maintenance', strip: [] },
+      { key: KEYS.DOCS, table: 'documents', strip: [] },
+      { key: KEYS.EMPLOYEES, table: 'employees', strip: [] },
+      { key: KEYS.USERS, table: 'users', strip: [] },
+      { key: KEYS.HISTORY, table: 'history', strip: [] },
+      { key: KEYS.CHAT, table: 'chat_messages', strip: [] },
+      { key: KEYS.PENDING_DEMANDS, table: 'pending_extra_demands', strip: [] },
+      { key: KEYS.CHECKLIST_TEMPLATE, table: 'checklist_definitions', strip: [] },
+      { key: KEYS.AVAILABILITY, table: 'availability', strip: [] },
+    ];
+    
+    const channel = supabase.channel('safemaint-global-updates');
+
+    const processPayload = (payload: any, config: any) => {
+        if (config.key === KEYS.CHAT) {
+            let list = JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]');
+            if (payload.eventType === 'INSERT') {
+                if (!list.some((m: any) => m.id === (payload.new as any).id)) list.push(payload.new);
+            } else if (payload.eventType === 'DELETE') {
+                const idToDelete = (payload.old as any)?.id;
+                list = list.filter((m: any) => m.id !== idToDelete);
+            }
+            localStorage.setItem(KEYS.CHAT, JSON.stringify(list));
+            window.dispatchEvent(new Event('safemaint_chat_update'));
+            return;
+        }
+
+        let localList = JSON.parse(localStorage.getItem(config.key) || '[]');
+
+        if (payload.eventType === 'DELETE') {
+            const idToDelete = (payload.old as any)?.id;
+            if (idToDelete) localList = localList.filter((item: any) => item.id !== idToDelete);
+        } else if (payload.eventType === 'INSERT') {
+            if (!localList.some((item: any) => item.id === (payload.new as any).id)) localList.push(payload.new);
+        } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = payload.new as any;
+            const idx = localList.findIndex((i: any) => i.id === updatedItem.id);
+            if (idx > -1) localList[idx] = updatedItem; 
+            else localList.push(updatedItem);
+        }
+
+        trySaveLocal(config.key, localList, config.strip);
+        triggerUpdate(config.key);
+    };
+
+    tablesToSubscribe.forEach(config => {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: config.table }, (payload) => processPayload(payload, config));
+    });
       
-      const tablesMap = [
-          { key: KEYS.OMS, table: 'oms' },
-          { key: KEYS.ARTS, table: 'arts' },
-          { key: KEYS.SCHEDULE, table: 'schedule' },
-          { key: KEYS.ACTIVE, table: 'active_maintenance' },
-          { key: KEYS.DOCS, table: 'documents' },
-          { key: KEYS.EMPLOYEES, table: 'employees' },
-          { key: KEYS.USERS, table: 'users' },
-          { key: KEYS.HISTORY, table: 'history' },
-          { key: KEYS.CHAT, table: 'chat_messages' },
-          { key: KEYS.PENDING_DEMANDS, table: 'pending_extra_demands' },
-          { key: KEYS.CHECKLIST_TEMPLATE, table: 'checklist_definitions' }, // Adicionado
-          // FIX: Add availability table to realtime subscriptions
-          { key: KEYS.AVAILABILITY, table: 'availability' },
-      ];
-
-      tablesMap.forEach(config => {
-          channel.on(
-              'postgres_changes',
-              { event: '*', schema: 'public', table: config.table },
-              (payload) => {
-                  // CASO CHAT: Tratamento especial
-                  if (config.key === KEYS.CHAT) {
-                      const list = JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]');
-                      if (payload.eventType === 'INSERT') {
-                          list.push(payload.new);
-                          localStorage.setItem(KEYS.CHAT, JSON.stringify(list));
-                      } else if (payload.eventType === 'DELETE') {
-                          const newList = list.filter((m: any) => m.id !== payload.old.id);
-                          localStorage.setItem(KEYS.CHAT, JSON.stringify(newList));
-                      }
-                      window.dispatchEvent(new Event('safemaint_chat_update'));
-                      return;
-                  }
-
-                  // CASO GERAL
-                  const localList = JSON.parse(localStorage.getItem(config.key) || '[]');
-                  
-                  if (payload.eventType === 'DELETE') {
-                      // EXCLUSÃO AUTOMÁTICA
-                      const idToDelete = payload.old.id;
-                      const newList = localList.filter((item: any) => item.id !== idToDelete);
-                      localStorage.setItem(config.key, JSON.stringify(newList));
-                      triggerUpdate(); // Atualiza a tela
-                  } 
-                  else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-                      // INSERÇÃO/ATUALIZAÇÃO AUTOMÁTICA
-                      let item = payload.new;
-                      item = stripDataIfNeeded(config.key, item); // Remove campos pesados (PDFs) e substitui por MARKER
-                      
-                      const idx = localList.findIndex((i: any) => i.id === item.id);
-                      if (idx > -1) {
-                          // Preserva campos locais se necessário, mas aqui sobrescrevemos para garantir sync
-                          localList[idx] = { ...localList[idx], ...item };
-                      } else {
-                          localList.push(item);
-                      }
-                      localStorage.setItem(config.key, JSON.stringify(localList));
-                      triggerUpdate(); // Atualiza a tela
-                  }
-              }
-          );
-      });
-
-      channel.subscribe((status) => {
-          if(status === 'SUBSCRIBED') console.log('SAFEMAINT: Realtime Ativo');
-      });
+    channel.subscribe();
   },
 
   initialSync: async () => {
       if (!navigator.onLine) return;
-
       const tables = [
           { local: KEYS.DOCS, remote: 'documents', strip: ['manualFileUrl'] },
           { local: KEYS.EMPLOYEES, remote: 'employees' },
-          { local: KEYS.OMS, remote: 'oms', strip: ['pdfUrl'] }, // Strip PDF for local storage
-          { local: KEYS.ARTS, remote: 'arts', strip: ['pdfUrl'] }, // Strip PDF for local storage
+          { local: KEYS.OMS, remote: 'oms', strip: ['pdfUrl'] },
+          { local: KEYS.ARTS, remote: 'arts', strip: ['pdfUrl'] },
           { local: KEYS.SCHEDULE, remote: 'schedule' },
           { local: KEYS.HISTORY, remote: 'history' },
           { local: KEYS.ACTIVE, remote: 'active_maintenance' },
@@ -225,541 +197,469 @@ export const StorageService = {
           { local: KEYS.CHECKLIST_TEMPLATE, remote: 'checklist_definitions' },
           { local: KEYS.CHAT, remote: 'chat_messages' },
           { local: KEYS.PENDING_DEMANDS, remote: 'pending_extra_demands' },
-          // FIX: Add availability table to initial sync
           { local: KEYS.AVAILABILITY, remote: 'availability' },
       ];
 
       for (const t of tables) {
           try {
               const { data, error } = await supabase.from(t.remote).select('*');
-              
               if (!error && data) {
                   const localData = JSON.parse(localStorage.getItem(t.local) || '[]');
                   const remoteIds = new Set(data.map((item: any) => item.id));
-                  
                   const merged = [...data];
-                  
-                  // LOGICA DE PRESERVAÇÃO DE DADOS LOCAIS NÃO SINCRONIZADOS
-                  // Se existir localmente mas não no servidor, mantemos (para Active Maintenance é crucial)
                   localData.forEach((lItem: any) => {
-                      if (!remoteIds.has(lItem.id)) {
-                          if (t.local === KEYS.ACTIVE) {
-                              // Se for tarefa ativa, NUNCA apaga se não estiver no servidor ainda
-                              // Isso previne que a tarefa suma do dashboard se a internet falhar no start
-                              merged.push(lItem);
-                          }
-                          // Outras tabelas podem ter lógica diferente se necessário
-                      }
+                      if (!remoteIds.has(lItem.id) && t.local === KEYS.ACTIVE) merged.push(lItem);
                   });
-
                   trySaveLocal(t.local, merged, t.strip || []);
-                  
-                  if (t.local === KEYS.CHECKLIST_TEMPLATE && merged.length === 0) {
-                      trySaveLocal(KEYS.CHECKLIST_TEMPLATE, DEFAULT_CHECKLIST);
-                  }
+                  if (t.local === KEYS.CHECKLIST_TEMPLATE && merged.length === 0) trySaveLocal(KEYS.CHECKLIST_TEMPLATE, DEFAULT_CHECKLIST);
               }
-          } catch (e) {
-              console.warn(`[SYNC] Falha leve ao sincronizar ${t.remote}`, e);
-          }
+          } catch (e) { console.warn(`[SYNC] Falha leve ao sincronizar ${t.remote}`, e); }
       }
       triggerUpdate();
   },
 
-  getPendingSyncCount: () => 0,
-
-  // VALIDAÇÃO DE LOGIN ÚNICO
   validateUser: async (login: string, pass: string): Promise<User | null> => {
       try {
           if (navigator.onLine) {
-              // Verifica se usuário existe e senha confere
               const { data, error } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
-              
               if (!error && data) {
-                  // VERIFICAÇÃO DE SESSÃO ATIVA (Login Único)
-                  if (data.is_active_session) {
-                      throw new Error("ALREADY_LOGGED_IN");
-                  }
-
-                  // Marca como logado
+                  if (data.is_active_session) throw new Error("ALREADY_LOGGED_IN");
                   await supabase.from('users').update({ is_active_session: true }).eq('id', data.id);
-
                   StorageService.saveUser(data); 
                   return data as User;
               }
-
               if (!data) {
-                  // Fallback para admin inicial
                   const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
                   if (count === 0 && login.toUpperCase() === '81025901' && pass === '123') {
-                      const defaultAdmin: User = {
-                          id: 'default-admin',
-                          name: 'ADMINISTRADOR',
-                          matricula: '81025901',
-                          login: '81025901',
-                          password: '123',
-                          role: 'ADMIN'
-                      };
+                      const defaultAdmin: User = { id: 'default-admin', name: 'ADMINISTRADOR', matricula: '81025901', login: '81025901', password: '123', role: 'ADMIN' };
                       await supabase.from('users').insert(defaultAdmin);
                       return defaultAdmin;
                   }
               }
           }
-      } catch (e: any) {
-          if (e.message === "ALREADY_LOGGED_IN") throw e;
-          console.error("Login offline fallback", e);
-      }
-
-      // Offline fallback
+      } catch (e: any) { if (e.message === "ALREADY_LOGGED_IN") throw e; }
       const localUsers = StorageService.getUsers();
       return localUsers.find(u => u.login === login.toUpperCase() && u.password === pass) || null;
   },
 
-  // LOGOUT COM LIBERAÇÃO DE SESSÃO
   logoutUser: async (login: string) => {
       if (navigator.onLine && login) {
-          try {
-              // Libera a flag is_active_session
-              await supabase.from('users').update({ is_active_session: false }).eq('login', login.toUpperCase());
-          } catch(e) {
-              console.error("Erro ao fazer logout remoto", e);
-          }
+          try { await supabase.from('users').update({ is_active_session: false }).eq('login', login.toUpperCase()); } catch(e) {}
       }
   },
 
   registerUser: async (newUser: User): Promise<{ success: boolean; message: string }> => {
-        if (!newUser.login || !newUser.password || !newUser.matricula || !newUser.name) {
-            return { success: false, message: 'Preencha todos os campos obrigatórios.' };
-        }
-
+        if (!newUser.login || !newUser.password || !newUser.matricula || !newUser.name) return { success: false, message: 'Preencha todos os campos obrigatórios.' };
         if (navigator.onLine) {
             try {
-                const { data } = await supabase.from('users').select('id')
-                    .or(`login.eq.${newUser.login},matricula.eq.${newUser.matricula}`);
-                
-                if (data && data.length > 0) {
-                    return { success: false, message: 'Usuário ou Matrícula já cadastrados no sistema.' };
-                }
+                const { data } = await supabase.from('users').select('id').or(`login.eq.${newUser.login},matricula.eq.${newUser.matricula}`);
+                if (data && data.length > 0) return { success: false, message: 'Usuário ou Matrícula já cadastrados no sistema.' };
             } catch (e) {}
         }
-
-        const localUsers = StorageService.getUsers();
-        if (localUsers.some(u => u.login === newUser.login || u.matricula === newUser.matricula)) {
-            return { success: false, message: 'Usuário já existe localmente.' };
-        }
-
         await StorageService.saveUser(newUser);
         return { success: true, message: 'Cadastro realizado com sucesso!' };
   },
 
-  getUsers: (): User[] => {
-      const users = JSON.parse(localStorage.getItem(KEYS.USERS) || '[]');
-      if (users.length === 0) {
-          const defaultUser: User = {
-              id: 'default-admin',
-              name: 'ADMINISTRADOR',
-              matricula: '81025901',
-              login: '81025901',
-              password: '123',
-              role: 'ADMIN'
-          };
-          users.push(defaultUser);
-          localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-      }
-      return users;
-  },
-
+  getUsers: (): User[] => JSON.parse(localStorage.getItem(KEYS.USERS) || '[]'),
   saveUser: async (user: User) => {
-      const list = StorageService.getUsers();
-      const idx = list.findIndex(u => u.id === user.id);
-      if(idx > -1) list[idx] = user; else list.push(user);
-      trySaveLocal(KEYS.USERS, list);
-      triggerUpdate();
-      try { await supabase.from('users').upsert(user); } catch(e) {}
+      const users = StorageService.getUsers();
+      const idx = users.findIndex(u => u.id === user.id);
+      if (idx >= 0) users[idx] = user; else users.push(user);
+      trySaveLocal(KEYS.USERS, users);
+      if (navigator.onLine) await supabase.from('users').upsert(user);
+      triggerUpdate(KEYS.USERS);
   },
   deleteUser: async (id: string) => {
-      const list = StorageService.getUsers().filter(u => u.id !== id);
-      trySaveLocal(KEYS.USERS, list);
-      triggerUpdate();
-      try { await supabase.from('users').delete().eq('id', id); } catch(e) {}
+      const users = StorageService.getUsers().filter(u => u.id !== id);
+      trySaveLocal(KEYS.USERS, users);
+      if (navigator.onLine) await supabase.from('users').delete().eq('id', id);
+      triggerUpdate(KEYS.USERS);
   },
 
   getEmployees: (): Employee[] => JSON.parse(localStorage.getItem(KEYS.EMPLOYEES) || '[]'),
   saveEmployee: async (emp: Employee) => {
       const list = StorageService.getEmployees();
       const idx = list.findIndex(e => e.id === emp.id);
-      if(idx > -1) list[idx] = emp; else list.push(emp);
+      if (idx >= 0) list[idx] = emp; else list.push(emp);
       trySaveLocal(KEYS.EMPLOYEES, list);
-      triggerUpdate();
-      try { await supabase.from('employees').upsert(emp); } catch(e) {}
+      if (navigator.onLine) await supabase.from('employees').upsert(emp);
+      triggerUpdate(KEYS.EMPLOYEES);
   },
   deleteEmployee: async (id: string) => {
       const list = StorageService.getEmployees().filter(e => e.id !== id);
       trySaveLocal(KEYS.EMPLOYEES, list);
-      triggerUpdate();
-      try { await supabase.from('employees').delete().eq('id', id); } catch(e) {}
+      if (navigator.onLine) await supabase.from('employees').delete().eq('id', id);
+      triggerUpdate(KEYS.EMPLOYEES);
+  },
+
+  getOMs: (): OMRecord[] => JSON.parse(localStorage.getItem(KEYS.OMS) || '[]'),
+  saveOM: async (om: OMRecord) => {
+      const list = StorageService.getOMs();
+      const idx = list.findIndex(o => o.id === om.id);
+      if (idx >= 0) list[idx] = om; else list.push(om);
+      trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
+      if (navigator.onLine) await supabase.from('oms').upsert(om);
+      triggerUpdate(KEYS.OMS);
+  },
+  deleteOM: async (id: string) => {
+      const list = StorageService.getOMs().filter(o => o.id !== id);
+      trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
+      if (navigator.onLine) await supabase.from('oms').delete().eq('id', id);
+      triggerUpdate(KEYS.OMS);
+  },
+
+  getARTs: (): RegisteredART[] => JSON.parse(localStorage.getItem(KEYS.ARTS) || '[]'),
+  saveART: async (art: RegisteredART) => {
+      const list = StorageService.getARTs();
+      const idx = list.findIndex(a => a.id === art.id);
+      if (idx >= 0) list[idx] = art; else list.push(art);
+      trySaveLocal(KEYS.ARTS, list, ['pdfUrl']);
+      if (navigator.onLine) await supabase.from('arts').upsert(art);
+      triggerUpdate(KEYS.ARTS);
+  },
+  deleteART: async (id: string) => {
+      const list = StorageService.getARTs().filter(a => a.id !== id);
+      trySaveLocal(KEYS.ARTS, list, ['pdfUrl']);
+      if (navigator.onLine) await supabase.from('arts').delete().eq('id', id);
+      triggerUpdate(KEYS.ARTS);
   },
 
   getSchedule: (): ScheduleItem[] => JSON.parse(localStorage.getItem(KEYS.SCHEDULE) || '[]'),
   saveScheduleItem: async (item: ScheduleItem) => {
       const list = StorageService.getSchedule();
       const idx = list.findIndex(i => i.id === item.id);
-      if(idx > -1) list[idx] = item; else list.push(item);
+      if (idx >= 0) list[idx] = item; else list.push(item);
       trySaveLocal(KEYS.SCHEDULE, list);
-      triggerUpdate();
-      try { await supabase.from('schedule').upsert(item); } catch(e) {}
+      if (navigator.onLine) await supabase.from('schedule').upsert(item);
+      triggerUpdate(KEYS.SCHEDULE);
   },
   deleteScheduleItem: async (id: string) => {
       const list = StorageService.getSchedule().filter(i => i.id !== id);
       trySaveLocal(KEYS.SCHEDULE, list);
-      triggerUpdate();
-      try { await supabase.from('schedule').delete().eq('id', id); } catch(e) {}
+      if (navigator.onLine) await supabase.from('schedule').delete().eq('id', id);
+      triggerUpdate(KEYS.SCHEDULE);
   },
   archiveAndClearSchedule: async () => {
-    localStorage.setItem(KEYS.SCHEDULE, '[]');
-    triggerUpdate();
-    try { await supabase.from('schedule').delete().neq('id', '0'); } catch(e) {}
-  },
-
-  getOMs: (): OMRecord[] => JSON.parse(localStorage.getItem(KEYS.OMS) || '[]'),
-  saveOM: async (om: OMRecord) => {
-    const list = StorageService.getOMs();
-    const idx = list.findIndex(o => o.id === om.id);
-    if (idx > -1) list[idx] = om; else list.push(om);
-    
-    // IMPORTANT: Strip PDF from local storage to avoid Quota Exceeded (Replace with 'TRUE')
-    trySaveLocal(KEYS.OMS, list, ['pdfUrl']); 
-    triggerUpdate();
-
-    try { await supabase.from('oms').upsert(om); } catch(e) {}
-  },
-  updateOMStatus: async (id: string, status: any) => {
-      const list = StorageService.getOMs();
-      const om = list.find(o => o.id === id);
-      if (om) {
-          om.status = status;
-          trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
-          triggerUpdate();
-          try { await supabase.from('oms').update({ status }).eq('id', id); } catch(e) {}
+      trySaveLocal(KEYS.SCHEDULE, []);
+      if (navigator.onLine) {
+          const { data } = await supabase.from('schedule').select('id');
+          if (data && data.length > 0) {
+              const ids = data.map(d => d.id);
+              await supabase.from('schedule').delete().in('id', ids);
+          }
       }
-  },
-  deleteOM: async (id: string) => {
-    const list = StorageService.getOMs().filter(o => o.id !== id);
-    trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
-    triggerUpdate();
-    try { await supabase.from('oms').delete().eq('id', id); } catch(e) {}
-  },
-
-  getARTs: (): RegisteredART[] => JSON.parse(localStorage.getItem(KEYS.ARTS) || '[]'),
-  saveART: async (art: RegisteredART) => {
-    const list = StorageService.getARTs();
-    const idx = list.findIndex(a => a.id === art.id);
-    if (idx > -1) list[idx] = art; else list.push(art);
-    trySaveLocal(KEYS.ARTS, list, ['pdfUrl']); // Strip PDF
-    triggerUpdate();
-    try { await supabase.from('arts').upsert(art); } catch(e) {}
-  },
-  deleteART: async (id: string) => {
-      const list = StorageService.getARTs().filter(a => a.id !== id);
-      trySaveLocal(KEYS.ARTS, list, ['pdfUrl']);
-      triggerUpdate();
-      try { await supabase.from('arts').delete().eq('id', id); } catch(e) {}
-  },
-
-  getChecklistTemplate: (): ChecklistTemplateItem[] => {
-      const data = JSON.parse(localStorage.getItem(KEYS.CHECKLIST_TEMPLATE) || '[]');
-      return data.length > 0 ? data : DEFAULT_CHECKLIST;
+      triggerUpdate(KEYS.SCHEDULE);
   },
 
   getActiveMaintenances: (): ActiveMaintenance[] => JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]'),
-  getActiveMaintenanceById: (id: string) => StorageService.getActiveMaintenances().find(m => m.id === id),
   startMaintenance: async (task: ActiveMaintenance) => {
-    // 1. SALVAR LOCALMENTE PRIMEIRO
-    const tasks = StorageService.getActiveMaintenances();
-    // Evita duplicatas se já existir (mesmo ID)
-    const existingIdx = tasks.findIndex(t => t.id === task.id);
-    if (existingIdx > -1) tasks[existingIdx] = task; else tasks.push(task);
-    
-    trySaveLocal(KEYS.ACTIVE, tasks);
-    triggerUpdate(); // Atualiza a UI imediatamente
-    
-    // 2. TENTAR SALVAR NO SERVIDOR
-    // O UPSERT deve lidar com o ID. Se a coluna scheduleId não existir no DB, pode dar erro.
-    // O try/catch previne crash do app, e a lógica de initialSync modificada previne delete local posterior.
-    try { 
-        const { error } = await supabase.from('active_maintenance').upsert(task);
-        if (error) console.error("Supabase active_maintenance error:", error);
-    } catch(e) {
-        console.error("Erro ao salvar active_maintenance no Supabase", e);
-    }
-    
-    if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
-  },
-  
-  linkOmToMaintenance: async (taskId: string, omId: string, omNumber: string, omDesc: string, omTag: string) => {
-      const tasks = StorageService.getActiveMaintenances();
-      const task = tasks.find(t => t.id === taskId);
-      
-      if (task) {
-          // Atualiza a Tarefa
-          task.omId = omId;
-          task.header.om = omNumber;
-          // FORÇA ATUALIZAÇÃO DO TAG PARA O DA OM VINCULADA
-          task.header.tag = omTag;
-          
-          // Preserva descrição manual da demanda extra se necessário, ou concatena
-          task.header.description = `${task.header.description} | ${omDesc}`; 
-          
-          trySaveLocal(KEYS.ACTIVE, tasks);
-          
-          // Atualiza o Documento (ART) vinculado à tarefa
-          if (task.artId) {
-              const docs = StorageService.getDocuments();
-              const doc = docs.find(d => d.id === task.artId);
-              if (doc) {
-                  doc.header.om = omNumber;
-                  doc.header.tag = omTag; // Atualiza Tag no Documento também
-                  doc.header.description = task.header.description;
-                  trySaveLocal(KEYS.DOCS, docs, ['manualFileUrl']);
-                  try { await supabase.from('documents').upsert(doc); } catch(e) {}
-              }
+      const list = StorageService.getActiveMaintenances();
+      list.push(task);
+      trySaveLocal(KEYS.ACTIVE, list);
+      if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+      // Remove from schedule if linked
+      if (task.scheduleId) {
+          const sched = StorageService.getSchedule().filter(s => s.id !== task.scheduleId);
+          trySaveLocal(KEYS.SCHEDULE, sched);
+          if (navigator.onLine) await supabase.from('schedule').delete().eq('id', task.scheduleId);
+          triggerUpdate(KEYS.SCHEDULE);
+      }
+      // Update OM Status if linked
+      if (task.omId) {
+          const oms = StorageService.getOMs();
+          const om = oms.find(o => o.id === task.omId);
+          if (om) {
+              om.status = 'EM_ANDAMENTO';
+              StorageService.saveOM(om);
           }
-
-          triggerUpdate();
-          
-          // Atualiza o Status da OM para Em Andamento
-          await StorageService.updateOMStatus(omId, 'EM_ANDAMENTO');
-          
-          // Sincroniza a task
-          try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
+      }
+      triggerUpdate(KEYS.ACTIVE);
+  },
+  pauseMaintenance: async (id: string) => {
+      const list = StorageService.getActiveMaintenances();
+      const task = list.find(t => t.id === id);
+      if (task) {
+          const now = new Date();
+          const sessionStart = new Date(task.currentSessionStart || now);
+          const elapsed = now.getTime() - sessionStart.getTime();
+          task.status = 'PAUSADA';
+          task.accumulatedTime = (task.accumulatedTime || 0) + elapsed;
+          task.currentSessionStart = undefined;
+          trySaveLocal(KEYS.ACTIVE, list);
+          if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          triggerUpdate(KEYS.ACTIVE);
       }
   },
-
-  resumeMaintenance: async (id: string, newOwner?: string) => {
-      const tasks = StorageService.getActiveMaintenances();
-      const task = tasks.find(t => t.id === id);
+  resumeMaintenance: async (id: string, user: string) => {
+      const list = StorageService.getActiveMaintenances();
+      const task = list.find(t => t.id === id);
       if (task) {
           task.status = 'ANDAMENTO';
           task.currentSessionStart = new Date().toISOString();
-          
-          // SE fornecido um novo dono (quem clicou retomar), atualiza a propriedade da task
-          if (newOwner) {
-              task.openedBy = newOwner;
-          }
-          
-          trySaveLocal(KEYS.ACTIVE, tasks);
-          triggerUpdate();
-          try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
-      }
-  },
-  pauseMaintenance: async (id: string) => {
-      const tasks = StorageService.getActiveMaintenances();
-      const task = tasks.find(t => t.id === id);
-      if (task && task.status === 'ANDAMENTO' && task.currentSessionStart) {
-          const now = new Date().getTime();
-          const start = new Date(task.currentSessionStart).getTime();
-          task.accumulatedTime = (task.accumulatedTime || 0) + (now - start);
-          task.status = 'PAUSADA';
-          task.currentSessionStart = undefined;
-          trySaveLocal(KEYS.ACTIVE, tasks);
-          triggerUpdate();
-          try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
+          task.openedBy = user;
+          trySaveLocal(KEYS.ACTIVE, list);
+          if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          triggerUpdate(KEYS.ACTIVE);
       }
   },
   setMaintenancePartial: async (id: string) => {
-      await StorageService.completeMaintenance(id, 'PARCIAL', false);
-  },
-  completeMaintenance: async (id: string, statusText: string, closeOM: boolean) => {
-      const tasks = StorageService.getActiveMaintenances();
-      const task = tasks.find(t => t.id === id);
-      
+      const list = StorageService.getActiveMaintenances();
+      const task = list.find(t => t.id === id);
       if (task) {
-          const log: MaintenanceLog = {
-              id: crypto.randomUUID(), om: task.header.om, tag: task.header.tag,
-              description: task.header.description, startTime: task.startTime,
-              endTime: new Date().toISOString(), duration: 'REGISTRADO',
-              responsible: task.openedBy || 'SISTEMA', status: statusText,
-              type: task.origin
-          };
-          const history = StorageService.getHistory();
-          history.push(log);
-          trySaveLocal(KEYS.HISTORY, history);
-          triggerUpdate();
-          try { await supabase.from('history').upsert(log); } catch(e) {}
-
-          if (statusText === 'PARCIAL') {
-              if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
-                  const now = new Date().getTime();
-                  const start = new Date(task.currentSessionStart).getTime();
-                  task.accumulatedTime = (task.accumulatedTime || 0) + (now - start);
-              }
-              task.status = 'AGUARDANDO';
-              task.currentSessionStart = undefined;
-              trySaveLocal(KEYS.ACTIVE, tasks);
-              triggerUpdate();
-              try { await supabase.from('active_maintenance').upsert(task); } catch(e) {}
-              if (task.omId) await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
-              return;
+          const now = new Date();
+          if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
+              const sessionStart = new Date(task.currentSessionStart);
+              const elapsed = now.getTime() - sessionStart.getTime();
+              task.accumulatedTime = (task.accumulatedTime || 0) + elapsed;
           }
-
-          if (task.artId) {
-              const allDocs = StorageService.getDocuments();
-              const artDoc = allDocs.find(d => d.id === task.artId);
-              if (artDoc && artDoc.status === 'RASCUNHO') {
-                  artDoc.status = 'ATIVO';
-                  trySaveLocal(KEYS.DOCS, allDocs, ['manualFileUrl']);
-                  try { await supabase.from('documents').upsert(artDoc); } catch(e) {}
-              }
-          }
-
-          // EXCLUSÃO DA AGENDA: SE TIVER VÍNCULO, REMOVE O ITEM DO SCHEDULE
-          if (task.scheduleId) {
-              await StorageService.deleteScheduleItem(task.scheduleId);
-          }
-
-          const newTasks = tasks.filter(t => t.id !== id);
-          trySaveLocal(KEYS.ACTIVE, newTasks);
-          triggerUpdate();
-          try { await supabase.from('active_maintenance').delete().eq('id', id); } catch(e) {}
+          task.status = 'AGUARDANDO';
+          task.currentSessionStart = undefined;
           
-          if (task.omId) {
-              if (closeOM) {
-                  await StorageService.updateOMStatus(task.omId, 'CONCLUIDA');
-              } else {
-                  await StorageService.updateOMStatus(task.omId, 'EM_ANDAMENTO');
-              }
-          }
+          trySaveLocal(KEYS.ACTIVE, list);
+          if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          triggerUpdate(KEYS.ACTIVE);
       }
   },
+  completeMaintenance: async (id: string, reason: string, isTotal: boolean) => {
+      const list = StorageService.getActiveMaintenances();
+      const task = list.find(t => t.id === id);
+      if (!task) return;
 
+      const now = new Date();
+      let totalMs = task.accumulatedTime || 0;
+      if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
+          totalMs += (now.getTime() - new Date(task.currentSessionStart).getTime());
+      }
+
+      const h = Math.floor(totalMs / 3600000);
+      const m = Math.floor((totalMs % 3600000) / 60000);
+      const durationStr = `${h}h ${m}m`;
+
+      const log: MaintenanceLog = {
+          id: crypto.randomUUID(),
+          om: task.header.om,
+          tag: task.header.tag,
+          description: task.header.description,
+          startTime: task.startTime,
+          endTime: now.toISOString(),
+          duration: durationStr,
+          responsible: task.openedBy || 'SISTEMA',
+          status: reason,
+          type: task.origin // PREVENTIVA, CORRETIVA, DEMANDA_EXTRA
+      };
+
+      // Save History
+      const hist = StorageService.getHistory();
+      hist.unshift(log);
+      trySaveLocal(KEYS.HISTORY, hist);
+      if (navigator.onLine) await supabase.from('history').insert(log);
+
+      // Update OM Status if linked
+      if (task.omId) {
+          const oms = StorageService.getOMs();
+          const om = oms.find(o => o.id === task.omId);
+          if (om) {
+              om.status = 'CONCLUIDA';
+              StorageService.saveOM(om);
+          }
+      }
+
+      // Remove from Active
+      const newList = list.filter(t => t.id !== id);
+      trySaveLocal(KEYS.ACTIVE, newList);
+      if (navigator.onLine) await supabase.from('active_maintenance').delete().eq('id', id);
+      
+      triggerUpdate(KEYS.ACTIVE);
+      triggerUpdate(KEYS.HISTORY);
+  },
+  getActiveMaintenanceById: (id: string) => StorageService.getActiveMaintenances().find(t => t.id === id),
+  
   getHistory: (): MaintenanceLog[] => JSON.parse(localStorage.getItem(KEYS.HISTORY) || '[]'),
+
   getDocuments: (): DocumentRecord[] => JSON.parse(localStorage.getItem(KEYS.DOCS) || '[]'),
   saveDocument: async (doc: DocumentRecord) => {
       const list = StorageService.getDocuments();
       list.push(doc);
       trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
-      triggerUpdate();
-      try { await supabase.from('documents').upsert(doc); } catch(e) {}
+      if (navigator.onLine) await supabase.from('documents').upsert(doc);
+      triggerUpdate(KEYS.DOCS);
   },
-  moveManyToTrash: async (ids: string[]) => {
-      const docs = StorageService.getDocuments();
-      docs.forEach(d => { if (ids.includes(d.id)) d.status = 'LIXEIRA'; });
-      trySaveLocal(KEYS.DOCS, docs);
-      triggerUpdate();
-      try { await supabase.from('documents').update({ status: 'LIXEIRA' }).in('id', ids); } catch(e) {}
+  moveToTrash: async (id: string) => {
+      const list = StorageService.getDocuments();
+      const doc = list.find(d => d.id === id);
+      if (doc) {
+          doc.status = 'LIXEIRA';
+          trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
+          if (navigator.onLine) await supabase.from('documents').upsert(doc);
+          triggerUpdate(KEYS.DOCS);
+      }
   },
   restoreFromTrash: async (id: string) => {
-      const docs = StorageService.getDocuments();
-      const doc = docs.find(d => d.id === id);
+      const list = StorageService.getDocuments();
+      const doc = list.find(d => d.id === id);
       if (doc) {
-          doc.status = 'ATIVO';
-          trySaveLocal(KEYS.DOCS, docs);
-          triggerUpdate();
-          try { await supabase.from('documents').update({ status: 'ATIVO' }).eq('id', id); } catch(e) {}
+          doc.status = 'ARQUIVADO';
+          trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
+          if (navigator.onLine) await supabase.from('documents').upsert(doc);
+          triggerUpdate(KEYS.DOCS);
       }
   },
   deletePermanently: async (id: string) => {
-      const docs = StorageService.getDocuments().filter(d => d.id !== id);
-      trySaveLocal(KEYS.DOCS, docs);
-      triggerUpdate();
-      try { await supabase.from('documents').delete().eq('id', id); } catch(e) {}
+      const list = StorageService.getDocuments().filter(d => d.id !== id);
+      trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
+      if (navigator.onLine) await supabase.from('documents').delete().eq('id', id);
+      triggerUpdate(KEYS.DOCS);
   },
   emptyTrash: async () => {
-      const allDocs = StorageService.getDocuments();
-      const trashIds = allDocs.filter(d => d.status === 'LIXEIRA').map(d => d.id);
-      const remaining = allDocs.filter(d => d.status !== 'LIXEIRA');
-      trySaveLocal(KEYS.DOCS, remaining);
-      triggerUpdate();
-      if (trashIds.length > 0) {
-          try { await supabase.from('documents').delete().in('id', trashIds); } catch(e) {}
-      }
+      let list = StorageService.getDocuments();
+      const trashIds = list.filter(d => d.status === 'LIXEIRA').map(d => d.id);
+      list = list.filter(d => d.status !== 'LIXEIRA');
+      trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
+      if (navigator.onLine && trashIds.length > 0) await supabase.from('documents').delete().in('id', trashIds);
+      triggerUpdate(KEYS.DOCS);
   },
-  getNotifications: (): NotificationItem[] => {
-      const oms = StorageService.getOMs();
-      const demands = StorageService.getPendingExtraDemands();
 
-      const omNotifs: NotificationItem[] = oms.filter(o => o.status === 'PENDENTE').map(o => ({
-          id: o.id, 
-          type: (o.type === 'CORRETIVA' || o.type === 'DEMANDA' ? 'URGENT' : 'INFO') as 'URGENT' | 'INFO',
-          title: `OM: ${o.omNumber}`, 
-          message: `${o.tag} - ${o.description || 'Sem descrição'}`, // Mensagem com TAG e Desc
-          date: o.createdAt, 
-          source: 'OM'
-      }));
-
-      const demandNotifs: NotificationItem[] = demands.map(d => ({
-          id: d.id,
-          type: 'URGENT' as 'URGENT' | 'INFO',
-          title: `DEMANDA EXTRA`,
-          message: `${d.tag} - ${d.description || 'Sem descrição'}`,
-          date: d.createdAt,
-          source: 'DEMAND'
-      }));
-
-      const all = [...demandNotifs, ...omNotifs];
-      // Ordenação correta por data (mais recente primeiro)
-      return all.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(n => ({
-          ...n,
-          date: new Date(n.date).toLocaleDateString('pt-BR') // Formata para exibição
-      }));
-  },
-  moveToTrash: async (id: string) => {
-      const docs = StorageService.getDocuments();
-      const doc = docs.find(d => d.id === id);
-      if (doc) { 
-          doc.status = 'LIXEIRA'; 
-          trySaveLocal(KEYS.DOCS, docs); 
-          triggerUpdate();
-          try { await supabase.from('documents').update({ status: 'LIXEIRA' }).eq('id', id); } catch(e) {}
-      }
-  },
-  getChatMessages: (): ChatMessage[] => JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]').sort((a: ChatMessage, b: ChatMessage) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+  getChatMessages: (): ChatMessage[] => JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]'),
   sendChatMessage: async (msg: ChatMessage) => {
       const list = StorageService.getChatMessages();
       list.push(msg);
-      trySaveLocal(KEYS.CHAT, list);
+      trySaveLocal(KEYS.CHAT, list); // Chat doesn't strip anything
+      if (navigator.onLine) await supabase.from('chat_messages').insert(msg);
       window.dispatchEvent(new Event('safemaint_chat_update'));
-      
-      try {
-          await supabase.from('chat_messages').upsert({
-              id: msg.id,
-              sender: msg.sender,
-              role: msg.role,
-              text: msg.text,
-              timestamp: msg.timestamp,
-              is_system: msg.isSystem || false
-          });
-      } catch(e) {}
   },
   clearChat: async () => {
-      localStorage.setItem(KEYS.CHAT, '[]');
+      trySaveLocal(KEYS.CHAT, []);
+      if (navigator.onLine) {
+          const { data } = await supabase.from('chat_messages').select('id');
+          if(data && data.length) {
+              const ids = data.map(m => m.id);
+              await supabase.from('chat_messages').delete().in('id', ids);
+          }
+      }
       window.dispatchEvent(new Event('safemaint_chat_update'));
-      try { await supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'); } catch(e) {}
   },
-  
-  // --- DEMANDAS EXTRAS PENDENTES ---
+
+  getChecklistTemplate: (): ChecklistTemplateItem[] => JSON.parse(localStorage.getItem(KEYS.CHECKLIST_TEMPLATE) || '[]'),
+
   getPendingExtraDemands: (): PendingExtraDemand[] => JSON.parse(localStorage.getItem(KEYS.PENDING_DEMANDS) || '[]'),
   savePendingExtraDemand: async (demand: PendingExtraDemand) => {
       const list = StorageService.getPendingExtraDemands();
-      list.push(demand);
+      const idx = list.findIndex(d => d.id === demand.id);
+      if(idx >= 0) list[idx] = demand; else list.push(demand);
       trySaveLocal(KEYS.PENDING_DEMANDS, list);
-      triggerUpdate();
-      try { await supabase.from('pending_extra_demands').upsert(demand); } catch(e) {}
+      if(navigator.onLine) await supabase.from('pending_extra_demands').upsert(demand);
+      triggerUpdate(KEYS.PENDING_DEMANDS);
   },
   deletePendingExtraDemand: async (id: string) => {
       const list = StorageService.getPendingExtraDemands().filter(d => d.id !== id);
       trySaveLocal(KEYS.PENDING_DEMANDS, list);
-      triggerUpdate();
-      try { await supabase.from('pending_extra_demands').delete().eq('id', id); } catch(e) {}
+      if(navigator.onLine) await supabase.from('pending_extra_demands').delete().eq('id', id);
+      triggerUpdate(KEYS.PENDING_DEMANDS);
   },
 
-  // FIX: Add methods for Availability Board feature
   getAvailability: (): AvailabilityRecord[] => JSON.parse(localStorage.getItem(KEYS.AVAILABILITY) || '[]'),
   saveAvailability: async (records: AvailabilityRecord[]) => {
       trySaveLocal(KEYS.AVAILABILITY, records);
-      triggerUpdate();
-      // Supabase upsert of a full array is fine.
-      try { await supabase.from('availability').upsert(records); } catch(e) {}
+      if(navigator.onLine) {
+          for(const rec of records) {
+              await supabase.from('availability').upsert(rec);
+          }
+      }
+      triggerUpdate(KEYS.AVAILABILITY);
   },
 
-  runRetentionPolicy: () => {}
+  linkOmToMaintenance: async (maintenanceId: string, omId: string, omNumber: string, description: string, tag: string) => {
+      const tasks = StorageService.getActiveMaintenances();
+      const task = tasks.find(t => t.id === maintenanceId);
+      if(task) {
+          task.omId = omId;
+          task.header.om = omNumber;
+          task.header.description = description || task.header.description;
+          task.header.tag = tag || task.header.tag;
+          
+          const oms = StorageService.getOMs();
+          const om = oms.find(o => o.id === omId);
+          if(om) {
+              om.status = 'EM_ANDAMENTO';
+              StorageService.saveOM(om);
+          }
+
+          trySaveLocal(KEYS.ACTIVE, tasks);
+          if(navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          triggerUpdate(KEYS.ACTIVE);
+      }
+  },
+
+  // NOVA FUNÇÃO: NOTIFICAÇÕES GERAIS
+  getNotifications: (): NotificationItem[] => {
+      const notifs: NotificationItem[] = [];
+      const todayStr = new Date().toLocaleDateString('pt-BR'); // DD/MM/YYYY
+
+      // 1. OMs Pendentes (CORRETIVAS são URGENT)
+      const oms = StorageService.getOMs().filter(o => o.status === 'PENDENTE');
+      oms.forEach(om => {
+          notifs.push({
+              id: `om-${om.id}`,
+              type: om.type === 'CORRETIVA' ? 'URGENT' : 'INFO',
+              title: `OM PENDENTE: ${om.omNumber}`,
+              message: `${om.tag} - ${om.description}`,
+              date: new Date(om.createdAt).toLocaleDateString(),
+              source: 'OM',
+              link: '/om-management'
+          });
+      });
+
+      // 2. Demandas Extras
+      const demands = StorageService.getPendingExtraDemands();
+      demands.forEach(d => {
+          notifs.push({
+              id: `dem-${d.id}`,
+              type: 'URGENT',
+              title: `DEMANDA EXTRA: ${d.tag}`,
+              message: d.description,
+              date: new Date(d.createdAt).toLocaleDateString(),
+              source: 'DEMAND',
+              link: '/extra-demands'
+          });
+      });
+
+      // 3. Agenda Hoje (Verifica data exata DD/MM/YYYY)
+      const schedule = StorageService.getSchedule().filter(s => s.dateStart === todayStr);
+      schedule.forEach(s => {
+          notifs.push({
+              id: `sch-${s.id}`,
+              type: 'SCHEDULE',
+              title: `AGENDA HOJE: ${s.frotaOm}`,
+              message: s.description,
+              date: s.dateStart,
+              source: 'SCHEDULE',
+              link: '/schedule'
+          });
+      });
+
+      // 4. Atividades em Andamento
+      const active = StorageService.getActiveMaintenances().filter(a => a.status === 'ANDAMENTO' || a.status === 'AGUARDANDO');
+      active.forEach(a => {
+          notifs.push({
+              id: `act-${a.id}`,
+              type: 'ACTIVE',
+              title: `EM EXECUÇÃO: ${a.header.tag}`,
+              message: `${a.header.om} - ${a.header.description}`,
+              date: new Date(a.startTime).toLocaleTimeString().slice(0,5),
+              source: 'ACTIVE',
+              link: '/dashboard'
+          });
+      });
+
+      // Ordenação: Urgente > Active > Schedule > Info
+      return notifs.sort((a,b) => {
+          const score = (t: string) => {
+              if (t === 'URGENT') return 0;
+              if (t === 'ACTIVE') return 1;
+              if (t === 'SCHEDULE') return 2;
+              return 3;
+          };
+          return score(a.type) - score(b.type);
+      });
+  }
 };
