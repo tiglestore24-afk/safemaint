@@ -302,23 +302,23 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="max-w-[1600px] mx-auto pb-10">
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200 animate-fadeIn relative z-30">
+      <div className="flex justify-between items-center mb-6 bg-gradient-to-r from-[#007e7a] to-[#005c97] p-4 rounded-xl shadow-lg animate-fadeIn relative z-30 text-white">
         <div className="flex items-center gap-4">
-            <div className="bg-[#007e7a]/10 p-2 rounded-lg">
-                <ShieldCheck size={24} className="text-[#007e7a]" />
+            <div className="bg-white/20 p-2 rounded-lg backdrop-blur-sm border border-white/10">
+                <ShieldCheck size={24} className="text-white" />
             </div>
             <div>
-                <h2 className="text-xl font-bold text-gray-800 uppercase leading-none tracking-tight">Painel de Controle</h2>
+                <h2 className="text-xl font-black text-white uppercase leading-none tracking-tight drop-shadow-md">Painel de Controle</h2>
                 <div className="flex items-center gap-2 mt-1">
                     {isOnline ? (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 border border-green-200 rounded-full" title="Conexão de Dados Ativa">
-                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
-                            <span className="text-[9px] font-black text-green-700 uppercase">ONLINE</span>
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/10 border border-white/20 rounded-full backdrop-blur-sm" title="Conexão de Dados Ativa">
+                            <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_5px_rgba(74,222,128,0.8)]"></div>
+                            <span className="text-[9px] font-black text-white uppercase tracking-wider">ONLINE</span>
                         </div>
                     ) : (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-red-50 border border-red-200 rounded-full" title="Desconectado">
-                            <WifiOff size={10} className="text-red-600" />
-                            <span className="text-[9px] font-black text-red-700 uppercase">OFFLINE</span>
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/20 border border-red-400/30 rounded-full backdrop-blur-sm" title="Desconectado">
+                            <WifiOff size={10} className="text-red-300" />
+                            <span className="text-[9px] font-black text-red-100 uppercase tracking-wider">OFFLINE</span>
                         </div>
                     )}
                 </div>

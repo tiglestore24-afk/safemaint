@@ -1,42 +1,47 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StorageService, KEYS } from '../services/storage';
 import { AvailabilityRecord, AvailabilityStatus } from '../types';
 import { BackButton } from '../components/BackButton';
-import { Plus, Trash2, X, RefreshCw, Activity, Save, CheckCircle2, Monitor, ArrowDownCircle, Info, Calendar } from 'lucide-react';
+import { Plus, Trash2, X, RefreshCw, Activity, Save, Monitor, Info, Calendar, Lock } from 'lucide-react';
 
-// Chave local para armazenar equipamentos excluídos (Blacklist)
 const BLACKLIST_KEY = 'safemaint_avail_blacklist';
 
-// --- CONFIGURAÇÃO VISUAL DOS MARCADORES ---
 const STATUS_CONFIG: Record<string, { label: string, type: 'SHAPE' | 'TEXT', color: string, bgColor: string, symbol: any }> = {
     'SEM_FALHA': { label: 'SEM FALHA (OPERACIONAL)', type: 'SHAPE', color: 'text-green-600', bgColor: 'bg-green-100', symbol: '●' },
     'PREV': { label: 'PREVENTIVA', type: 'SHAPE', color: 'text-blue-600', bgColor: 'bg-blue-100', symbol: '▲' },
     'CORRETIVA': { label: 'CORRETIVA', type: 'SHAPE', color: 'text-red-600', bgColor: 'bg-red-100', symbol: '●' },
     'DEMANDA_EXTRA': { label: 'DEMANDA EXTRA', type: 'SHAPE', color: 'text-pink-600', bgColor: 'bg-pink-100', symbol: '▲' }, 
     'INSPECAO': { label: 'INSPEÇÃO', type: 'SHAPE', color: 'text-purple-600', bgColor: 'bg-purple-100', symbol: '●' }, 
-    'PR': { label: 'PARADA RELEVANTE', type: 'TEXT', color: 'text-white', bgColor: 'bg-orange-500', symbol: 'PR' },
+    'PR': { label: 'PARADA RELEVANTE', type: 'TEXT', color: 'text-orange-600', bgColor: 'bg-orange-100', symbol: 'PR' },
     'MOTOR': { label: 'MOTOR', type: 'TEXT', color: 'text-gray-800', bgColor: 'bg-gray-200', symbol: 'M' },
     'LB': { label: 'LUB. SEMANAL', type: 'TEXT', color: 'text-teal-800', bgColor: 'bg-teal-200', symbol: 'LB' },
     'PNEUS': { label: 'PNEUS', type: 'TEXT', color: 'text-blue-900', bgColor: 'bg-blue-300', symbol: 'P' },
     'META': { label: 'META BATIDA', type: 'SHAPE', color: 'text-yellow-600', bgColor: 'bg-yellow-100', symbol: '★' },
 };
 
-export const AvailabilityBoard: React.FC = () => {
+// Interface Props Atualizada
+interface AvailabilityBoardProps {
+    variant?: 'DEFAULT' | 'TV' | 'SPLIT';
+}
+
+export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 'DEFAULT' }) => {
   const [records, setRecords] = useState<AvailabilityRecord[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const recordsRef = useRef<AvailabilityRecord[]>([]); // Ref para evitar flicker
   
-  // Modal State
   const [editingCell, setEditingCell] = useState<{tag: string, dateKey: string} | null>(null);
   const [tempStatuses, setTempStatuses] = useState<AvailabilityStatus[]>([]);
+  const [lockedStatuses, setLockedStatuses] = useState<AvailabilityStatus[]>([]); // Status que não podem ser removidos
   
-  // Controls
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [daysInMonth, setDaysInMonth] = useState<Date[]>([]);
   
-  // TV Mode State
-  const [isTvMode, setIsTvMode] = useState(false);
+  const [isTvModeInternal, setIsTvModeInternal] = useState(false);
+
+  // Determina o modo real (Props tem prioridade sobre estado interno)
+  const mode = variant !== 'DEFAULT' ? variant : (isTvModeInternal ? 'TV' : 'DEFAULT');
 
   useEffect(() => {
     const date = new Date(selectedYear, selectedMonth, 1);
@@ -47,18 +52,24 @@ export const AvailabilityBoard: React.FC = () => {
     }
     setDaysInMonth(days);
     
-    // Carga inicial
     const initialRecords = StorageService.getAvailability();
-    setRecords(initialRecords);
+    if (JSON.stringify(initialRecords) !== JSON.stringify(recordsRef.current)) {
+        recordsRef.current = initialRecords;
+        setRecords(initialRecords);
+    }
     
-    // Executa a limpeza e sincronização inicial
+    // Pequeno delay para garantir que a UI carregue antes do sync pesado
     setTimeout(() => syncEventsOnly(days), 500);
     
     const handleExternalUpdate = (e: any) => {
         if (e.detail?.key === KEYS.AVAILABILITY) {
-            setRecords(StorageService.getAvailability());
+            const newRecs = StorageService.getAvailability();
+            if (JSON.stringify(newRecs) !== JSON.stringify(recordsRef.current)) {
+                recordsRef.current = newRecs;
+                setRecords(newRecs);
+            }
         } else {
-            // Se mudou Schedule, History, etc, resincroniza
+            // Se mudou Schedule/History, força sync
             syncEventsOnly(daysInMonth.length > 0 ? daysInMonth : days);
         }
     };
@@ -88,9 +99,7 @@ export const AvailabilityBoard: React.FC = () => {
       if (!text) return null;
       const clean = text.toUpperCase().trim().replace(/\s/g, '');
       const match = clean.match(/CA-?(\d+)/); 
-      if (match) {
-          return `CA${match[1]}`;
-      }
+      if (match) return `CA${match[1]}`;
       return null;
   };
 
@@ -100,9 +109,7 @@ export const AvailabilityBoard: React.FC = () => {
 
   const addToBlacklist = (tag: string) => {
       const list = getBlacklist();
-      if (!list.includes(tag)) {
-          localStorage.setItem(BLACKLIST_KEY, JSON.stringify([...list, tag]));
-      }
+      if (!list.includes(tag)) localStorage.setItem(BLACKLIST_KEY, JSON.stringify([...list, tag]));
   };
 
   const removeFromBlacklist = (tag: string) => {
@@ -110,96 +117,121 @@ export const AvailabilityBoard: React.FC = () => {
       localStorage.setItem(BLACKLIST_KEY, JSON.stringify(list));
   };
 
-  // --- CORE LOGIC: REMOVE DUPLICATES & SYNC ---
+  // Helper para calcular eventos automáticos de um dia específico
+  const getSystemEventsForCell = (tag: string, dateKey: string): AvailabilityStatus[] => {
+      const schedule = StorageService.getSchedule();
+      const history = StorageService.getHistory();
+      const activeTasks = StorageService.getActiveMaintenances();
+      const systemStatuses: Set<AvailabilityStatus> = new Set();
+
+      // Check Schedule
+      schedule.forEach(item => {
+          if (item.dateStart === dateKey && extractTag(item.frotaOm) === tag) {
+              const desc = (item.description || '').toUpperCase();
+              if (desc.includes('INSPE')) systemStatuses.add('INSPECAO');
+              else if (desc.includes('MOTOR')) systemStatuses.add('MOTOR');
+              else if (desc.includes('LUB') || desc.includes('SEMANAL')) systemStatuses.add('LB');
+              else if (desc.includes('PNEU')) systemStatuses.add('PNEUS');
+              else if (desc.includes('PARADA') || desc.includes('RELEVANTE') || desc.includes('CRITIC')) systemStatuses.add('PR');
+              else if (desc.includes('META')) systemStatuses.add('META');
+              else systemStatuses.add('PREV');
+          }
+      });
+
+      // Check History
+      history.forEach(log => {
+          if (normalizeDateKey(log.endTime) === dateKey && extractTag(log.tag) === tag) {
+              if (log.type === 'CORRETIVA') systemStatuses.add('CORRETIVA');
+              else if (log.type === 'DEMANDA_EXTRA') systemStatuses.add('DEMANDA_EXTRA');
+          }
+      });
+
+      // Check Active
+      activeTasks.forEach(task => {
+          if (normalizeDateKey(task.startTime) === dateKey && extractTag(task.header.tag) === tag) {
+              if (task.origin === 'CORRETIVA') systemStatuses.add('CORRETIVA');
+              else if (task.origin === 'DEMANDA_EXTRA') systemStatuses.add('DEMANDA_EXTRA');
+          }
+      });
+
+      return Array.from(systemStatuses);
+  };
+
   const syncEventsOnly = async (currentDays?: Date[]) => {
-      setIsSyncing(true);
+      if (mode !== 'SPLIT') setIsSyncing(true);
+      
       try {
-          const schedule = StorageService.getSchedule();
-          const history = StorageService.getHistory();
-          const activeTasks = StorageService.getActiveMaintenances();
-          
           const rawRecords = StorageService.getAvailability();
           const blacklist = getBlacklist();
-          
           const uniqueRecordMap = new Map<string, AvailabilityRecord>();
 
+          // 1. Carrega estrutura existente
           rawRecords.forEach(rec => {
               const cleanTag = extractTag(rec.tag);
               if (!cleanTag || blacklist.includes(cleanTag)) return; 
-
               if (uniqueRecordMap.has(cleanTag)) {
                   const existing = uniqueRecordMap.get(cleanTag)!;
-                  Object.entries(rec.statusMap).forEach(([date, statuses]) => {
-                      const currentStatuses = existing.statusMap[date] || [];
-                      existing.statusMap[date] = Array.from(new Set([...currentStatuses, ...statuses]));
-                  });
+                  Object.entries(rec.statusMap).forEach(([date, statuses]) => { existing.statusMap[date] = statuses; });
+                  if (rec.manualOverrides) existing.manualOverrides = { ...existing.manualOverrides, ...rec.manualOverrides };
               } else {
                   rec.tag = cleanTag;
+                  if(!rec.manualOverrides) rec.manualOverrides = {};
                   uniqueRecordMap.set(cleanTag, rec);
               }
           });
 
-          const upsertStatus = (tagRaw: string, dateRaw: string, status: AvailabilityStatus) => {
-              const tag = extractTag(tagRaw);
-              const dateKey = normalizeDateKey(dateRaw);
-              if (!tag || !dateKey) return;
-
-              if (!uniqueRecordMap.has(tag) && blacklist.includes(tag)) return;
-
-              if (!uniqueRecordMap.has(tag)) {
-                  uniqueRecordMap.set(tag, { id: crypto.randomUUID(), tag, statusMap: {} });
-              }
-
-              const rec = uniqueRecordMap.get(tag)!;
-              if (!rec.statusMap[dateKey]) rec.statusMap[dateKey] = [];
-              
-              if (rec.statusMap[dateKey].includes('SEM_FALHA')) {
-                  rec.statusMap[dateKey] = rec.statusMap[dateKey].filter(s => s !== 'SEM_FALHA');
-              }
-
-              if (!rec.statusMap[dateKey].includes(status)) {
-                  rec.statusMap[dateKey].push(status);
-              }
-          };
-
-          schedule.forEach(item => {
-              if(item.dateStart) {
-                  const desc = (item.description || '').toUpperCase();
-                  let type: AvailabilityStatus = 'PREV';
-                  if (desc.includes('INSPE')) type = 'INSPECAO';
-                  else if (desc.includes('MOTOR')) type = 'MOTOR';
-                  else if (desc.includes('LUB') || desc.includes('SEMANAL')) type = 'LB';
-                  else if (desc.includes('PNEU')) type = 'PNEUS';
-                  else if (desc.includes('PARADA') || desc.includes('RELEVANTE') || desc.includes('CRITIC')) type = 'PR';
-                  else if (desc.includes('META')) type = 'META';
-                  upsertStatus(item.frotaOm, item.dateStart, type);
+          // 2. Garante que todas as OMs da agenda/ativos existam como linhas
+          const allOms = [...StorageService.getSchedule(), ...StorageService.getActiveMaintenances()];
+          allOms.forEach(item => {
+              const tagRaw = (item as any).frotaOm || (item as any).header?.tag || '';
+              const t = extractTag(tagRaw);
+              if (t && !uniqueRecordMap.has(t) && !blacklist.includes(t)) {
+                  uniqueRecordMap.set(t, { id: crypto.randomUUID(), tag: t, statusMap: {}, manualOverrides: {} });
               }
           });
 
-          history.forEach(log => {
-              if(log.tag && log.endTime) {
-                  if (log.type === 'CORRETIVA') upsertStatus(log.tag, log.endTime, 'CORRETIVA');
-                  else if (log.type === 'DEMANDA_EXTRA') upsertStatus(log.tag, log.endTime, 'DEMANDA_EXTRA');
-              }
-          });
+          // 3. Processa dias visíveis
+          if (currentDays) {
+              uniqueRecordMap.forEach((rec) => {
+                  currentDays.forEach(day => {
+                      const dateKey = normalizeDateKey(day);
+                      const systemEvents = getSystemEventsForCell(rec.tag, dateKey);
+                      
+                      // LÓGICA DE MERGE INTELIGENTE (PERSISTÊNCIA):
+                      // - NÃO limpamos o array existente (isso garante que se sair da agenda, fique no quadro)
+                      // - Adicionamos obrigatoriamente os eventos do sistema atuais.
+                      
+                      let newStatuses = [...(rec.statusMap[dateKey] || [])];
 
-          activeTasks.forEach(task => {
-              if(task.header.tag && task.startTime) {
-                  if (task.origin === 'CORRETIVA') upsertStatus(task.header.tag, task.startTime, 'CORRETIVA');
-                  else if (task.origin === 'DEMANDA_EXTRA') upsertStatus(task.header.tag, task.startTime, 'DEMANDA_EXTRA');
-              }
-          });
+                      // Garante que todos os eventos do sistema estejam presentes
+                      systemEvents.forEach(sysEvt => {
+                          if (!newStatuses.includes(sysEvt)) newStatuses.push(sysEvt);
+                      });
 
-          const finalRecords = Array.from(uniqueRecordMap.values())
-              .sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
+                      // Auto-fill Sem Falha APENAS se estiver vazio e for passado/hoje
+                      const today = new Date(); today.setHours(23, 59, 59, 999);
+                      if (day <= today && newStatuses.length === 0) {
+                          newStatuses = ['SEM_FALHA'];
+                      }
+                      
+                      // Limpeza de 'SEM_FALHA' se houver qualquer outro evento
+                      if (newStatuses.length > 1 && newStatuses.includes('SEM_FALHA')) {
+                          newStatuses = newStatuses.filter(s => s !== 'SEM_FALHA');
+                      }
 
-          const currentStr = JSON.stringify(rawRecords);
-          const newStr = JSON.stringify(finalRecords);
+                      rec.statusMap[dateKey] = newStatuses;
+                  });
+              });
+          }
 
-          if (currentStr !== newStr) {
+          const finalRecords = Array.from(uniqueRecordMap.values()).sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
+
+          if (JSON.stringify(rawRecords) !== JSON.stringify(finalRecords)) {
               await StorageService.saveAvailability(finalRecords);
+              recordsRef.current = finalRecords;
               setRecords(finalRecords);
           } else {
+              recordsRef.current = finalRecords;
               setRecords(finalRecords);
           }
 
@@ -208,55 +240,33 @@ export const AvailabilityBoard: React.FC = () => {
       }
   };
 
-  const handleAutoFillGreen = async () => {
-      if(!confirm("CONFIRMAR FECHAMENTO DE TURNO:\n\nPreencher 'SEM FALHA' (Verde) em todos os equipamentos que não tiveram nenhuma intervenção registrada até agora?")) return;
-      
-      setIsSyncing(true);
-      const currentRecords = [...records];
-      const todayEnd = new Date();
-      todayEnd.setHours(23, 59, 59, 999);
-
-      daysInMonth.forEach(dayDate => {
-          if (dayDate.getTime() <= todayEnd.getTime()) {
-              const dateKey = normalizeDateKey(dayDate);
-              currentRecords.forEach(rec => {
-                  if(!rec.statusMap[dateKey]) rec.statusMap[dateKey] = [];
-                  if (rec.statusMap[dateKey].length === 0) {
-                      rec.statusMap[dateKey].push('SEM_FALHA');
-                  }
-              });
-          }
-      });
-
-      await StorageService.saveAvailability(currentRecords);
-      setRecords(currentRecords);
-      setIsSyncing(false);
-  };
-
-  const handleFillColumnGreen = async (date: Date) => {
-      const dateKey = normalizeDateKey(date);
-      if (!confirm(`CONFIRMAÇÃO:\n\nDefinir "SEM FALHA" (Verde) para TODOS os equipamentos no dia ${dateKey}?\n\n⚠️ Isso substituirá qualquer status existente neste dia.`)) return;
-
-      setIsSyncing(true);
-      const currentRecords = [...records];
-      currentRecords.forEach(rec => {
-          rec.statusMap[dateKey] = ['SEM_FALHA'];
-      });
-      await StorageService.saveAvailability(currentRecords);
-      setRecords(currentRecords);
-      setIsSyncing(false);
-  };
-
   const openModal = (tag: string, dateKey: string, currentStatuses: AvailabilityStatus[]) => {
+      // Calcula quais status são mandatórios do sistema neste momento (LIVE)
+      // Se sumiu da agenda, systemLocked será vazio, permitindo edição manual.
+      const systemLocked = getSystemEventsForCell(tag, dateKey);
+      
       setEditingCell({ tag, dateKey });
       setTempStatuses([...currentStatuses]);
+      setLockedStatuses(systemLocked);
   };
 
   const toggleTempStatus = (status: AvailabilityStatus) => {
+      if (!editingCell) return;
+      
+      // BLOQUEIO: Se o status está na lista de travados (Agenda/Sistema), não permite retirar
+      if (lockedStatuses.includes(status)) {
+          alert("Este status é gerenciado pelo sistema (Agenda/Histórico) e não pode ser removido manualmente.");
+          return;
+      }
+
       let newStatuses = [...tempStatuses];
       if (status === 'SEM_FALHA') {
-          if (newStatuses.includes('SEM_FALHA')) newStatuses = []; 
-          else newStatuses = ['SEM_FALHA']; 
+          if (newStatuses.includes('SEM_FALHA')) newStatuses = []; // Toggle off
+          else {
+              // Só permite ativar SEM FALHA se não houver itens travados (sistema)
+              if (lockedStatuses.length === 0) newStatuses = ['SEM_FALHA'];
+              else alert("Não é possível marcar SEM FALHA pois existem eventos do sistema ativos neste dia.");
+          }
       } else {
           newStatuses = newStatuses.filter(s => s !== 'SEM_FALHA');
           if (newStatuses.includes(status)) newStatuses = newStatuses.filter(s => s !== status);
@@ -271,44 +281,37 @@ export const AvailabilityBoard: React.FC = () => {
       const rec = newRecords.find(r => r.tag === editingCell.tag);
       if(rec) {
           rec.statusMap[editingCell.dateKey] = tempStatuses;
+          if (!rec.manualOverrides) rec.manualOverrides = {};
+          rec.manualOverrides[editingCell.dateKey] = true;
           await StorageService.saveAvailability(newRecords);
           setRecords(newRecords);
       }
       setEditingCell(null);
       setTempStatuses([]);
+      setLockedStatuses([]);
   };
 
-  const handleClearCell = () => {
-      setTempStatuses([]);
+  const handleClearCell = () => { 
+      // Ao limpar, mantemos apenas os travados pelo sistema
+      setTempStatuses([...lockedStatuses]); 
   };
   
   const addRow = async () => {
       const tag = prompt("DIGITE O TAG (Ex: CA530):");
       if (!tag) return;
-      
       const cleanTag = extractTag(tag);
-
-      if (!cleanTag) {
-          alert("TAG Inválido. Apenas equipamentos começando com 'CA' são permitidos (Ex: CA530).");
-          return;
-      }
-      
+      if (!cleanTag) { alert("TAG Inválido."); return; }
       removeFromBlacklist(cleanTag);
-
-      if (records.find(r => r.tag === cleanTag)) {
-          alert("Equipamento já existe na lista.");
-          return;
-      }
-
-      const newRec: AvailabilityRecord = { id: crypto.randomUUID(), tag: cleanTag, statusMap: {} };
+      if (records.find(r => r.tag === cleanTag)) { alert("Já existe."); return; }
+      const newRec: AvailabilityRecord = { id: crypto.randomUUID(), tag: cleanTag, statusMap: {}, manualOverrides: {} };
       const updated = [...records, newRec].sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
-      
       setRecords(updated);
       await StorageService.saveAvailability(updated);
+      setTimeout(() => syncEventsOnly(daysInMonth), 100);
   };
 
   const handleDeleteRow = (record: AvailabilityRecord) => {
-      if(confirm(`REMOVER ${record.tag}?\n\nO equipamento será movido para a lista de ignorados e NÃO será recriado automaticamente na próxima sincronização.\n\nPara restaurar, adicione-o manualmente pelo botão "Novo Equip."`)) {
+      if(confirm(`REMOVER ${record.tag}?`)) {
           addToBlacklist(record.tag);
           const newRecs = records.filter(r => r.tag !== record.tag);
           setRecords(newRecs);
@@ -316,7 +319,7 @@ export const AvailabilityBoard: React.FC = () => {
       }
   };
 
-  const renderCellContent = (statusList: AvailabilityStatus[], isTv = false) => {
+  const renderCellContent = (statusList: AvailabilityStatus[]) => {
       if(!statusList || statusList.length === 0) return null;
       const sorted = [...statusList].sort((a,b) => {
           const confA = STATUS_CONFIG[a] || { type: 'TEXT' };
@@ -325,16 +328,15 @@ export const AvailabilityBoard: React.FC = () => {
           return confA.type === 'SHAPE' ? -1 : 1;
       });
 
+      const isSplit = mode === 'SPLIT';
+      const shapeSize = isSplit ? 'w-4 h-4' : (mode === 'TV' ? 'w-6 h-6' : 'w-5 h-5');
+      const fontSize = isSplit ? 'text-[9px]' : (mode === 'TV' ? 'text-[12px]' : 'text-[10px]');
+
       return (
           <div className="flex flex-wrap items-center justify-center gap-0.5 h-full w-full p-0.5">
               {sorted.map((st, idx) => {
                   const conf = STATUS_CONFIG[st];
                   if(!conf) return null;
-                  // Aumenta tamanho no modo TV
-                  const fontSize = isTv ? 'text-[14px]' : 'text-[10px]';
-                  const shapeSize = isTv ? 'w-8 h-8' : 'w-5 h-5';
-                  
-                  if (isTv) return <span key={idx} className={`${conf.color} ${fontSize} leading-none drop-shadow-md`}>{conf.symbol}</span>;
                   return (
                       <div key={idx} className={`flex items-center justify-center ${shapeSize} rounded-md shadow-sm border border-black/5 ${conf.bgColor}`}>
                           <span className={`${conf.color} ${fontSize} font-black leading-none`}>{conf.symbol}</span>
@@ -345,46 +347,44 @@ export const AvailabilityBoard: React.FC = () => {
       );
   };
 
-  // --- TV MODE RENDER ---
-  if (isTvMode) {
+  const isViewOnly = mode === 'TV' || mode === 'SPLIT';
+  
+  if (isViewOnly) {
       return (
-          <div className="fixed inset-0 z-[200] bg-gray-950 text-white flex flex-col overflow-hidden font-sans select-none animate-fadeIn cursor-none group">
-              <div className="flex justify-between items-center px-6 py-2 border-b border-[#007e7a] bg-gray-900 shadow-xl relative z-20 h-14">
-                  <div className="flex items-center gap-4">
-                      <div className="bg-white p-1 rounded shadow-[0_0_10px_rgba(0,126,122,0.5)]">
-                          <Activity size={24} className="text-[#007e7a]" />
+          <div className={`${mode === 'TV' ? 'fixed inset-0 z-[200]' : 'h-full w-full relative'} bg-gray-100 text-gray-800 flex flex-col overflow-hidden font-sans select-none animate-fadeIn cursor-none group`}>
+              {mode === 'TV' && (
+                  <div className="flex justify-between items-center px-4 py-1 border-b-2 border-[#007e7a] bg-white shadow-xl relative z-20 h-12 shrink-0">
+                      <div className="flex items-center gap-4">
+                          <div className="bg-[#007e7a] p-1 rounded shadow-md"><Activity size={20} className="text-white" /></div>
+                          <div><h1 className="text-lg font-black tracking-widest uppercase text-gray-800 leading-none">DISPONIBILIDADE</h1></div>
                       </div>
-                      <div>
-                          <h1 className="text-xl font-black tracking-widest uppercase text-white drop-shadow-lg leading-none">
-                              DISPONIBILIDADE
-                          </h1>
+                      <div className="flex items-center gap-6">
+                          <div className="text-right border-r border-gray-300 pr-4">
+                              <span className="block text-xs font-black text-gray-500">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase()} {selectedYear}</span>
+                          </div>
+                          <button onClick={() => setIsTvModeInternal(false)} className="p-1.5 bg-gray-200 hover:bg-red-600 hover:text-white rounded-full transition-all text-gray-500 border border-gray-300 opacity-0 group-hover:opacity-100"><X size={18} /></button>
                       </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                      <div className="text-right border-r border-gray-700 pr-6">
-                          <span className="block text-sm font-black text-gray-300">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase()} {selectedYear}</span>
-                      </div>
-                      <button onClick={() => setIsTvMode(false)} className="p-2 bg-white/5 hover:bg-red-600 rounded-full transition-all text-gray-500 hover:text-white border border-gray-800 opacity-0 group-hover:opacity-100"><X size={20} /></button>
-                  </div>
-              </div>
-              <div className="flex-1 overflow-auto custom-scrollbar p-2 bg-gray-950">
-                  <div className="border border-gray-800 rounded-lg overflow-hidden shadow-2xl">
-                      <table className="w-full border-collapse">
+              )}
+
+              <div className={`flex-1 overflow-auto custom-scrollbar bg-gray-100 ${mode === 'TV' ? 'pb-14 p-1' : 'pb-0 p-0'}`}>
+                  <div className={`border border-gray-300 overflow-hidden shadow-2xl bg-white min-h-full ${mode === 'SPLIT' ? 'border-none shadow-none rounded-none' : 'rounded-lg'}`}>
+                      <table className="w-full border-collapse h-full">
                           <thead>
-                              <tr className="bg-gray-900 text-gray-300 text-xs font-black uppercase sticky top-0 z-20 shadow-lg h-10">
-                                  <th className="p-2 text-left border-b border-gray-800 bg-gray-900 sticky left-0 z-30 min-w-[80px] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-r border-r-gray-800">TAG</th>
+                              <tr className={`bg-gray-50 text-gray-600 font-black uppercase sticky top-0 z-20 shadow-md border-b-2 border-gray-200 ${mode === 'SPLIT' ? 'text-[8px] h-8' : 'text-[10px] h-10'}`}>
+                                  <th className={`p-1 text-left border-r border-gray-200 bg-gray-50 sticky left-0 z-30 shadow-[2px_0_5px_rgba(0,0,0,0.1)] ${mode === 'SPLIT' ? 'min-w-[50px]' : 'min-w-[70px]'}`}>TAG</th>
                                   {daysInMonth.map(date => (
-                                      <th key={date.toString()} className={`p-0 border-b border-r border-gray-800 min-w-[32px] text-center ${date.getDay() === 0 || date.getDay() === 6 ? 'bg-gray-800/80 text-gray-500' : ''}`}>{date.getDate()}</th>
+                                      <th key={date.toString()} className={`p-0 border-r border-gray-200 text-center ${mode === 'SPLIT' ? 'min-w-[20px]' : 'min-w-[28px]'} ${date.getDay() === 0 || date.getDay() === 6 ? 'bg-gray-100 text-gray-400' : ''}`}>{date.getDate()}</th>
                                   ))}
                               </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-800 font-bold text-gray-200 text-sm">
+                          <tbody className="divide-y divide-gray-100 font-bold text-gray-700 text-sm">
                               {records.map((record, rIdx) => (
-                                  <tr key={record.id} className={`${rIdx % 2 === 0 ? 'bg-gray-900/40' : 'bg-transparent'} h-[40px]`}>
-                                      <td className="p-2 border-r border-gray-800 font-black text-[#007e7a] sticky left-0 z-10 bg-gray-950 shadow-[2px_0_5px_rgba(0,0,0,0.5)]">{record.tag}</td>
+                                  <tr key={record.id} className={`${rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${mode === 'SPLIT' ? 'h-[30px]' : 'h-[40px]'}`}>
+                                      <td className={`p-1 border-r border-gray-200 font-black text-[#007e7a] sticky left-0 z-10 bg-inherit shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${mode === 'SPLIT' ? 'text-xs' : 'text-sm'}`}>{record.tag}</td>
                                       {daysInMonth.map(date => {
                                           const dateKey = normalizeDateKey(date);
-                                          return <td key={dateKey} className="p-0 border-r border-gray-800 text-center relative align-middle">{renderCellContent(record.statusMap[dateKey], true)}</td>;
+                                          return <td key={dateKey} className="p-0 border-r border-gray-200 text-center relative align-middle">{renderCellContent(record.statusMap[dateKey])}</td>;
                                       })}
                                   </tr>
                               ))}
@@ -392,51 +392,53 @@ export const AvailabilityBoard: React.FC = () => {
                       </table>
                   </div>
               </div>
-              <div className="bg-gray-900 border-t border-gray-800 p-2 flex justify-center gap-6 shrink-0 flex-wrap h-12 overflow-hidden items-center">
-                  {Object.entries(STATUS_CONFIG).map(([key, conf]) => (
-                      <div key={key} className="flex items-center gap-2"><span className={`${conf.color} text-sm leading-none`}>{conf.symbol}</span><span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">{conf.label}</span></div>
-                  ))}
-              </div>
+              
+              {mode === 'TV' && (
+                  <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-2 flex justify-center gap-4 shrink-0 flex-wrap h-14 overflow-hidden items-center shadow-[0_-5px_15px_rgba(0,0,0,0.1)] z-50">
+                      {Object.entries(STATUS_CONFIG).map(([key, conf]) => (
+                          <div key={key} className="flex items-center gap-1.5">
+                              <div className={`w-4 h-4 flex items-center justify-center rounded ${conf.bgColor} border border-black/10 shadow-sm`}><span className={`${conf.color} text-[10px] font-black`}>{conf.symbol}</span></div>
+                              <span className="text-[9px] font-black text-gray-500 uppercase tracking-wider">{conf.label}</span>
+                          </div>
+                      ))}
+                  </div>
+              )}
           </div>
       );
   }
 
-  // --- STANDARD MODE (COMPACTO) ---
   return (
-    <div className="max-w-[1920px] mx-auto pb-10 px-2 lg:px-4 animate-fadeIn">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-3 gap-4 bg-white p-3 rounded-2xl shadow-sm border border-gray-200">
+    <div className="w-full pb-0 px-1 animate-fadeIn h-[calc(100vh-20px)] flex flex-col">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-2 gap-2 bg-white p-2 rounded-xl shadow-sm border border-gray-200 shrink-0">
         <div className="flex items-center gap-3">
           <BackButton />
           <div className="bg-gradient-to-br from-[#007e7a] to-[#005c5a] p-2 rounded-xl text-white shadow-lg shadow-teal-100"><Activity size={20} /></div>
-          <div><h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter leading-none">Painel de Disponibilidade</h2><p className="text-[10px] font-bold text-gray-400 uppercase mt-0.5 tracking-widest">Mapa de Status da Frota</p></div>
+          <div><h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter leading-none">Painel de Disponibilidade</h2></div>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
-            <div className="flex items-center bg-gray-50 rounded-xl p-1 border border-gray-200 shadow-inner h-10">
-                <button onClick={() => { if(selectedMonth===0) { setSelectedMonth(11); setSelectedYear(y=>y-1) } else setSelectedMonth(m=>m-1) }} className="p-2 hover:bg-white rounded-lg transition-all text-gray-600 hover:text-gray-900 shadow-sm hover:shadow"><Calendar size={14} className="rotate-180"/></button>
-                <div className="px-4 text-center min-w-[140px]"><span className="block text-xs font-black text-gray-800 uppercase tracking-wide">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span></div>
-                <button onClick={() => { if(selectedMonth===11) { setSelectedMonth(0); setSelectedYear(y=>y+1) } else setSelectedMonth(m=>m+1) }} className="p-2 hover:bg-white rounded-lg transition-all text-gray-600 hover:text-gray-900 shadow-sm hover:shadow"><Calendar size={14}/></button>
+            <div className="flex items-center bg-gray-50 rounded-xl p-1 border border-gray-200 shadow-inner h-9">
+                <button onClick={() => { if(selectedMonth===0) { setSelectedMonth(11); setSelectedYear(y=>y-1) } else setSelectedMonth(m=>m-1) }} className="p-1.5 hover:bg-white rounded-lg transition-all text-gray-600 hover:text-gray-900 shadow-sm hover:shadow"><Calendar size={14} className="rotate-180"/></button>
+                <div className="px-4 text-center min-w-[120px]"><span className="block text-xs font-black text-gray-800 uppercase tracking-wide">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span></div>
+                <button onClick={() => { if(selectedMonth===11) { setSelectedMonth(0); setSelectedYear(y=>y+1) } else setSelectedMonth(m=>m+1) }} className="p-1.5 hover:bg-white rounded-lg transition-all text-gray-600 hover:text-gray-900 shadow-sm hover:shadow"><Calendar size={14}/></button>
             </div>
-            <div className="h-6 w-px bg-gray-200 mx-2 hidden xl:block"></div>
-            <button onClick={handleAutoFillGreen} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-md transition-all active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><CheckCircle2 size={14} className={isSyncing ? 'animate-spin' : ''} /> Fechamento Turno</button>
-            <button onClick={() => syncEventsOnly(daysInMonth)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-md transition-all active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} /> Sincronizar</button>
-            <button onClick={addRow} className="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-sm transition-all active:scale-95"><Plus size={14} /> Novo Equip.</button>
-            <button onClick={() => setIsTvMode(true)} className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg hover:shadow-xl transition-all active:scale-95 border-b-4 border-black hover:bg-gray-800 ml-auto xl:ml-2"><Monitor size={14} /> TV MODE</button>
+            <button onClick={() => syncEventsOnly(daysInMonth)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-md transition-all active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} /> Atualizar</button>
+            <button onClick={addRow} className="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-sm transition-all active:scale-95"><Plus size={14} /> Novo</button>
+            <button onClick={() => setIsTvModeInternal(true)} className="flex items-center gap-2 bg-gray-900 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg hover:shadow-xl transition-all active:scale-95 border-b-4 border-black hover:bg-gray-800 ml-auto xl:ml-1"><Monitor size={14} /> TV</button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-300 overflow-hidden relative flex flex-col">
-        <div className="overflow-x-auto custom-scrollbar flex-1">
+      <div className="bg-white rounded-xl shadow-xl border border-gray-300 overflow-hidden relative flex flex-col h-full">
+        <div className="overflow-auto custom-scrollbar flex-1 pb-16">
           <table className="w-full border-collapse border-spacing-0 bg-white">
             <thead>
-              <tr className="bg-gray-900 text-gray-400 text-[9px] font-black uppercase">
-                <th className="p-2 text-left border-r border-gray-700 bg-gray-900 sticky left-0 z-30 min-w-[100px] shadow-[4px_0_5px_rgba(0,0,0,0.2)] text-white tracking-wider">TAG</th>
+              <tr className="bg-gray-900 text-gray-400 text-[9px] font-black uppercase sticky top-0 z-30">
+                <th className="p-2 text-left border-r border-gray-700 bg-gray-900 sticky left-0 z-30 min-w-[80px] shadow-[4px_0_5px_rgba(0,0,0,0.2)] text-white tracking-wider">TAG</th>
                 {daysInMonth.map(date => {
                   const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                   return (
-                    <th key={date.toString()} className={`p-1 border-r border-gray-800 min-w-[32px] text-center cursor-pointer hover:bg-gray-800 transition-colors group relative ${isWeekend ? 'bg-gray-800 text-gray-500' : 'text-gray-300'}`} onClick={() => handleFillColumnGreen(date)} title="CLIQUE PARA PREENCHER O DIA INTEIRO COM 'SEM FALHA'">
+                    <th key={date.toString()} className={`p-1 border-r border-gray-800 min-w-[32px] text-center ${isWeekend ? 'bg-gray-800 text-gray-500' : 'text-gray-300'}`}>
                         <span className="block text-[7px] font-bold opacity-50">{date.toLocaleDateString('pt-BR', {weekday: 'short'}).slice(0,3)}</span>
                         <span className="block text-xs font-bold">{date.getDate()}</span>
-                        <ArrowDownCircle size={10} className="absolute bottom-0.5 right-0.5 text-green-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </th>
                   );
                 })}
@@ -456,7 +458,6 @@ export const AvailabilityBoard: React.FC = () => {
                       <button 
                         onClick={() => handleDeleteRow(record)} 
                         className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                        title="Excluir (Mover para Ignorados)"
                       >
                           <Trash2 size={12}/>
                       </button>
@@ -466,15 +467,14 @@ export const AvailabilityBoard: React.FC = () => {
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="mt-4 bg-white p-3 rounded-2xl shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 mb-2 border-b border-gray-100 pb-1"><Info size={14} className="text-gray-400"/><span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Legenda de Status</span></div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-              {Object.entries(STATUS_CONFIG).map(([key, conf]) => (
-                  <div key={key} className="flex items-center gap-1.5"><div className={`w-4 h-4 rounded-md flex items-center justify-center border border-black/5 shadow-sm ${conf.bgColor}`}><span className={`${conf.color} font-black text-[8px]`}>{conf.symbol}</span></div><span className="text-[9px] font-bold text-gray-600 uppercase">{conf.label}</span></div>
-              ))}
-          </div>
+        
+        <div className="absolute bottom-0 left-0 right-0 bg-white p-2 border-t border-gray-200 shadow-[0_-5px_10px_rgba(0,0,0,0.05)] z-40">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center">
+                {Object.entries(STATUS_CONFIG).map(([key, conf]) => (
+                    <div key={key} className="flex items-center gap-1"><div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border border-black/5 shadow-sm ${conf.bgColor}`}><span className={`${conf.color} font-black text-[8px]`}>{conf.symbol}</span></div><span className="text-[9px] font-bold text-gray-600 uppercase">{conf.label}</span></div>
+                ))}
+            </div>
+        </div>
       </div>
 
       {editingCell && (
@@ -487,16 +487,28 @@ export const AvailabilityBoard: React.FC = () => {
                   <div className="p-6 grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
                       {Object.entries(STATUS_CONFIG).map(([key, conf]) => {
                           const isActive = tempStatuses.includes(key as AvailabilityStatus);
+                          const isLocked = lockedStatuses.includes(key as AvailabilityStatus);
+                          
                           return (
-                              <button key={key} onClick={() => toggleTempStatus(key as AvailabilityStatus)} className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all group ${isActive ? 'bg-white border-blue-500 shadow-md ring-1 ring-blue-500' : 'bg-gray-50 border-gray-100 hover:border-gray-300 hover:bg-white'}`}>
+                              <button 
+                                key={key} 
+                                onClick={() => toggleTempStatus(key as AvailabilityStatus)} 
+                                disabled={isLocked}
+                                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all group relative 
+                                    ${isLocked ? 'bg-gray-100 border-gray-200 opacity-80 cursor-not-allowed' : 
+                                      isActive ? 'bg-white border-blue-500 shadow-md ring-1 ring-blue-500' : 'bg-gray-50 border-gray-100 hover:border-gray-300 hover:bg-white'}`}
+                              >
                                   <div className={`w-8 h-8 flex items-center justify-center shrink-0 rounded-lg ${conf.bgColor}`}><span className={`${conf.color} font-black text-sm`}>{conf.symbol}</span></div>
-                                  <div className="text-left"><span className={`text-[10px] font-black uppercase block leading-tight ${isActive ? 'text-blue-900' : 'text-gray-500 group-hover:text-gray-700'}`}>{conf.label}</span>{key === 'SEM_FALHA' && <span className="text-[8px] text-green-600 font-bold uppercase">(EXCLUSIVO)</span>}</div>
+                                  <div className="text-left"><span className={`text-[10px] font-black uppercase block leading-tight ${isActive ? 'text-blue-900' : 'text-gray-500 group-hover:text-gray-700'}`}>{conf.label}</span>
+                                    {key === 'SEM_FALHA' && <span className="text-[8px] text-green-600 font-bold uppercase">(AUTO)</span>}
+                                    {isLocked && <span className="text-[8px] text-red-500 font-bold uppercase flex items-center gap-1 mt-0.5"><Lock size={8}/> BLOQUEADO</span>}
+                                  </div>
                               </button>
                           );
                       })}
                   </div>
                   <div className="p-4 bg-gray-50 border-t border-gray-200 flex gap-3">
-                      <button onClick={handleClearCell} className="flex-1 bg-white border border-red-200 text-red-600 px-4 py-3 rounded-xl font-black text-xs uppercase hover:bg-red-50 transition-colors flex items-center justify-center gap-2"><Trash2 size={16}/> Limpar</button>
+                      <button onClick={handleClearCell} className="flex-1 bg-white border border-red-200 text-red-600 px-4 py-3 rounded-xl font-black text-xs uppercase hover:bg-red-50 transition-colors flex items-center justify-center gap-2"><Trash2 size={16}/> Limpar (Manuais)</button>
                       <button onClick={handleConfirmEdit} className="flex-[2] bg-[#007e7a] hover:bg-[#00605d] text-white px-4 py-3 rounded-xl font-black text-xs uppercase shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"><Save size={16}/> Salvar</button>
                   </div>
               </div>

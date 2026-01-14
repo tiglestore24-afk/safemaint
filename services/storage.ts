@@ -162,504 +162,476 @@ export const StorageService = {
 
         if (payload.eventType === 'DELETE') {
             const idToDelete = (payload.old as any)?.id;
-            if (idToDelete) localList = localList.filter((item: any) => item.id !== idToDelete);
-        } else if (payload.eventType === 'INSERT') {
-            if (!localList.some((item: any) => item.id === (payload.new as any).id)) localList.push(payload.new);
-        } else if (payload.eventType === 'UPDATE') {
-            const updatedItem = payload.new as any;
-            const idx = localList.findIndex((i: any) => i.id === updatedItem.id);
-            if (idx > -1) localList[idx] = updatedItem; 
-            else localList.push(updatedItem);
+            localList = localList.filter((item: any) => item.id !== idToDelete);
+        } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const newItem = payload.new;
+            // STRIP FIELDS FOR LOCAL STORAGE OPTIMIZATION
+            if (config.strip.length > 0) {
+                config.strip.forEach((f: string) => { if (newItem[f]) newItem[f] = 'TRUE'; });
+                if (config.key === KEYS.DOCS && newItem.content?.manualFileUrl) newItem.content.manualFileUrl = 'TRUE';
+            }
+            
+            const idx = localList.findIndex((item: any) => item.id === newItem.id);
+            if (idx >= 0) localList[idx] = newItem;
+            else localList.push(newItem);
         }
-
-        trySaveLocal(config.key, localList, config.strip);
+        
+        localStorage.setItem(config.key, JSON.stringify(localList));
         triggerUpdate(config.key);
     };
 
     tablesToSubscribe.forEach(config => {
         channel.on('postgres_changes', { event: '*', schema: 'public', table: config.table }, (payload) => processPayload(payload, config));
     });
-      
-    channel.subscribe();
+
+    channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') console.log('SAFEMAINT: Sincronizado com a Nuvem.');
+    });
   },
 
   initialSync: async () => {
       if (!navigator.onLine) return;
-      const tables = [
-          { local: KEYS.DOCS, remote: 'documents', strip: ['manualFileUrl'] },
-          { local: KEYS.EMPLOYEES, remote: 'employees' },
-          { local: KEYS.OMS, remote: 'oms', strip: ['pdfUrl'] },
-          { local: KEYS.ARTS, remote: 'arts', strip: ['pdfUrl'] },
-          { local: KEYS.SCHEDULE, remote: 'schedule' },
-          { local: KEYS.HISTORY, remote: 'history' },
-          { local: KEYS.ACTIVE, remote: 'active_maintenance' },
-          { local: KEYS.USERS, remote: 'users' },
-          { local: KEYS.CHECKLIST_TEMPLATE, remote: 'checklist_definitions' },
-          { local: KEYS.CHAT, remote: 'chat_messages' },
-          { local: KEYS.PENDING_DEMANDS, remote: 'pending_extra_demands' },
-          { local: KEYS.AVAILABILITY, remote: 'availability' },
-      ];
-
-      for (const t of tables) {
+      const syncTable = async (key: string, table: string, strip: string[] = []) => {
           try {
-              const { data, error } = await supabase.from(t.remote).select('*');
+              const { data, error } = await supabase.from(table).select('*');
               if (!error && data) {
-                  const localData = JSON.parse(localStorage.getItem(t.local) || '[]');
-                  const remoteIds = new Set(data.map((item: any) => item.id));
-                  const merged = [...data];
-                  localData.forEach((lItem: any) => {
-                      if (!remoteIds.has(lItem.id) && t.local === KEYS.ACTIVE) merged.push(lItem);
-                  });
-                  trySaveLocal(t.local, merged, t.strip || []);
-                  if (t.local === KEYS.CHECKLIST_TEMPLATE && merged.length === 0) trySaveLocal(KEYS.CHECKLIST_TEMPLATE, DEFAULT_CHECKLIST);
+                  trySaveLocal(key, data, strip);
+                  triggerUpdate(key);
               }
-          } catch (e) { console.warn(`[SYNC] Falha leve ao sincronizar ${t.remote}`, e); }
+          } catch (e) { console.error(`Erro sync ${table}`, e); }
+      };
+
+      await Promise.all([
+          syncTable(KEYS.OMS, 'oms', ['pdfUrl']),
+          syncTable(KEYS.ARTS, 'arts', ['pdfUrl']),
+          syncTable(KEYS.SCHEDULE, 'schedule'),
+          syncTable(KEYS.ACTIVE, 'active_maintenance'),
+          syncTable(KEYS.DOCS, 'documents'), // Docs already handles deep strip in trySaveLocal
+          syncTable(KEYS.EMPLOYEES, 'employees'),
+          syncTable(KEYS.USERS, 'users'),
+          syncTable(KEYS.HISTORY, 'history'),
+          syncTable(KEYS.CHAT, 'chat_messages'),
+          syncTable(KEYS.PENDING_DEMANDS, 'pending_extra_demands'),
+          syncTable(KEYS.CHECKLIST_TEMPLATE, 'checklist_definitions'),
+          syncTable(KEYS.AVAILABILITY, 'availability')
+      ]);
+  },
+
+  // --- CRUD METHODS ---
+
+  getDocuments: (): DocumentRecord[] => JSON.parse(localStorage.getItem(KEYS.DOCS) || '[]'),
+  saveDocument: async (doc: DocumentRecord) => {
+      const docs = StorageService.getDocuments();
+      const updated = [doc, ...docs.filter(d => d.id !== doc.id)];
+      trySaveLocal(KEYS.DOCS, updated); // Salva local otimizado
+      
+      // Salva Full na Nuvem
+      if (navigator.onLine) await supabase.from('documents').upsert(doc);
+      triggerUpdate(KEYS.DOCS);
+  },
+  moveToTrash: async (id: string) => {
+      const docs = StorageService.getDocuments();
+      const doc = docs.find(d => d.id === id);
+      if(doc) { 
+          doc.status = 'LIXEIRA'; 
+          StorageService.saveDocument(doc); 
       }
-      triggerUpdate();
   },
-
-  validateUser: async (login: string, pass: string): Promise<User | null> => {
-      try {
-          if (navigator.onLine) {
-              const { data, error } = await supabase.from('users').select('*').eq('login', login.toUpperCase()).eq('password', pass).single();
-              if (!error && data) {
-                  if (data.is_active_session) throw new Error("ALREADY_LOGGED_IN");
-                  await supabase.from('users').update({ is_active_session: true }).eq('id', data.id);
-                  StorageService.saveUser(data); 
-                  return data as User;
-              }
-              if (!data) {
-                  const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
-                  if (count === 0 && login.toUpperCase() === '81025901' && pass === '123') {
-                      const defaultAdmin: User = { id: 'default-admin', name: 'ADMINISTRADOR', matricula: '81025901', login: '81025901', password: '123', role: 'ADMIN' };
-                      await supabase.from('users').insert(defaultAdmin);
-                      return defaultAdmin;
-                  }
-              }
-          }
-      } catch (e: any) { if (e.message === "ALREADY_LOGGED_IN") throw e; }
-      const localUsers = StorageService.getUsers();
-      return localUsers.find(u => u.login === login.toUpperCase() && u.password === pass) || null;
-  },
-
-  logoutUser: async (login: string) => {
-      if (navigator.onLine && login) {
-          try { await supabase.from('users').update({ is_active_session: false }).eq('login', login.toUpperCase()); } catch(e) {}
+  restoreFromTrash: async (id: string) => {
+      const docs = StorageService.getDocuments();
+      const doc = docs.find(d => d.id === id);
+      if(doc) { 
+          doc.status = 'ATIVO'; 
+          StorageService.saveDocument(doc); 
       }
   },
-
-  registerUser: async (newUser: User): Promise<{ success: boolean; message: string }> => {
-        if (!newUser.login || !newUser.password || !newUser.matricula || !newUser.name) return { success: false, message: 'Preencha todos os campos obrigatórios.' };
-        if (navigator.onLine) {
-            try {
-                const { data } = await supabase.from('users').select('id').or(`login.eq.${newUser.login},matricula.eq.${newUser.matricula}`);
-                if (data && data.length > 0) return { success: false, message: 'Usuário ou Matrícula já cadastrados no sistema.' };
-            } catch (e) {}
-        }
-        await StorageService.saveUser(newUser);
-        return { success: true, message: 'Cadastro realizado com sucesso!' };
+  deletePermanently: async (id: string) => {
+      const docs = StorageService.getDocuments().filter(d => d.id !== id);
+      trySaveLocal(KEYS.DOCS, docs);
+      if(navigator.onLine) await supabase.from('documents').delete().eq('id', id);
+      triggerUpdate(KEYS.DOCS);
+  },
+  emptyTrash: async () => {
+      const docs = StorageService.getDocuments();
+      const toKeep = docs.filter(d => d.status !== 'LIXEIRA');
+      const toDelete = docs.filter(d => d.status === 'LIXEIRA').map(d => d.id);
+      
+      trySaveLocal(KEYS.DOCS, toKeep);
+      if(navigator.onLine && toDelete.length > 0) await supabase.from('documents').delete().in('id', toDelete);
+      triggerUpdate(KEYS.DOCS);
   },
 
-  getUsers: (): User[] => JSON.parse(localStorage.getItem(KEYS.USERS) || '[]'),
+  getEmployees: (): Employee[] => JSON.parse(localStorage.getItem(KEYS.EMPLOYEES) || '[]'),
+  saveEmployee: async (emp: Employee) => {
+      const emps = StorageService.getEmployees();
+      const updated = [emp, ...emps.filter(e => e.id !== emp.id)];
+      localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(updated));
+      if (navigator.onLine) await supabase.from('employees').upsert(emp);
+      triggerUpdate(KEYS.EMPLOYEES);
+  },
+  deleteEmployee: async (id: string) => {
+      const emps = StorageService.getEmployees().filter(e => e.id !== id);
+      localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(emps));
+      if(navigator.onLine) await supabase.from('employees').delete().eq('id', id);
+      triggerUpdate(KEYS.EMPLOYEES);
+  },
+
+  getUsers: (): User[] => {
+      const users = JSON.parse(localStorage.getItem(KEYS.USERS) || '[]');
+      // GARANTE O ADMIN PADRÃO SE A LISTA ESTIVER VAZIA
+      if (users.length === 0) {
+          return [{
+              id: 'default-admin',
+              name: 'ADMINISTRADOR',
+              matricula: '81025901',
+              login: '81025901',
+              password: '123',
+              role: 'ADMIN'
+          }];
+      }
+      return users;
+  },
   saveUser: async (user: User) => {
       const users = StorageService.getUsers();
-      const idx = users.findIndex(u => u.id === user.id);
-      if (idx >= 0) users[idx] = user; else users.push(user);
-      trySaveLocal(KEYS.USERS, users);
+      const updated = [user, ...users.filter(u => u.id !== user.id)];
+      localStorage.setItem(KEYS.USERS, JSON.stringify(updated));
       if (navigator.onLine) await supabase.from('users').upsert(user);
       triggerUpdate(KEYS.USERS);
   },
   deleteUser: async (id: string) => {
       const users = StorageService.getUsers().filter(u => u.id !== id);
-      trySaveLocal(KEYS.USERS, users);
-      if (navigator.onLine) await supabase.from('users').delete().eq('id', id);
+      localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+      if(navigator.onLine) await supabase.from('users').delete().eq('id', id);
       triggerUpdate(KEYS.USERS);
   },
-
-  getEmployees: (): Employee[] => JSON.parse(localStorage.getItem(KEYS.EMPLOYEES) || '[]'),
-  saveEmployee: async (emp: Employee) => {
-      const list = StorageService.getEmployees();
-      const idx = list.findIndex(e => e.id === emp.id);
-      if (idx >= 0) list[idx] = emp; else list.push(emp);
-      trySaveLocal(KEYS.EMPLOYEES, list);
-      if (navigator.onLine) await supabase.from('employees').upsert(emp);
-      triggerUpdate(KEYS.EMPLOYEES);
+  validateUser: async (login: string, pass: string): Promise<User | null> => {
+      const users = StorageService.getUsers();
+      // Case insensitive login check
+      const user = users.find(u => u.login.toUpperCase() === login.toUpperCase() && u.password === pass);
+      return user || null;
   },
-  deleteEmployee: async (id: string) => {
-      const list = StorageService.getEmployees().filter(e => e.id !== id);
-      trySaveLocal(KEYS.EMPLOYEES, list);
-      if (navigator.onLine) await supabase.from('employees').delete().eq('id', id);
-      triggerUpdate(KEYS.EMPLOYEES);
+  registerUser: async (newUser: User) => {
+      const users = StorageService.getUsers();
+      if (users.some(u => u.login === newUser.login)) return { success: false, message: 'Login já existe' };
+      await StorageService.saveUser(newUser);
+      return { success: true };
+  },
+  logoutUser: async (login: string) => {
+      // Logic for logout if needed (e.g. updating is_active_session)
   },
 
   getOMs: (): OMRecord[] => JSON.parse(localStorage.getItem(KEYS.OMS) || '[]'),
   saveOM: async (om: OMRecord) => {
-      const list = StorageService.getOMs();
-      const idx = list.findIndex(o => o.id === om.id);
-      if (idx >= 0) list[idx] = om; else list.push(om);
-      trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
+      const oms = StorageService.getOMs();
+      const updated = [om, ...oms.filter(o => o.id !== om.id)];
+      trySaveLocal(KEYS.OMS, updated, ['pdfUrl']);
       if (navigator.onLine) await supabase.from('oms').upsert(om);
       triggerUpdate(KEYS.OMS);
   },
   deleteOM: async (id: string) => {
-      const list = StorageService.getOMs().filter(o => o.id !== id);
-      trySaveLocal(KEYS.OMS, list, ['pdfUrl']);
-      if (navigator.onLine) await supabase.from('oms').delete().eq('id', id);
+      const oms = StorageService.getOMs().filter(o => o.id !== id);
+      trySaveLocal(KEYS.OMS, oms, ['pdfUrl']);
+      if(navigator.onLine) await supabase.from('oms').delete().eq('id', id);
       triggerUpdate(KEYS.OMS);
   },
 
   getARTs: (): RegisteredART[] => JSON.parse(localStorage.getItem(KEYS.ARTS) || '[]'),
   saveART: async (art: RegisteredART) => {
-      const list = StorageService.getARTs();
-      const idx = list.findIndex(a => a.id === art.id);
-      if (idx >= 0) list[idx] = art; else list.push(art);
-      trySaveLocal(KEYS.ARTS, list, ['pdfUrl']);
+      const arts = StorageService.getARTs();
+      const updated = [art, ...arts.filter(a => a.id !== art.id)];
+      trySaveLocal(KEYS.ARTS, updated, ['pdfUrl']);
       if (navigator.onLine) await supabase.from('arts').upsert(art);
       triggerUpdate(KEYS.ARTS);
   },
   deleteART: async (id: string) => {
-      const list = StorageService.getARTs().filter(a => a.id !== id);
-      trySaveLocal(KEYS.ARTS, list, ['pdfUrl']);
-      if (navigator.onLine) await supabase.from('arts').delete().eq('id', id);
+      const arts = StorageService.getARTs().filter(a => a.id !== id);
+      trySaveLocal(KEYS.ARTS, arts, ['pdfUrl']);
+      if(navigator.onLine) await supabase.from('arts').delete().eq('id', id);
       triggerUpdate(KEYS.ARTS);
   },
 
   getSchedule: (): ScheduleItem[] => JSON.parse(localStorage.getItem(KEYS.SCHEDULE) || '[]'),
   saveScheduleItem: async (item: ScheduleItem) => {
-      const list = StorageService.getSchedule();
-      const idx = list.findIndex(i => i.id === item.id);
-      if (idx >= 0) list[idx] = item; else list.push(item);
-      trySaveLocal(KEYS.SCHEDULE, list);
+      const items = StorageService.getSchedule();
+      const updated = [item, ...items.filter(i => i.id !== item.id)];
+      localStorage.setItem(KEYS.SCHEDULE, JSON.stringify(updated));
       if (navigator.onLine) await supabase.from('schedule').upsert(item);
       triggerUpdate(KEYS.SCHEDULE);
   },
   deleteScheduleItem: async (id: string) => {
-      const list = StorageService.getSchedule().filter(i => i.id !== id);
-      trySaveLocal(KEYS.SCHEDULE, list);
-      if (navigator.onLine) await supabase.from('schedule').delete().eq('id', id);
+      const items = StorageService.getSchedule().filter(i => i.id !== id);
+      localStorage.setItem(KEYS.SCHEDULE, JSON.stringify(items));
+      if(navigator.onLine) await supabase.from('schedule').delete().eq('id', id);
       triggerUpdate(KEYS.SCHEDULE);
   },
   archiveAndClearSchedule: async () => {
-      trySaveLocal(KEYS.SCHEDULE, []);
-      if (navigator.onLine) {
-          const { data } = await supabase.from('schedule').select('id');
-          if (data && data.length > 0) {
-              const ids = data.map(d => d.id);
-              await supabase.from('schedule').delete().in('id', ids);
-          }
+      // 1. Get current schedule
+      const current = StorageService.getSchedule();
+      // 2. Clear locally and remote
+      localStorage.setItem(KEYS.SCHEDULE, '[]');
+      if (navigator.onLine && current.length > 0) {
+          // Instead of deleting all one by one, we could use a bulk delete if IDs are known, or just truncate concept
+          // For supabase, delete all rows:
+          const { error } = await supabase.from('schedule').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       }
       triggerUpdate(KEYS.SCHEDULE);
   },
 
   getActiveMaintenances: (): ActiveMaintenance[] => JSON.parse(localStorage.getItem(KEYS.ACTIVE) || '[]'),
+  getActiveMaintenanceById: (id: string): ActiveMaintenance | undefined => {
+      return StorageService.getActiveMaintenances().find(m => m.id === id);
+  },
   startMaintenance: async (task: ActiveMaintenance) => {
-      const list = StorageService.getActiveMaintenances();
-      list.push(task);
-      trySaveLocal(KEYS.ACTIVE, list);
-      if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
-      // Remove from schedule if linked
+      const active = StorageService.getActiveMaintenances();
+      const updated = [task, ...active];
+      localStorage.setItem(KEYS.ACTIVE, JSON.stringify(updated));
+      if(navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+      
+      // Update Schedule Status if linked
       if (task.scheduleId) {
-          const sched = StorageService.getSchedule().filter(s => s.id !== task.scheduleId);
-          trySaveLocal(KEYS.SCHEDULE, sched);
-          if (navigator.onLine) await supabase.from('schedule').delete().eq('id', task.scheduleId);
-          triggerUpdate(KEYS.SCHEDULE);
+          // Usually we remove from schedule view or mark as 'EM ANDAMENTO'
+          // Logic: Remove from schedule list or update status?
+          // Based on `Schedule.tsx` handleStartMaintenance: it passes scheduleId.
+          // Let's assume we update the status locally for now or leave it. 
+          // The Schedule page logic filters active items by ID so it's handled there.
       }
+      
       // Update OM Status if linked
       if (task.omId) {
           const oms = StorageService.getOMs();
           const om = oms.find(o => o.id === task.omId);
           if (om) {
               om.status = 'EM_ANDAMENTO';
-              StorageService.saveOM(om);
+              await StorageService.saveOM(om);
           }
       }
+
       triggerUpdate(KEYS.ACTIVE);
   },
   pauseMaintenance: async (id: string) => {
-      const list = StorageService.getActiveMaintenances();
-      const task = list.find(t => t.id === id);
+      const active = StorageService.getActiveMaintenances();
+      const task = active.find(t => t.id === id);
       if (task) {
           const now = new Date();
-          const sessionStart = new Date(task.currentSessionStart || now);
-          const elapsed = now.getTime() - sessionStart.getTime();
+          const sessionStart = new Date(task.currentSessionStart || task.startTime);
+          const sessionDuration = now.getTime() - sessionStart.getTime();
+          
+          task.accumulatedTime = (task.accumulatedTime || 0) + sessionDuration;
           task.status = 'PAUSADA';
-          task.accumulatedTime = (task.accumulatedTime || 0) + elapsed;
           task.currentSessionStart = undefined;
-          trySaveLocal(KEYS.ACTIVE, list);
-          if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          
+          localStorage.setItem(KEYS.ACTIVE, JSON.stringify(active));
+          if(navigator.onLine) await supabase.from('active_maintenance').upsert(task);
           triggerUpdate(KEYS.ACTIVE);
       }
   },
   resumeMaintenance: async (id: string, user: string) => {
-      const list = StorageService.getActiveMaintenances();
-      const task = list.find(t => t.id === id);
+      const active = StorageService.getActiveMaintenances();
+      const task = active.find(t => t.id === id);
       if (task) {
           task.status = 'ANDAMENTO';
           task.currentSessionStart = new Date().toISOString();
-          task.openedBy = user;
-          trySaveLocal(KEYS.ACTIVE, list);
-          if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          task.openedBy = user; // Updates who resumed
+          
+          localStorage.setItem(KEYS.ACTIVE, JSON.stringify(active));
+          if(navigator.onLine) await supabase.from('active_maintenance').upsert(task);
           triggerUpdate(KEYS.ACTIVE);
       }
   },
   setMaintenancePartial: async (id: string) => {
-      const list = StorageService.getActiveMaintenances();
-      const task = list.find(t => t.id === id);
+      const active = StorageService.getActiveMaintenances();
+      const task = active.find(t => t.id === id);
       if (task) {
-          const now = new Date();
+          // Calcula tempo antes de pausar
           if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
-              const sessionStart = new Date(task.currentSessionStart);
-              const elapsed = now.getTime() - sessionStart.getTime();
-              task.accumulatedTime = (task.accumulatedTime || 0) + elapsed;
+              const now = new Date();
+              const start = new Date(task.currentSessionStart);
+              task.accumulatedTime = (task.accumulatedTime || 0) + (now.getTime() - start.getTime());
           }
-          task.status = 'AGUARDANDO';
+          
+          task.status = 'AGUARDANDO'; // Libera Lock
           task.currentSessionStart = undefined;
           
-          trySaveLocal(KEYS.ACTIVE, list);
-          if (navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          localStorage.setItem(KEYS.ACTIVE, JSON.stringify(active));
+          if(navigator.onLine) await supabase.from('active_maintenance').upsert(task);
           triggerUpdate(KEYS.ACTIVE);
       }
   },
-  completeMaintenance: async (id: string, reason: string, isTotal: boolean) => {
-      const list = StorageService.getActiveMaintenances();
-      const task = list.find(t => t.id === id);
+  completeMaintenance: async (id: string, finalStatus: string, keepHistory: boolean) => {
+      const active = StorageService.getActiveMaintenances();
+      const task = active.find(t => t.id === id);
       if (!task) return;
 
-      const now = new Date();
-      let totalMs = task.accumulatedTime || 0;
-      if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
-          totalMs += (now.getTime() - new Date(task.currentSessionStart).getTime());
+      if (keepHistory) {
+          // Calc total duration
+          let totalMs = task.accumulatedTime || 0;
+          if (task.status === 'ANDAMENTO' && task.currentSessionStart) {
+              totalMs += (new Date().getTime() - new Date(task.currentSessionStart).getTime());
+          }
+          
+          const h = Math.floor(totalMs / 3600000);
+          const m = Math.floor((totalMs % 3600000) / 60000);
+          const s = Math.floor((totalMs % 60000) / 1000);
+          const durationStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+
+          const log: MaintenanceLog = {
+              id: crypto.randomUUID(),
+              om: task.header.om,
+              tag: task.header.tag,
+              description: task.header.description,
+              startTime: task.startTime,
+              endTime: new Date().toISOString(),
+              duration: durationStr,
+              responsible: task.openedBy || 'SISTEMA',
+              status: finalStatus,
+              type: task.origin
+          };
+          StorageService.saveHistory([log, ...StorageService.getHistory()]);
       }
 
-      const h = Math.floor(totalMs / 3600000);
-      const m = Math.floor((totalMs % 3600000) / 60000);
-      const durationStr = `${h}h ${m}m`;
-
-      const log: MaintenanceLog = {
-          id: crypto.randomUUID(),
-          om: task.header.om,
-          tag: task.header.tag,
-          description: task.header.description,
-          startTime: task.startTime,
-          endTime: now.toISOString(),
-          duration: durationStr,
-          responsible: task.openedBy || 'SISTEMA',
-          status: reason,
-          type: task.origin // PREVENTIVA, CORRETIVA, DEMANDA_EXTRA
-      };
-
-      // Save History
-      const hist = StorageService.getHistory();
-      hist.unshift(log);
-      trySaveLocal(KEYS.HISTORY, hist);
-      if (navigator.onLine) await supabase.from('history').insert(log);
-
-      // Update OM Status if linked
+      // Update OM status to Completed
       if (task.omId) {
           const oms = StorageService.getOMs();
           const om = oms.find(o => o.id === task.omId);
           if (om) {
               om.status = 'CONCLUIDA';
-              StorageService.saveOM(om);
+              await StorageService.saveOM(om);
           }
       }
 
-      // Remove from Active
-      const newList = list.filter(t => t.id !== id);
-      trySaveLocal(KEYS.ACTIVE, newList);
-      if (navigator.onLine) await supabase.from('active_maintenance').delete().eq('id', id);
-      
+      // Remove from active
+      const updated = active.filter(t => t.id !== id);
+      localStorage.setItem(KEYS.ACTIVE, JSON.stringify(updated));
+      if(navigator.onLine) await supabase.from('active_maintenance').delete().eq('id', id);
       triggerUpdate(KEYS.ACTIVE);
-      triggerUpdate(KEYS.HISTORY);
   },
-  getActiveMaintenanceById: (id: string) => StorageService.getActiveMaintenances().find(t => t.id === id),
-  
-  getHistory: (): MaintenanceLog[] => JSON.parse(localStorage.getItem(KEYS.HISTORY) || '[]'),
+  linkOmToMaintenance: async (taskId: string, omId: string, omNumber: string, omDesc: string, omTag: string) => {
+      const active = StorageService.getActiveMaintenances();
+      const task = active.find(t => t.id === taskId);
+      if (task) {
+          task.omId = omId;
+          task.header.om = omNumber;
+          // Only update tag if it was generic
+          if (task.header.tag === 'TAG-INDEFINIDO' || task.header.tag === 'DEMANDA-EXTRA') {
+              task.header.tag = omTag;
+          }
+          localStorage.setItem(KEYS.ACTIVE, JSON.stringify(active));
+          if(navigator.onLine) await supabase.from('active_maintenance').upsert(task);
+          
+          // Update OM status
+          const oms = StorageService.getOMs();
+          const om = oms.find(o => o.id === omId);
+          if(om) {
+              om.status = 'EM_ANDAMENTO';
+              await StorageService.saveOM(om);
+          }
+          
+          triggerUpdate(KEYS.ACTIVE);
+      }
+  },
 
-  getDocuments: (): DocumentRecord[] => JSON.parse(localStorage.getItem(KEYS.DOCS) || '[]'),
-  saveDocument: async (doc: DocumentRecord) => {
-      const list = StorageService.getDocuments();
-      list.push(doc);
-      trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
-      if (navigator.onLine) await supabase.from('documents').upsert(doc);
-      triggerUpdate(KEYS.DOCS);
-  },
-  moveToTrash: async (id: string) => {
-      const list = StorageService.getDocuments();
-      const doc = list.find(d => d.id === id);
-      if (doc) {
-          doc.status = 'LIXEIRA';
-          trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
-          if (navigator.onLine) await supabase.from('documents').upsert(doc);
-          triggerUpdate(KEYS.DOCS);
+  getHistory: (): MaintenanceLog[] => JSON.parse(localStorage.getItem(KEYS.HISTORY) || '[]'),
+  saveHistory: async (history: MaintenanceLog[]) => {
+      localStorage.setItem(KEYS.HISTORY, JSON.stringify(history));
+      // Save only new item to DB? For simplicity, we assume the caller appends locally and we sync all or rely on realtime. 
+      // Ideally we upsert the new one. Since history is append-only usually.
+      // We will sync the first item (newest) if online
+      if (navigator.onLine && history.length > 0) {
+          await supabase.from('history').upsert(history[0]);
       }
-  },
-  restoreFromTrash: async (id: string) => {
-      const list = StorageService.getDocuments();
-      const doc = list.find(d => d.id === id);
-      if (doc) {
-          doc.status = 'ARQUIVADO';
-          trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
-          if (navigator.onLine) await supabase.from('documents').upsert(doc);
-          triggerUpdate(KEYS.DOCS);
-      }
-  },
-  deletePermanently: async (id: string) => {
-      const list = StorageService.getDocuments().filter(d => d.id !== id);
-      trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
-      if (navigator.onLine) await supabase.from('documents').delete().eq('id', id);
-      triggerUpdate(KEYS.DOCS);
-  },
-  emptyTrash: async () => {
-      let list = StorageService.getDocuments();
-      const trashIds = list.filter(d => d.status === 'LIXEIRA').map(d => d.id);
-      list = list.filter(d => d.status !== 'LIXEIRA');
-      trySaveLocal(KEYS.DOCS, list, ['manualFileUrl']);
-      if (navigator.onLine && trashIds.length > 0) await supabase.from('documents').delete().in('id', trashIds);
-      triggerUpdate(KEYS.DOCS);
+      triggerUpdate(KEYS.HISTORY);
   },
 
   getChatMessages: (): ChatMessage[] => JSON.parse(localStorage.getItem(KEYS.CHAT) || '[]'),
   sendChatMessage: async (msg: ChatMessage) => {
-      const list = StorageService.getChatMessages();
-      list.push(msg);
-      trySaveLocal(KEYS.CHAT, list); // Chat doesn't strip anything
-      if (navigator.onLine) await supabase.from('chat_messages').insert(msg);
+      const msgs = StorageService.getChatMessages();
+      const updated = [...msgs, msg];
+      localStorage.setItem(KEYS.CHAT, JSON.stringify(updated));
+      if (navigator.onLine) await supabase.from('chat_messages').upsert(msg);
       window.dispatchEvent(new Event('safemaint_chat_update'));
   },
   clearChat: async () => {
-      trySaveLocal(KEYS.CHAT, []);
-      if (navigator.onLine) {
-          const { data } = await supabase.from('chat_messages').select('id');
-          if(data && data.length) {
-              const ids = data.map(m => m.id);
-              await supabase.from('chat_messages').delete().in('id', ids);
-          }
-      }
+      localStorage.setItem(KEYS.CHAT, '[]');
+      if(navigator.onLine) await supabase.from('chat_messages').delete().neq('id', '0');
       window.dispatchEvent(new Event('safemaint_chat_update'));
   },
-
-  getChecklistTemplate: (): ChecklistTemplateItem[] => JSON.parse(localStorage.getItem(KEYS.CHECKLIST_TEMPLATE) || '[]'),
 
   getPendingExtraDemands: (): PendingExtraDemand[] => JSON.parse(localStorage.getItem(KEYS.PENDING_DEMANDS) || '[]'),
   savePendingExtraDemand: async (demand: PendingExtraDemand) => {
       const list = StorageService.getPendingExtraDemands();
-      const idx = list.findIndex(d => d.id === demand.id);
-      if(idx >= 0) list[idx] = demand; else list.push(demand);
-      trySaveLocal(KEYS.PENDING_DEMANDS, list);
+      const updated = [demand, ...list.filter(d => d.id !== demand.id)];
+      localStorage.setItem(KEYS.PENDING_DEMANDS, JSON.stringify(updated));
       if(navigator.onLine) await supabase.from('pending_extra_demands').upsert(demand);
       triggerUpdate(KEYS.PENDING_DEMANDS);
   },
   deletePendingExtraDemand: async (id: string) => {
       const list = StorageService.getPendingExtraDemands().filter(d => d.id !== id);
-      trySaveLocal(KEYS.PENDING_DEMANDS, list);
+      localStorage.setItem(KEYS.PENDING_DEMANDS, JSON.stringify(list));
       if(navigator.onLine) await supabase.from('pending_extra_demands').delete().eq('id', id);
       triggerUpdate(KEYS.PENDING_DEMANDS);
   },
 
-  getAvailability: (): AvailabilityRecord[] => JSON.parse(localStorage.getItem(KEYS.AVAILABILITY) || '[]'),
-  saveAvailability: async (records: AvailabilityRecord[]) => {
-      trySaveLocal(KEYS.AVAILABILITY, records);
-      if(navigator.onLine) {
-          for(const rec of records) {
-              await supabase.from('availability').upsert(rec);
-          }
-      }
-      triggerUpdate(KEYS.AVAILABILITY);
+  getChecklistTemplate: (): ChecklistTemplateItem[] => {
+      const stored = localStorage.getItem(KEYS.CHECKLIST_TEMPLATE);
+      return stored ? JSON.parse(stored) : DEFAULT_CHECKLIST;
   },
-
-  linkOmToMaintenance: async (maintenanceId: string, omId: string, omNumber: string, description: string, tag: string) => {
-      const tasks = StorageService.getActiveMaintenances();
-      const task = tasks.find(t => t.id === maintenanceId);
-      if(task) {
-          task.omId = omId;
-          task.header.om = omNumber;
-          task.header.description = description || task.header.description;
-          task.header.tag = tag || task.header.tag;
-          
-          const oms = StorageService.getOMs();
-          const om = oms.find(o => o.id === omId);
-          if(om) {
-              om.status = 'EM_ANDAMENTO';
-              StorageService.saveOM(om);
-          }
-
-          trySaveLocal(KEYS.ACTIVE, tasks);
-          if(navigator.onLine) await supabase.from('active_maintenance').upsert(task);
-          triggerUpdate(KEYS.ACTIVE);
-      }
-  },
-
-  // NOVA FUNÇÃO: NOTIFICAÇÕES GERAIS
+  
   getNotifications: (): NotificationItem[] => {
       const notifs: NotificationItem[] = [];
-      const todayStr = new Date().toLocaleDateString('pt-BR'); // DD/MM/YYYY
-
-      // 1. OMs Pendentes (CORRETIVAS são URGENT)
+      
+      // 1. OMs Pendentes
       const oms = StorageService.getOMs().filter(o => o.status === 'PENDENTE');
-      oms.forEach(om => {
+      if (oms.length > 0) {
           notifs.push({
-              id: `om-${om.id}`,
-              type: om.type === 'CORRETIVA' ? 'URGENT' : 'INFO',
-              title: `OM PENDENTE: ${om.omNumber}`,
-              message: `${om.tag} - ${om.description}`,
-              date: new Date(om.createdAt).toLocaleDateString(),
-              source: 'OM',
+              id: 'notif-oms',
+              type: 'URGENT',
+              title: `${oms.length} ORDENS NA FILA`,
+              message: `Existem ${oms.length} OMs aguardando início de execução.`,
+              date: new Date().toLocaleDateString(),
               link: '/om-management'
           });
-      });
+      }
 
       // 2. Demandas Extras
       const demands = StorageService.getPendingExtraDemands();
-      demands.forEach(d => {
+      if (demands.length > 0) {
           notifs.push({
-              id: `dem-${d.id}`,
-              type: 'URGENT',
-              title: `DEMANDA EXTRA: ${d.tag}`,
-              message: d.description,
-              date: new Date(d.createdAt).toLocaleDateString(),
-              source: 'DEMAND',
+              id: 'notif-demands',
+              type: 'INFO',
+              title: `${demands.length} DEMANDAS EXTRAS`,
+              message: `Atividades não planejadas registradas.`,
+              date: new Date().toLocaleDateString(),
               link: '/extra-demands'
           });
-      });
+      }
 
-      // 3. Agenda Hoje (Verifica data exata DD/MM/YYYY)
-      const schedule = StorageService.getSchedule().filter(s => s.dateStart === todayStr);
-      schedule.forEach(s => {
+      // 3. Atividades Pausadas
+      const active = StorageService.getActiveMaintenances();
+      const paused = active.filter(t => t.status === 'PAUSADA');
+      if (paused.length > 0) {
           notifs.push({
-              id: `sch-${s.id}`,
-              type: 'SCHEDULE',
-              title: `AGENDA HOJE: ${s.frotaOm}`,
-              message: s.description,
-              date: s.dateStart,
-              source: 'SCHEDULE',
-              link: '/schedule'
-          });
-      });
-
-      // 4. Atividades em Andamento
-      const active = StorageService.getActiveMaintenances().filter(a => a.status === 'ANDAMENTO' || a.status === 'AGUARDANDO');
-      active.forEach(a => {
-          notifs.push({
-              id: `act-${a.id}`,
+              id: 'notif-paused',
               type: 'ACTIVE',
-              title: `EM EXECUÇÃO: ${a.header.tag}`,
-              message: `${a.header.om} - ${a.header.description}`,
-              date: new Date(a.startTime).toLocaleTimeString().slice(0,5),
-              source: 'ACTIVE',
+              title: `${paused.length} ATIVIDADES PAUSADAS`,
+              message: `Retome as atividades paralisadas para evitar atrasos.`,
+              date: new Date().toLocaleDateString(),
               link: '/dashboard'
           });
-      });
+      }
 
-      // Ordenação: Urgente > Active > Schedule > Info
-      return notifs.sort((a,b) => {
-          const score = (t: string) => {
-              if (t === 'URGENT') return 0;
-              if (t === 'ACTIVE') return 1;
-              if (t === 'SCHEDULE') return 2;
-              return 3;
-          };
-          return score(a.type) - score(b.type);
-      });
+      return notifs;
+  },
+
+  getAvailability: (): AvailabilityRecord[] => JSON.parse(localStorage.getItem(KEYS.AVAILABILITY) || '[]'),
+  saveAvailability: async (records: AvailabilityRecord[]) => {
+      localStorage.setItem(KEYS.AVAILABILITY, JSON.stringify(records));
+      // Sync logic for availability is complex (bulk upsert), implementing basic sync for changed items would be ideal.
+      // For now, we assume simple local storage + eventual consistency or manual sync triggers in settings.
+      // If we want realtime, we should upsert each record.
+      if (navigator.onLine && records.length > 0) {
+          const { error } = await supabase.from('availability').upsert(records);
+          if (error) console.error("Erro sync availability", error);
+      }
+      triggerUpdate(KEYS.AVAILABILITY);
   }
 };

@@ -73,33 +73,33 @@ export const AppHeader: React.FC = () => {
   return (
     <header className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 animate-fadeIn print:hidden relative z-40">
       <div className="flex items-center gap-4 w-full md:w-auto">
-        {/* Date */}
-        <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100 flex-1 md:flex-none">
-          <Calendar size={20} className="text-[#007e7a]" />
-          <span className="text-sm font-black text-gray-800 uppercase tracking-wide truncate">{formatDate(currentTime)}</span>
+        {/* Date - COR CHAMATIVA (Laranja/Vermelho) */}
+        <div className="flex items-center gap-3 bg-gradient-to-r from-orange-500 to-red-600 px-6 py-3 rounded-xl shadow-lg shadow-orange-200 flex-1 md:flex-none transform transition-transform hover:scale-105 ring-2 ring-orange-100">
+          <Calendar size={24} className="text-white" strokeWidth={2.5} />
+          <span className="text-base font-black text-white uppercase tracking-wider truncate drop-shadow-sm">{formatDate(currentTime)}</span>
         </div>
       </div>
       
       <div className="flex items-center gap-4 w-full md:w-auto justify-end">
-        {/* Weather */}
-        <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 text-blue-900 hidden md:flex">
+        {/* Weather - COR CHAMATIVA (Azul/Ciano) */}
+        <div className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-cyan-500 px-5 py-3 rounded-xl text-white shadow-lg shadow-blue-200 hidden md:flex transform transition-transform hover:scale-105 ring-2 ring-blue-100">
           {weather.temp !== null ? (
             <>
-              <Thermometer size={20} className="text-blue-600" />
-              <span className="text-sm font-black uppercase">{weather.temp}°C {weather.city && <span className="text-blue-600/70 ml-1 text-xs">EM {weather.city}</span>}</span>
+              <Thermometer size={22} className="text-white" strokeWidth={2.5} />
+              <span className="text-sm font-black uppercase drop-shadow-sm">{weather.temp}°C {weather.city && <span className="text-white/90 ml-1 text-xs font-bold opacity-90 border-l border-white/30 pl-2">EM {weather.city}</span>}</span>
             </>
           ) : (
-             <span className="text-xs font-bold text-blue-400 uppercase">{weatherError || 'Carregando clima...'}</span>
+             <span className="text-xs font-bold text-white/80 uppercase">{weatherError || 'Carregando clima...'}</span>
           )}
         </div>
         
         {/* Divider */}
-        <div className="w-px h-8 bg-gray-200 hidden md:block"></div>
+        <div className="w-px h-10 bg-gray-200 hidden md:block"></div>
         
-        {/* Time */}
-        <div className="hidden md:flex items-center gap-3 bg-gray-900 px-5 py-2 rounded-xl text-white shadow-lg shadow-gray-200 min-w-[140px] justify-center">
-          <Clock size={20} className="text-[#edb111]" />
-          <span className="font-mono text-xl font-black tracking-widest leading-none">
+        {/* Time - COR CHAMATIVA (Escuro/Neon) */}
+        <div className="hidden md:flex items-center gap-3 bg-gray-900 px-6 py-3 rounded-xl text-white shadow-xl shadow-gray-300 min-w-[160px] justify-center border-2 border-gray-800 transform transition-transform hover:scale-105">
+          <Clock size={22} className="text-[#edb111] animate-pulse" strokeWidth={2.5} />
+          <span className="font-mono text-2xl font-black tracking-widest leading-none text-[#edb111] drop-shadow-[0_0_5px_rgba(237,177,17,0.5)]">
             {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
         </div>

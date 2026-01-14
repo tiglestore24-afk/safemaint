@@ -163,4 +163,5 @@ export interface AvailabilityRecord {
   id: string;
   tag: string;
   statusMap: Record<string, AvailabilityStatus[]>;
+  manualOverrides?: Record<string, boolean>; // NOVO: Controla se o dia foi editado manualmente
 }

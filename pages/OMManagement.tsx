@@ -369,12 +369,6 @@ export const OMManagement: React.FC = () => {
                     className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold uppercase outline-none focus:border-blue-500 transition-all"
                 />
             </div>
-            <button 
-                onClick={() => handleOpenModal()}
-                className="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 shadow-lg transition-all active:scale-95"
-            >
-                <Plus size={16}/> INSERIR MANUAL
-            </button>
         </div>
       </div>
 

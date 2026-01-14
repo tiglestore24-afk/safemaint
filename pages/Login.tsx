@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Lock, User, Activity, Settings, Cog, Wifi, WifiOff, Database, UserPlus, CheckCircle, ArrowLeft } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { checkConnection } from '../services/supabase';
-import { Logo } from '../components/Logo';
+import { Cube3D } from '../components/Cube3D';
 import { User as UserType } from '../types';
 
 interface LoginProps {
@@ -192,7 +192,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         </div>
                     ) : (
                         <div className="scale-90 animate-fadeIn">
-                            <Logo size="md" showText={false} />
+                            <Cube3D size="md" />
                         </div>
                     )}
                 </div>

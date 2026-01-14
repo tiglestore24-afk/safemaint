@@ -9,6 +9,7 @@ import { ARTAtividade } from './pages/ARTAtividade';
 import { Checklist } from './pages/Checklist';
 import { Schedule } from './pages/Schedule';
 import { TVSchedule } from './pages/TVSchedule';
+import { TVSplitView } from './pages/TVSplitView'; // Importado
 import { Archive } from './pages/Archive';
 import { Trash } from './pages/Trash';
 import { Report } from './pages/Report';
@@ -19,26 +20,25 @@ import { StorageService } from './services/storage';
 import { SplashScreen } from './components/SplashScreen';
 import { AvailabilityBoard } from './pages/AvailabilityBoard';
 import { AppHeader } from './components/AppHeader';
-import { StandbyScreen } from './components/StandbyScreen'; // Importado
 
 // --- CONFIGURAÇÃO DE TEMPO DE ESPERA (MS) ---
-// 5 Minutos = 300000 ms
-const IDLE_TIMEOUT = 300000; 
+// 3 Minutos = 180000 ms (Conforme solicitado)
+const IDLE_TIMEOUT = 180000; 
 
 // --- COMPONENTE DE LAYOUT INTERNO ---
-// Separa a lógica de layout (Sidebar/Header) do roteamento principal
 const AppLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     
     // Identifica se é o modo TV para remover header/sidebar
-    const isTvMode = location.pathname === '/tv-schedule';
+    const isTvMode = location.pathname === '/tv-schedule' || location.pathname === '/tv-split';
 
     if (isTvMode) {
         return (
             <div className="h-screen w-full bg-slate-900 overflow-hidden">
                 <Routes>
                     <Route path="/tv-schedule" element={<TVSchedule />} />
+                    <Route path="/tv-split" element={<TVSplitView />} />
                 </Routes>
             </div>
         );
@@ -68,7 +68,6 @@ const AppLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                         <Route path="/checklist" element={<Checklist />} />
                         <Route path="/availability" element={<AvailabilityBoard />} />
                         <Route path="/schedule" element={<Schedule />} />
-                        {/* Route for TV Schedule exists but is handled by the conditional above if visited directly via URL */}
                         <Route path="/archive" element={<Archive />} />
                         <Route path="/trash" element={<Trash />} />
                         <Route path="/report" element={<Report />} />
@@ -87,7 +86,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
   
-  // Standby State
+  // Standby State (Agora ativa o modo TV Split)
   const [isIdle, setIsIdle] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -128,12 +127,13 @@ const App: React.FC = () => {
         StorageService.setupSubscriptions();
     }
     
+    // ATUALIZAÇÃO AUTOMÁTICA: 5 MINUTOS (300.000 ms)
     const syncInterval = setInterval(() => {
         if (navigator.onLine && localStorage.getItem('safemaint_auth') === 'true') {
-            console.log('SAFEMAINT: Sincronização Automática (10s)...');
+            console.log('SAFEMAINT: Sincronização Automática (5 min)...');
             StorageService.initialSync();
         }
-    }, 10000);
+    }, 300000);
 
     setIsLoading(false);
     
@@ -173,7 +173,8 @@ const App: React.FC = () => {
 
   return (
     <>
-        {isIdle && <StandbyScreen onWake={resetIdleTimer} />}
+        {/* Se ficar idle, mostra o TV Split como overlay */}
+        {isIdle && <TVSplitView onWake={resetIdleTimer} />}
         <HashRouter>
             <AppLayout onLogout={handleLogout} />
         </HashRouter>

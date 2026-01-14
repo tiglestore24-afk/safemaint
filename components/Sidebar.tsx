@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   AlertTriangle, FileText, CheckSquare, Calendar, Archive,
   Settings, Menu, LayoutDashboard, ChevronLeft, ChevronRight,
-  FileInput, BarChart2, LogOut, ClipboardList, Bell, X, Eraser, CheckCircle, Activity, Calendar as CalIcon, Info, Trash2
+  FileInput, BarChart2, LogOut, ClipboardList, Bell, X, Eraser, CheckCircle, Activity, Calendar as CalIcon, Info, Trash2, RefreshCw
 } from 'lucide-react';
 import { Cube3D } from './Cube3D';
 import { StorageService, NotificationItem } from '../services/storage';
@@ -149,6 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
   };
   
   const handleManualSync = async () => {
+      if (isSyncing) return;
       setIsSyncing(true);
       await StorageService.initialSync();
       await checkConnection();
@@ -212,14 +213,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
       `}>
         
         <div className="h-28 flex items-center justify-center p-3 border-b border-gray-800 relative shrink-0">
-            {/* NOTIFICATION BELL */}
+            {/* NOTIFICATION BELL - INCREASED SIZE */}
             <div className="absolute top-2 left-2 z-50" ref={dropdownRef}>
                 <button 
                     onClick={() => setShowNotifList(!showNotifList)}
                     className={`relative p-2 rounded-full transition-all hover:bg-gray-800 ${showNotifList ? 'text-[#007e7a] bg-gray-800' : 'text-gray-400'}`}
                     title="Notificações"
                 >
-                    <Bell size={18} className={hasUrgent ? 'animate-swing text-red-500' : ''} />
+                    {/* Alterado tamanho para 28 */}
+                    <Bell size={28} className={hasUrgent ? 'animate-swing text-red-500' : ''} />
                     {notifications.length > 0 && (
                         <span className={`absolute top-0 right-0 w-4 h-4 text-[9px] font-black flex items-center justify-center rounded-full border-2 border-[#111827] ${hasUrgent ? 'bg-red-600 text-white' : 'bg-[#007e7a] text-white'}`}>
                             {notifications.length > 9 ? '9+' : notifications.length}
@@ -229,7 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
 
                 {/* NOTIFICATION DROPDOWN (SIDEBAR VERSION) */}
                 {showNotifList && (
-                    <div className="absolute top-10 left-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden animate-fadeIn z-[60]">
+                    <div className="absolute top-12 left-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden animate-fadeIn z-[60]">
                         <div className="bg-gray-100 p-3 border-b border-gray-200 flex justify-between items-center text-gray-800">
                             <span className="font-black text-xs uppercase flex items-center gap-2">Central de Alertas</span>
                             <button onClick={() => setShowNotifList(false)}><X size={14} className="hover:text-red-500"/></button>
@@ -284,6 +286,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
         </nav>
 
         <div className="p-4 bg-gray-900 border-t border-gray-800 shrink-0 space-y-3">
+            {/* Sync Button (MANUAL UPDATE) */}
+            <button 
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className={`flex items-center gap-3 w-full text-gray-500 hover:text-white transition-colors group ${isCollapsed ? 'justify-center' : ''}`}
+                title="Sincronizar Dados Agora"
+            >
+                <div className="p-2 rounded-lg group-hover:bg-[#007e7a]/20 transition-colors">
+                    <RefreshCw size={18} className={isSyncing ? 'animate-spin text-[#007e7a]' : ''} />
+                </div>
+                {!isCollapsed && <span className="text-xs font-bold uppercase tracking-wider">Sincronizar</span>}
+            </button>
+
             {/* Clear Cache Button */}
             <button 
                 onClick={handleClearCache}
