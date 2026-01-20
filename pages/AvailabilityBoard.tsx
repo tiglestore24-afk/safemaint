@@ -1,44 +1,34 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { StorageService, KEYS } from '../services/storage';
+import React, { useState, useEffect } from 'react';
+import { StorageService } from '../services/storage';
 import { AvailabilityRecord, AvailabilityStatus } from '../types';
 import { BackButton } from '../components/BackButton';
-import { Plus, X, Activity, Save, Monitor, Calendar, RotateCcw, CheckCircle2, Trash2, Settings2, Minus, RefreshCw } from 'lucide-react';
+import { Plus, Save, Trash2, RefreshCw, CheckCircle2, AlertCircle, X, ChevronRight, ChevronLeft } from 'lucide-react';
 import { FeedbackModal } from '../components/FeedbackModal';
 
-const STATUS_CONFIG: Record<string, { label: string, color: string, bgColor: string, symbol: any }> = {
-    'SEM_FALHA': { label: 'SEM FALHAS', color: 'text-green-700', bgColor: 'bg-green-100', symbol: '●' },
+const STATUS_CONFIG: Record<AvailabilityStatus, { label: string, color: string, bgColor: string, symbol: string }> = {
+    'SEM_FALHA': { label: 'SEM FALHAS', color: 'text-green-600', bgColor: 'bg-green-100', symbol: '●' },
     'PREV': { label: 'PREVENTIVA', color: 'text-black', bgColor: 'bg-gray-200', symbol: '▲' },
-    'CORRETIVA': { label: 'CORRETIVA', color: 'text-red-700', bgColor: 'bg-red-100', symbol: '●' },
-    'DEMANDA_EXTRA': { label: 'DEMANDA', color: 'text-red-700', bgColor: 'bg-red-50', symbol: '▲' }, 
-    'INSPECAO': { label: 'INSPEÇÃO', color: 'text-purple-700', bgColor: 'bg-purple-100', symbol: '●' }, 
-    'PR': { label: 'PARADA REL.', color: 'text-orange-700', bgColor: 'bg-orange-100', symbol: 'PR' },
-    'MOTOR': { label: 'MOTOR', color: 'text-gray-800', bgColor: 'bg-gray-200', symbol: 'M' },
-    'LB': { label: 'LUBRIF.', color: 'text-teal-800', bgColor: 'bg-teal-200', symbol: 'LB' },
-    'PNEUS': { label: 'PNEUS', color: 'text-blue-900', bgColor: 'bg-blue-300', symbol: 'P' },
-    'META': { label: 'META', color: 'text-yellow-700', bgColor: 'bg-yellow-100', symbol: '★' },
+    'CORRETIVA': { label: 'CORRETIVA', color: 'text-red-600', bgColor: 'bg-red-100', symbol: '●' },
+    'DEMANDA_EXTRA': { label: 'DEMANDA', color: 'text-orange-600', bgColor: 'bg-orange-100', symbol: '▲' }, 
+    'INSPECAO': { label: 'INSPEÇÃO', color: 'text-purple-600', bgColor: 'bg-purple-100', symbol: 'I' }, 
+    'PR': { label: 'PARADA REL.', color: 'text-blue-700', bgColor: 'bg-blue-100', symbol: 'PR' },
+    'MOTOR': { label: 'MOTOR', color: 'text-gray-800', bgColor: 'bg-gray-300', symbol: 'M' },
+    'LB': { label: 'LUBRIF.', color: 'text-teal-700', bgColor: 'bg-teal-100', symbol: 'LB' },
+    'PNEUS': { label: 'PNEUS', color: 'text-indigo-700', bgColor: 'bg-indigo-100', symbol: 'P' },
+    'META': { label: 'META', color: 'text-yellow-600', bgColor: 'bg-yellow-100', symbol: '★' },
 };
 
-interface AvailabilityBoardProps {
-    variant?: 'DEFAULT' | 'TV' | 'SPLIT';
-}
-
-export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 'DEFAULT' }) => {
+export const AvailabilityBoard: React.FC = () => {
   const [records, setRecords] = useState<AvailabilityRecord[]>([]);
-  const [editingCell, setEditingCell] = useState<{tag: string, dateKey: string} | null>(null);
-  const [tempStatuses, setTempStatuses] = useState<AvailabilityStatus[]>([]);
-  const [tempCounts, setTempCounts] = useState<Record<string, number>>({});
-  
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [daysInMonth, setDaysInMonth] = useState<Date[]>([]);
-  const [isTvMode, setIsTvMode] = useState(false);
-
-  // Feedback states
+  
+  // UI States
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-
-  const mode = variant !== 'DEFAULT' ? variant : (isTvMode ? 'TV' : 'DEFAULT');
+  const [menuOpen, setMenuOpen] = useState<{ recId: string, date: string } | null>(null);
 
   useEffect(() => {
     const date = new Date(selectedYear, selectedMonth, 1);
@@ -51,88 +41,86 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
     loadData(true);
   }, [selectedMonth, selectedYear]);
 
-  // Normalização de Tag
-  const normalizeTagFormat = (tag: string): string => {
-      if (!tag) return '';
-      const upper = tag.toUpperCase().trim();
-      const match = upper.match(/CA[- ]*0*(\d+)/);
-      if (match) return `CA${match[1]}`;
-      return upper.replace(/[^A-Z0-9]/g, '');
-  };
-
   const loadData = async (fetchServer = false) => {
-      let recs: AvailabilityRecord[] = [];
+      let recs = fetchServer ? await StorageService.fetchAvailability() : StorageService.getAvailability();
       
-      if (fetchServer) {
-          setIsProcessing(true);
-          recs = await StorageService.fetchAvailability();
-          setIsProcessing(false);
-      } else {
-          recs = StorageService.getAvailability();
-      }
-
-      // FILTRO: Apenas equipamentos que começam com CA5
-      const filteredRecs = recs.filter(r => r.tag.startsWith('CA5'));
-
-      // Ordenar por TAG
-      setRecords(filteredRecs.sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true })));
+      // REGRA: SOMENTE EQUIPAMENTOS CA5
+      const filtered = recs.filter(r => r.tag.toUpperCase().startsWith('CA5'));
+      
+      // GARANTE UNICIDADE
+      const unique = filtered.reduce((acc: AvailabilityRecord[], current) => {
+          if (!acc.find(item => item.tag === current.tag)) acc.push(current);
+          return acc;
+      }, []);
+      
+      setRecords(unique.sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true })));
   };
 
-  const normalizeDateKey = (input: Date): string => input.toLocaleDateString('pt-BR');
-
-  // Lógica de cálculo automático baseada em Schedule e History
-  const getSystemEventsForCell = (tag: string, dateKey: string): { statuses: AvailabilityStatus[], counts: Record<string, number> } => {
-      const schedule = StorageService.getSchedule();
-      const history = StorageService.getHistory();
-      const activeTasks = StorageService.getActiveMaintenances();
-      const systemStatuses: Set<AvailabilityStatus> = new Set();
-      const counts: Record<string, number> = {};
-
-      const cleanTag = normalizeTagFormat(tag);
-
-      // 1. Check Schedule (Preventivas)
-      schedule.forEach(item => {
-          if (normalizeTagFormat(item.frotaOm) === cleanTag && item.dateStart === dateKey) {
-              const desc = (item.description || '').toUpperCase();
-              let matched = false;
-              if (desc.includes('PNEU')) { systemStatuses.add('PNEUS'); matched = true; }
-              if (desc.includes('MOTOR')) { systemStatuses.add('MOTOR'); matched = true; }
-              if (desc.includes('INSPE') || desc.includes('CHECK')) { systemStatuses.add('INSPECAO'); matched = true; }
-              if (desc.includes('LUBRI')) { systemStatuses.add('LB'); matched = true; }
-              if (!matched || desc.includes('PREV')) systemStatuses.add('PREV');
-          }
-      });
-
-      // 2. Check History/Active (Corretivas/Demandas)
-      [...history, ...activeTasks].forEach((task: any) => {
-          const tTag = normalizeTagFormat(task.tag || task.header?.tag || '');
-          const dateRef = task.endTime || task.startTime;
-          if (!dateRef) return;
-          const taskDate = new Date(dateRef).toLocaleDateString('pt-BR');
-          
-          if (taskDate === dateKey && tTag === cleanTag) {
-              const origin = task.origin || task.type;
-              if (origin === 'CORRETIVA' || origin === 'ART_EMERGENCIAL') {
-                  systemStatuses.add('CORRETIVA');
-                  counts['CORRETIVA'] = (counts['CORRETIVA'] || 0) + 1;
-              }
-              if (origin === 'DEMANDA_EXTRA') {
-                  systemStatuses.add('DEMANDA_EXTRA');
-              }
-          }
-      });
+  const addRow = () => {
+      const input = prompt("DIGITE O TAG DO EQUIPAMENTO (Deve iniciar com CA5...):");
+      if (!input) return;
       
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const [d, m, y] = dateKey.split('/').map(Number);
-      const cellDate = new Date(y, m-1, d);
-
-      // Se não tem evento e a data já passou, assume Sem Falha (Verde)
-      if (systemStatuses.size === 0 && cellDate <= today) {
-          systemStatuses.add('SEM_FALHA');
+      const tagInput = input.toUpperCase().trim();
+      
+      if (!tagInput.startsWith('CA5')) {
+          alert("⛔ ERRO: Apenas equipamentos da série CA5 são permitidos neste quadro.");
+          return;
       }
 
-      return { statuses: Array.from(systemStatuses), counts };
+      if (records.some(r => r.tag === tagInput)) {
+          alert(`⛔ EQUIPAMENTO DUPLICADO: ${tagInput} já existe.`);
+          return;
+      }
+
+      const newRec: AvailabilityRecord = { 
+          id: crypto.randomUUID(), 
+          tag: tagInput, 
+          statusMap: {}, 
+          manualOverrides: {}, 
+          statusCounts: {} 
+      };
+      
+      setRecords(prev => [...prev, newRec].sort((a,b) => a.tag.localeCompare(b.tag, undefined, { numeric: true })));
+  };
+
+  const handleStatusToggle = (recId: string, dateStr: string, status: AvailabilityStatus) => {
+      setRecords(prev => prev.map(rec => {
+          if (rec.id !== recId) return rec;
+          
+          const currentDayStatuses = rec.statusMap[dateStr] || [];
+          let newStatuses = [...currentDayStatuses];
+
+          // REGRA DE EXCLUSÃO MÚTUA: SEM FALHA vs CORRETIVA
+          if (status === 'SEM_FALHA') {
+              // Se adicionar Sem Falha, remove todas as Corretivas
+              if (newStatuses.includes('SEM_FALHA')) {
+                  newStatuses = newStatuses.filter(s => s !== 'SEM_FALHA');
+              } else {
+                  newStatuses = ['SEM_FALHA']; // Exclui todo o resto para garantir pureza
+              }
+          } else if (status === 'CORRETIVA') {
+              // Se adicionar Corretiva, remove Sem Falha
+              newStatuses = newStatuses.filter(s => s !== 'SEM_FALHA');
+              newStatuses.push('CORRETIVA'); // Adiciona (permite múltiplas)
+          } else {
+              // Outros status apenas alternam
+              if (newStatuses.includes(status)) {
+                  newStatuses = newStatuses.filter(s => s !== status);
+              } else {
+                  newStatuses.push(status);
+              }
+          }
+
+          return {
+              ...rec,
+              statusMap: { ...rec.statusMap, [dateStr]: newStatuses }
+          };
+      }));
+  };
+
+  const clearDay = (recId: string, dateStr: string) => {
+      setRecords(prev => prev.map(rec => rec.id === recId ? { ...rec, statusMap: { ...rec.statusMap, [dateStr]: [] } } : rec));
+      setMenuOpen(null);
   };
 
   const handleSaveTable = async () => {
@@ -146,279 +134,116 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
         setIsProcessing(false);
         alert(`FALHA AO SALVAR: ${e.message}`);
     }
-  }
-
-  const openModal = (record: AvailabilityRecord, dateKey: string) => {
-      setEditingCell({ tag: record.tag, dateKey });
-      // Se já tiver override manual, usa. Senão, calcula sistema.
-      if (record.manualOverrides?.[dateKey]) {
-          setTempStatuses([...(record.statusMap[dateKey] || [])]);
-          setTempCounts({ ...(record.statusCounts?.[dateKey] || {}) });
-      } else {
-          const sys = getSystemEventsForCell(record.tag, dateKey);
-          setTempStatuses(sys.statuses);
-          setTempCounts(sys.counts);
-      }
   };
-
-  const updateCount = (status: string, delta: number) => {
-      setTempCounts(prev => ({ ...prev, [status]: Math.max(1, (prev[status] || 1) + delta) }));
-  };
-
-  const saveManual = () => {
-      if(!editingCell) return;
-      const updated = records.map(r => {
-          if (r.tag === editingCell.tag) {
-              const newR = { ...r };
-              newR.statusMap[editingCell.dateKey] = tempStatuses;
-              if (!newR.statusCounts) newR.statusCounts = {};
-              newR.statusCounts[editingCell.dateKey] = tempCounts;
-              
-              if (!newR.manualOverrides) newR.manualOverrides = {};
-              newR.manualOverrides[editingCell.dateKey] = true;
-              
-              return newR;
-          }
-          return r;
-      });
-      setRecords(updated);
-      setEditingCell(null);
-  };
-
-  const resetCell = () => {
-      if(!editingCell) return;
-      const updated = records.map(r => {
-          if (r.tag === editingCell.tag) {
-              const newR = { ...r };
-              if (newR.manualOverrides) delete newR.manualOverrides[editingCell.dateKey];
-              const sys = getSystemEventsForCell(r.tag, editingCell.dateKey);
-              newR.statusMap[editingCell.dateKey] = sys.statuses;
-              if (!newR.statusCounts) newR.statusCounts = {};
-              newR.statusCounts[editingCell.dateKey] = sys.counts;
-              return newR;
-          }
-          return r;
-      });
-      setRecords(updated);
-      setEditingCell(null);
-  };
-
-  const addRow = () => {
-      const tagInput = prompt("DIGITE O TAG (Ex: CA5302):")?.toUpperCase();
-      if (!tagInput) return;
-      const cleanTag = normalizeTagFormat(tagInput);
-      
-      // VALIDAÇÃO ESTRITA: Apenas CA5...
-      if (!cleanTag.startsWith('CA5')) {
-          alert("RESTRIÇÃO DE FROTA: Apenas equipamentos iniciados com 'CA5' podem ser adicionados a este indicador.");
-          return;
-      }
-
-      if (records.some(r => r.tag === cleanTag)) { alert("Equipamento já existe."); return; }
-      const newRec: AvailabilityRecord = { id: crypto.randomUUID(), tag: cleanTag, statusMap: {}, manualOverrides: {}, statusCounts: {} };
-      const updated = [...records, newRec].sort((a,b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
-      setRecords(updated);
-  };
-
-  const deleteRow = (id: string) => {
-      if (!window.confirm("Excluir equipamento do quadro?")) return;
-      setRecords(records.filter(r => r.id !== id));
-  };
-
-  const renderCell = (record: AvailabilityRecord, dateKey: string) => {
-      // Prioridade: Manual > Sistema
-      let statuses = record.statusMap[dateKey];
-      let counts = record.statusCounts?.[dateKey];
-
-      if (!record.manualOverrides?.[dateKey]) {
-          const sys = getSystemEventsForCell(record.tag, dateKey);
-          statuses = sys.statuses;
-          counts = sys.counts;
-      }
-
-      statuses = statuses || [];
-      counts = counts || {};
-
-      const isSplit = mode === 'SPLIT';
-      
-      const cellClass = isSplit ? 'min-w-[30px] h-9 text-[8px]' : 'min-w-[42px] h-8 text-[10px]';
-      const iconSize = isSplit ? 'text-[8px]' : 'text-[10px]';
-
-      return (
-          <td 
-            key={dateKey} 
-            onClick={() => openModal(record, dateKey)}
-            className={`p-0 border border-gray-400 bg-gray-50 hover:bg-white text-center cursor-pointer relative transition-colors ${cellClass}`}
-          >
-              <div className="flex flex-wrap items-center justify-center gap-0.5 w-full h-full content-center">
-                  {statuses.map((s, idx) => {
-                      const conf = STATUS_CONFIG[s];
-                      if (!conf) return null;
-                      const count = counts[s] || 1;
-                      
-                      // Renderiza Múltiplos símbolos se count > 1
-                      const renderCount = Math.min(count, 3); // Max 3 visuais
-                      
-                      return Array.from({ length: renderCount }).map((_, i) => (
-                          <span key={`${s}-${idx}-${i}`} className={`${conf.color} ${iconSize} font-black leading-none`}>{conf.symbol}</span>
-                      ));
-                  })}
-              </div>
-          </td>
-      );
-  };
-
-  if (mode === 'TV' || mode === 'SPLIT') {
-      return (
-          <div className="bg-white h-full w-full flex flex-col overflow-hidden text-gray-800 font-sans animate-fadeIn">
-              <div className="bg-[#007e7a] p-3 flex justify-between items-center shrink-0">
-                  <div className="flex items-center gap-3">
-                      <h2 className="font-black uppercase text-white leading-none text-xl tracking-widest">DIAS OPERANDO SEM CORRETIVA APÓS PREVENTIVA</h2>
-                  </div>
-                  {mode === 'TV' && <button onClick={() => setIsTvMode(false)} className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"><X size={18}/></button>}
-              </div>
-              <div className="flex-1 overflow-auto custom-scrollbar p-2">
-                  <table className="w-full border-collapse border border-gray-500">
-                      <thead className="sticky top-0 z-20 bg-[#007e7a] text-white shadow-md">
-                          <tr>
-                              <th className="p-2 border border-gray-500 sticky left-0 z-30 bg-[#007e7a] font-black uppercase text-xs min-w-[120px]">Equipamento</th>
-                              {daysInMonth.map(d => <th key={d.getTime()} className="p-1 border border-gray-500 font-black text-center text-xs min-w-[30px]">{d.getDate()}</th>)}
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {records.map((r, idx) => (
-                              <tr key={r.id} className="bg-gray-100">
-                                  <td className="p-2 border border-gray-500 font-black text-gray-800 sticky left-0 z-10 bg-gray-200 text-sm">{r.tag}</td>
-                                  {daysInMonth.map(d => renderCell(r, normalizeDateKey(d)))}
-                              </tr>
-                          ))}
-                      </tbody>
-                  </table>
-              </div>
-          </div>
-      );
-  }
 
   return (
-    <div className="w-full animate-fadeIn h-[calc(100vh-90px)] flex flex-col bg-gray-100 md:pr-2">
-      <FeedbackModal 
-        isOpen={isProcessing || isSuccess} 
-        isSuccess={isSuccess} 
-        loadingText="SALVANDO..." 
-        successText="QUADRO ATUALIZADO!"
-      />
-
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200 gap-2 shrink-0">
-        <div className="flex items-center gap-3">
-          <BackButton className="!py-1 !px-3" />
-          <h2 className="text-base font-black text-gray-800 uppercase tracking-tighter">DIAS OPERANDO SEM CORRETIVA</h2>
+    <div className="w-full animate-fadeIn h-[calc(100vh-90px)] flex flex-col bg-gray-50 p-4">
+      <FeedbackModal isOpen={isProcessing || isSuccess} isSuccess={isSuccess} />
+      
+      <div className="flex justify-between items-center mb-4 bg-white px-5 py-3 rounded-2xl shadow-sm border border-gray-200">
+        <div className="flex items-center gap-4">
+          <BackButton />
+          <div>
+              <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter leading-none">Indicadores de Disponibilidade</h2>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Série CA5 - Gestão à Vista</p>
+          </div>
         </div>
-        
-        <div className="flex flex-wrap items-center gap-2">
-            <div className="bg-gray-50 p-1 rounded-lg border flex items-center shadow-inner">
-                <button onClick={() => { if(selectedMonth===0) { setSelectedMonth(11); setSelectedYear(y=>y-1) } else setSelectedMonth(m=>m-1) }} className="p-1 hover:bg-white rounded transition-all text-gray-400 hover:text-[#007e7a]"><Calendar size={16} className="rotate-180"/></button>
-                <span className="px-3 text-[10px] font-black uppercase w-32 text-center text-gray-700">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span>
-                <button onClick={() => { if(selectedMonth===11) { setSelectedMonth(0); setSelectedYear(y=>y+1) } else setSelectedMonth(m=>m+1) }} className="p-1 hover:bg-white rounded transition-all text-gray-400 hover:text-[#007e7a]"><Calendar size={16}/></button>
+        <div className="flex gap-2">
+            <div className="flex items-center bg-gray-100 rounded-xl p-1 border border-gray-200 mr-2">
+                <button onClick={() => setSelectedMonth(m => m === 0 ? 11 : m - 1)} className="p-1.5 hover:bg-white rounded-lg transition-all"><ChevronLeft size={16}/></button>
+                <span className="px-4 text-[10px] font-black uppercase w-28 text-center">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span>
+                <button onClick={() => setSelectedMonth(m => m === 11 ? 0 : m + 1)} className="p-1.5 hover:bg-white rounded-lg transition-all"><ChevronRight size={16}/></button>
             </div>
-            <button onClick={() => loadData(true)} className="flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg font-black text-[9px] uppercase shadow-sm"><RefreshCw size={14}/> Atualizar</button>
-            <button onClick={handleSaveTable} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg font-black text-[9px] uppercase shadow"><Save size={14}/> Salvar</button>
-            <button onClick={addRow} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-1.5 rounded-lg font-black text-[9px] uppercase shadow-sm"><Plus size={14}/> Add Tag</button>
-            <button onClick={() => setIsTvMode(true)} className="flex items-center gap-1 bg-gray-800 text-white px-3 py-1.5 rounded-lg font-black text-[9px] uppercase shadow"><Monitor size={14}/> TV</button>
+            <button onClick={() => loadData(true)} className="flex items-center gap-1 bg-gray-100 text-gray-600 px-4 py-2 rounded-xl font-black text-[10px] uppercase hover:bg-gray-200 transition-all"><RefreshCw size={14}/> Sincronizar</button>
+            <button onClick={addRow} className="flex items-center gap-1 bg-[#007e7a] text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 transition-all"><Plus size={14}/> Novo Tag CA5</button>
+            <button onClick={handleSaveTable} className="flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 transition-all"><Save size={14}/> Salvar Quadro</button>
         </div>
       </div>
 
-      {/* QUADRO (ESTILO FOTO) */}
-      <div className="bg-white rounded-xl shadow-lg border-4 border-gray-300 overflow-hidden flex-1 flex flex-col relative p-2">
-          {/* FAIXA VERDE SUPERIOR */}
-          <div className="bg-[#007e7a] text-white text-center py-2 font-black uppercase text-sm tracking-widest shadow-md mb-2 rounded-t-lg">
-              DIAS OPERANDO SEM CORRETIVA APÓS PREVENTIVA (FROTA CA5)
+      <div className="bg-white rounded-2xl shadow-xl border-4 border-gray-200 overflow-hidden flex-1 flex flex-col relative p-2">
+          <div className="bg-[#007e7a] text-white text-center py-2.5 font-black uppercase text-xs rounded-t-xl tracking-[0.2em] shadow-inner mb-2">
+              DISPONIBILIDADE OPERACIONAL - EQUIPAMENTOS CA5
           </div>
-
+          
           <div className="flex-1 overflow-auto custom-scrollbar">
-              <table className="w-full border-collapse border-2 border-gray-400">
-                  <thead className="sticky top-0 z-20 bg-[#007e7a] text-white shadow-md">
-                      <tr>
-                          <th className="p-2 border border-gray-400 sticky left-0 z-30 bg-[#007e7a] font-black uppercase text-xs min-w-[120px] text-left">Equipamento</th>
+              <table className="w-full border-collapse">
+                  <thead className="sticky top-0 z-30 bg-[#007e7a] text-white">
+                      <tr className="divide-x divide-white/20">
+                          <th className="p-2 border-b border-white/20 sticky left-0 z-40 bg-[#007e7a] font-black uppercase text-[10px] min-w-[140px] text-left shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Equipamento</th>
                           {daysInMonth.map(d => (
-                              <th key={d.getTime()} className="p-1 border border-gray-400 font-black text-center text-xs min-w-[35px]">
-                                  {d.getDate()}
-                              </th>
+                              <th key={d.getTime()} className="p-1 border-b border-white/20 font-black text-center text-[10px] min-w-[38px]">{d.getDate()}</th>
                           ))}
                       </tr>
                   </thead>
-                  <tbody>
-                      {records.map((r, rIdx) => (
-                          <tr key={r.id} className="bg-gray-100 hover:bg-blue-50 transition-colors">
-                              <td className="p-2 border border-gray-400 font-black text-gray-800 sticky left-0 z-10 bg-gray-300 text-sm flex justify-between items-center group">
+                  <tbody className="divide-y divide-gray-100">
+                      {records.map(r => (
+                          <tr key={r.id} className="hover:bg-teal-50/30 transition-colors group">
+                              <td className="p-2 sticky left-0 z-20 bg-gray-100 font-black text-gray-700 text-xs flex justify-between items-center shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                                   {r.tag}
-                                  <button onClick={(e) => { e.stopPropagation(); deleteRow(r.id); }} className="opacity-0 group-hover:opacity-100 text-red-500"><Trash2 size={12}/></button>
+                                  <button onClick={() => { if(confirm(`Remover ${r.tag}?`)) setRecords(records.filter(item => item.id !== r.id)) }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-1"><Trash2 size={12}/></button>
                               </td>
-                              {daysInMonth.map(d => renderCell(r, normalizeDateKey(d)))}
+                              {daysInMonth.map(d => {
+                                  const dateStr = d.toLocaleDateString('pt-BR');
+                                  const statuses = r.statusMap[dateStr] || [];
+                                  return (
+                                    <td 
+                                        key={dateStr} 
+                                        onClick={() => setMenuOpen({ recId: r.id, date: dateStr })}
+                                        className="p-0.5 border-x border-gray-100 bg-white h-11 text-center cursor-pointer hover:bg-blue-50 transition-all relative"
+                                    >
+                                        <div className="flex flex-wrap items-center justify-center gap-0.5 overflow-hidden max-h-full">
+                                            {statuses.map((st, idx) => (
+                                                <span key={idx} className={`${STATUS_CONFIG[st].color} font-black text-xs leading-none`} title={STATUS_CONFIG[st].label}>
+                                                    {STATUS_CONFIG[st].symbol}
+                                                </span>
+                                            ))}
+                                            {statuses.filter(s => s === 'CORRETIVA').length > 1 && (
+                                                <span className="text-[8px] bg-red-600 text-white px-1 rounded-full font-black absolute top-0.5 right-0.5">
+                                                    {statuses.filter(s => s === 'CORRETIVA').length}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+                                  );
+                              })}
                           </tr>
                       ))}
                   </tbody>
               </table>
           </div>
-          
-          {/* LEGENDA FOTO-REALISTA */}
-          <div className="mt-2 bg-gray-200 p-2 rounded-lg border border-gray-300 flex flex-wrap justify-center gap-4 text-[10px] font-black uppercase text-gray-700">
-              <span className="flex items-center gap-1"><span className="text-black text-xs">▲</span> PREV.</span>
-              <span className="flex items-center gap-1"><span className="text-red-700 text-xs">●</span> CORRETIVA</span>
-              <span className="flex items-center gap-1"><span className="text-green-700 text-xs">●</span> SEM FALHA</span>
-              <span className="flex items-center gap-1"><span className="text-yellow-600 text-xs">★</span> META APÓS CORR.</span>
-              <span className="flex items-center gap-1"><span className="text-red-700 text-xs">▲</span> DEMANDA EXTRA</span>
-              <span className="flex items-center gap-1">PR - PARADA REL.</span>
-              <span className="flex items-center gap-1">LS - LUB. SEMANAL</span>
-              <span className="flex items-center gap-1">P - PNEUS</span>
-          </div>
       </div>
 
-      {editingCell && (
-          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border-t-8 border-[#007e7a]">
-                  <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-                      <h3 className="font-black text-lg text-gray-800 uppercase">{editingCell.tag} - {editingCell.dateKey}</h3>
-                      <button onClick={() => setEditingCell(null)}><X size={24}/></button>
+      {/* POPUP SELETOR DE STATUS */}
+      {menuOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn" onClick={() => setMenuOpen(null)}>
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200" onClick={e => e.stopPropagation()}>
+                  <div className="bg-gray-50 px-6 py-4 border-b flex justify-between items-center">
+                      <div>
+                          <h4 className="font-black text-gray-800 text-sm uppercase">Editar Status</h4>
+                          <p className="text-[10px] font-bold text-[#007e7a] uppercase tracking-widest">{menuOpen.date}</p>
+                      </div>
+                      <button onClick={() => setMenuOpen(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-xl transition-all"><X size={20}/></button>
                   </div>
-                  
-                  <div className="p-6 grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
-                      {Object.entries(STATUS_CONFIG).map(([key, conf]) => {
-                          const isSelected = tempStatuses.includes(key as AvailabilityStatus);
-                          return (
-                            <div key={key} className="space-y-1">
-                                <button 
-                                    onClick={() => {
-                                        setTempStatuses(prev => {
-                                            if (['SEM_FALHA', 'CORRETIVA'].includes(key)) {
-                                                return isSelected && prev.length === 1 ? [] : [key as AvailabilityStatus];
-                                            }
-                                            let newS = prev.filter(s => !['SEM_FALHA', 'CORRETIVA'].includes(s));
-                                            if (newS.includes(key as AvailabilityStatus)) newS = newS.filter(s => s !== key);
-                                            else newS.push(key as AvailabilityStatus);
-                                            return newS;
-                                        });
-                                    }}
-                                    className={`w-full flex items-center gap-2 p-3 rounded-xl border-2 transition-all ${isSelected ? 'border-[#007e7a] bg-teal-50' : 'border-gray-200 bg-white'}`}
-                                >
-                                    <span className={`${conf.color} font-black text-lg`}>{conf.symbol}</span>
-                                    <span className="text-xs font-black uppercase text-gray-600">{conf.label}</span>
-                                </button>
-                                {isSelected && key === 'CORRETIVA' && (
-                                    <div className="flex justify-center gap-2 items-center bg-red-50 p-1 rounded">
-                                        <button onClick={() => updateCount('CORRETIVA', -1)}><Minus size={14}/></button>
-                                        <span className="font-bold">{tempCounts['CORRETIVA'] || 1}</span>
-                                        <button onClick={() => updateCount('CORRETIVA', 1)}><Plus size={14}/></button>
-                                    </div>
-                                )}
-                            </div>
-                          );
-                      })}
+                  <div className="p-4 grid grid-cols-2 gap-2">
+                      {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                          <button 
+                            key={key}
+                            onClick={() => handleStatusToggle(menuOpen.recId, menuOpen.date, key as AvailabilityStatus)}
+                            className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all group ${records.find(rec => rec.id === menuOpen.recId)?.statusMap[menuOpen.date]?.includes(key as any) ? 'bg-teal-50 border-[#007e7a]' : 'border-gray-100 hover:border-teal-200 bg-white'}`}
+                          >
+                              <span className={`${cfg.color} text-xl font-black shrink-0`}>{cfg.symbol}</span>
+                              <span className="text-[10px] font-black text-gray-700 uppercase leading-none">{cfg.label}</span>
+                          </button>
+                      ))}
+                      <button 
+                        onClick={() => clearDay(menuOpen.recId, menuOpen.date)}
+                        className="col-span-2 mt-2 p-3 bg-red-50 text-red-600 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-red-100 transition-all border-2 border-red-100"
+                      >
+                          <Trash2 size={14}/> Limpar Dia
+                      </button>
                   </div>
-
-                  <div className="p-4 border-t flex gap-2">
-                      <button onClick={saveManual} className="flex-1 py-3 bg-[#007e7a] text-white rounded-xl font-black uppercase">Salvar</button>
-                      <button onClick={resetCell} className="flex-1 py-3 bg-gray-200 text-gray-600 rounded-xl font-black uppercase">Auto Sistema</button>
+                  <div className="p-4 bg-gray-50 border-t flex gap-2">
+                      <button onClick={() => setMenuOpen(null)} className="flex-1 bg-[#007e7a] text-white py-3 rounded-2xl font-black text-xs uppercase shadow-lg active:scale-95 transition-all">Concluir</button>
                   </div>
               </div>
           </div>

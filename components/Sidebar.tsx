@@ -46,7 +46,7 @@ const SidebarLink: React.FC<{
             {icon}
           </div>
           {!isCollapsed && (
-            <span className="text-xs uppercase tracking-wider animate-fadeIn">
+            <span className="text-[10px] font-black uppercase tracking-wider animate-fadeIn">
               {label}
             </span>
           )}
@@ -147,17 +147,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
       { path: '/indicators', label: 'Indicadores', icon: <BarChart2 size={20} /> },
     ]},
     { title: "PLANEJAMENTO", items: [
-      { path: '/schedule', label: 'Agenda', icon: <Calendar size={20} /> },
+      { path: '/schedule', label: 'Agenda Semanal', icon: <Calendar size={20} /> },
       { path: '/om-management', label: 'Ordens (OM)', icon: <FileInput size={20} /> },
       { path: '/extra-demands', label: 'Demandas Extras', icon: <ClipboardList size={20} /> },
     ]},
-    { title: "EXECUÇÃO", items: [
-      { path: '/art-emergencial', label: 'ART Emerg.', icon: <AlertTriangle size={20} /> },
-      { path: '/art-atividade', label: 'ART Padrão', icon: <FileText size={20} /> },
-      { path: '/checklist', label: 'Checklist', icon: <CheckSquare size={20} /> },
+    { title: "EXECUÇÃO SEGURA", items: [
+      { path: '/art-emergencial', label: 'ART EMERGENCIAL', icon: <AlertTriangle size={20} /> },
+      { path: '/art-atividade', label: 'ART DA ATIVIDADE', icon: <FileText size={20} /> },
+      { path: '/checklist', label: 'Checklist de Campo', icon: <CheckSquare size={20} /> },
     ]},
     { title: "SISTEMA", items: [
-      { path: '/archive', label: 'Arquivo', icon: <Archive size={20} /> },
+      { path: '/archive', label: 'Arquivo Digital', icon: <Archive size={20} /> },
       { path: '/trash', label: 'Lixeira', icon: <Trash2 size={20} /> },
       { path: '/settings', label: 'Configurações', icon: <Settings size={20} /> },
     ]}
@@ -220,7 +220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, onLogout }) =>
         <nav className="flex-1 overflow-y-auto py-4 space-y-2 custom-scrollbar px-3">
             {sections.map((section) => (
                 <div key={section.title} className="space-y-1">
-                    {!isCollapsed && <h3 className="px-4 text-[10px] font-black text-gray-600 uppercase tracking-widest mb-2 mt-4 animate-fadeIn">{section.title}</h3>}
+                    {!isCollapsed && <h3 className="px-4 text-[9px] font-black text-gray-600 uppercase tracking-widest mb-2 mt-4 animate-fadeIn">{section.title}</h3>}
                     {section.items.map((item) => (
                         <SidebarLink key={item.path} to={item.path} label={item.label} icon={item.icon} isCollapsed={isCollapsed} onClick={() => { if(window.innerWidth < 768) toggle(); }} />
                     ))}
