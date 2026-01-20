@@ -7,7 +7,9 @@ import {
   Clock, AlertOctagon, PauseCircle, 
   StopCircle, X, Activity, 
   ShieldCheck, WifiOff, Wrench, PlayCircle, Timer, Lock, 
-  FileText, Zap, MoreHorizontal, Droplets, Flame, Search, CheckSquare, ExternalLink, BookOpen, Loader2, Info, Download, PenTool, Users, MapPin, AlertCircle, FileCheck, ShieldAlert, ClipboardList
+  FileText, Zap, MoreHorizontal, Droplets, Flame, Search, CheckSquare, ExternalLink, BookOpen, Loader2, Info, Download, PenTool, Users, MapPin, AlertCircle, FileCheck, ShieldAlert, ClipboardList, CheckCircle,
+  // Fix: Added ChevronRight to lucide-react imports
+  ChevronRight
 } from 'lucide-react';
 import { checkConnection } from '../services/supabase';
 
@@ -146,6 +148,26 @@ export const Dashboard: React.FC = () => {
       else setClosingTask(task);
   };
 
+  const handleQuickClose = (status: 'FINALIZADO' | 'PARCIAL') => {
+    if (!closingTask) return;
+    
+    const reportData = {
+        om: closingTask.header.om,
+        tag: closingTask.header.tag,
+        type: closingTask.header.type,
+        date: new Date().toLocaleDateString('pt-BR'),
+        startTime: new Date(closingTask.startTime).toLocaleTimeString().slice(0,5),
+        endTime: new Date().toLocaleTimeString().slice(0,5),
+        activities: closingTask.header.description,
+        status: status,
+        stopReason: status === 'FINALIZADO' ? 'MANUTENÇÃO CONCLUÍDA' : 'INTERRUPÇÃO PROGRAMADA',
+        artId: closingTask.artId
+    };
+
+    setClosingTask(null);
+    navigate('/report', { state: reportData });
+  };
+
   return (
     <div className="max-w-[1600px] mx-auto pb-10">
       <div className="flex justify-between items-center mb-6 bg-gradient-to-r from-[#007e7a] to-[#005c97] p-4 rounded-xl shadow-lg animate-fadeIn relative z-30 text-white">
@@ -174,7 +196,6 @@ export const Dashboard: React.FC = () => {
                         const linkedOm = allOms.find(o => o.id === task.omId || o.omNumber === task.header.om);
                         const linkedDoc = allDocs.find(d => d.id === task.artId);
                         
-                        // Encontra a ART Procedimento (Template) vinculada
                         const procedureId = linkedDoc?.content?.linkedArtId || linkedDoc?.content?.artId;
                         const linkedProcedure = allArts.find(a => a.id === procedureId);
                         
@@ -182,7 +203,7 @@ export const Dashboard: React.FC = () => {
                             <div key={task.id} className={`rounded-[2rem] shadow-xl border p-6 flex flex-col gap-4 transition-all relative overflow-hidden group ${isCorretiva ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
                                 <div className={`absolute top-0 right-0 p-4 ${isCorretiva ? 'text-red-100' : 'text-gray-50'}`}><Activity size={100}/></div>
                                 
-                                <div className="flex justify-between items-start relative z-10">
+                                <div className="flex justify-between items-start mb-4 relative z-10">
                                     <div>
                                         <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">Ordem / Identificador</span>
                                         <h4 className="text-2xl font-black text-gray-800 leading-none">{task.header.om}</h4>
@@ -206,9 +227,7 @@ export const Dashboard: React.FC = () => {
                                 </div>
 
                                 <div className="flex flex-col gap-3 relative z-10">
-                                    {/* GRID DE DOCUMENTOS EXIGIDOS */}
                                     <div className="grid grid-cols-1 gap-2">
-                                        {/* DOCUMENTO ASSINADO (APR/ART DIGITAL) */}
                                         {linkedDoc && (
                                             <button onClick={() => setViewingDoc({ 
                                                 url: linkedDoc.content?.manualFileUrl || 'TRUE', 
@@ -223,7 +242,6 @@ export const Dashboard: React.FC = () => {
                                         )}
 
                                         <div className="grid grid-cols-2 gap-2">
-                                            {/* ORDEM EM PDF */}
                                             {linkedOm ? (
                                                 <button onClick={() => setViewingDoc({ url: linkedOm.pdfUrl || 'TRUE', title: `ORDEM: ${linkedOm.omNumber}`, type: 'OM', id: linkedOm.id })} className="bg-white border-2 border-gray-100 p-2.5 rounded-xl flex items-center justify-center gap-2 hover:border-red-200 text-gray-600 transition-all shadow-sm group/btn">
                                                     <FileText size={16} className="text-red-500 group-hover/btn:scale-110 transition-transform"/> <span className="text-[9px] font-black uppercase">ORDEM EM PDF</span>
@@ -234,7 +252,6 @@ export const Dashboard: React.FC = () => {
                                                 </div>
                                             )}
 
-                                            {/* ART EM PDF (PROCEDIMENTO) */}
                                             {linkedProcedure ? (
                                                 <button onClick={() => setViewingDoc({ url: linkedProcedure.pdfUrl || 'TRUE', title: `PROCEDIMENTO: ${linkedProcedure.code}`, type: 'ART_PROCEDURE', id: linkedProcedure.id })} className="bg-white border-2 border-gray-100 p-2.5 rounded-xl flex items-center justify-center gap-2 hover:border-blue-200 text-gray-600 transition-all shadow-sm group/btn">
                                                     <BookOpen size={16} className="text-blue-500 group-hover/btn:scale-110 transition-transform"/> <span className="text-[9px] font-black uppercase">ART EM PDF</span>
@@ -247,7 +264,6 @@ export const Dashboard: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* CONTROLE DE EXECUÇÃO */}
                                     <button onClick={() => handleAction(task)} className={`w-full py-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-3 shadow-lg transition-all active:scale-95 border-b-4 ${task.status === 'ANDAMENTO' ? 'bg-red-600 text-white hover:bg-red-700 border-red-800' : 'bg-green-600 text-white hover:bg-green-700 border-green-800'}`}>
                                         {task.status === 'ANDAMENTO' ? <><StopCircle size={20}/> Encerrar Atividade</> : <><PlayCircle size={20}/> Retomar Manutenção</>}
                                     </button>
@@ -260,7 +276,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* MODAL PDF / ART VIEWER - OTIMIZADO */}
+      {/* MODAL PDF / ART VIEWER */}
       {viewingDoc && (
         <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col animate-fadeIn overflow-hidden h-[100dvh]">
             <div className="bg-white p-3 flex justify-between items-center shrink-0 border-b border-gray-200 shadow-xl z-50">
@@ -294,8 +310,6 @@ export const Dashboard: React.FC = () => {
                     </div>
                 ) : (
                     <div className="w-full max-w-[21.5cm] flex flex-col gap-6 animate-fadeIn">
-                        
-                        {/* Seção Digital (Assinaturas e Riscos) - Apenas para documentos gerados pelo App */}
                         {viewingDoc.type === 'DOCUMENT' && (
                             <div className="bg-white p-8 shadow-2xl border border-gray-200 space-y-10 rounded-sm">
                                 <div className="border-b-4 border-vale-green pb-4 flex justify-between items-center">
@@ -309,7 +323,6 @@ export const Dashboard: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Mapa de Risco se for Emergencial */}
                                 {viewingDoc.content?.quadrantRisks && (
                                     <div className="space-y-6">
                                         <div className="flex items-center gap-3 border-l-4 border-red-600 pl-4">
@@ -335,7 +348,6 @@ export const Dashboard: React.FC = () => {
                                     </div>
                                 )}
 
-                                {/* Assinaturas Coletadas */}
                                 {viewingDoc.signatures && viewingDoc.signatures.length > 0 && (
                                     <div className="space-y-6 pt-6 border-t-2 border-gray-100">
                                         <div className="flex items-center gap-3 border-l-4 border-[#007e7a] pl-4">
@@ -365,7 +377,6 @@ export const Dashboard: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Visualizador de PDF (Original da OM ou Procedimento) */}
                         {pdfBlobUrl ? (
                             <div className="space-y-4">
                                 <div className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-t-lg font-black text-xs uppercase tracking-widest shadow-lg">
@@ -400,19 +411,61 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DE ENCERRAMENTO */}
+      {/* MODAL DE ENCERRAMENTO - ATUALIZADO COM OPÇÕES TOTAL, PARCIAL E CHECKLIST */}
       {closingTask && (
           <div className="fixed inset-0 z-[150] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl border-t-4 border-[#007e7a]">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Finalizar Atividade</h3>
-                      <button onClick={() => setClosingTask(null)} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400"><X size={20}/></button>
+              <div className="bg-white w-full max-w-lg rounded-[2rem] p-8 shadow-2xl border-t-[12px] border-[#007e7a] overflow-hidden relative">
+                  <div className="flex justify-between items-start mb-8">
+                      <div>
+                        <h3 className="text-2xl font-black text-gray-800 uppercase tracking-tight">Encerrar Atividade</h3>
+                        <p className="text-xs font-bold text-gray-400 uppercase mt-1">OM: {closingTask.header.om} | {closingTask.header.tag}</p>
+                      </div>
+                      <button onClick={() => setClosingTask(null)} className="p-2 hover:bg-gray-100 rounded-full text-gray-300 hover:text-red-500 transition-colors"><X size={28}/></button>
                   </div>
-                  <div className="space-y-3">
-                      <button onClick={() => navigate(`/checklist?maintenanceId=${closingTask.id}`)} className="w-full bg-[#007e7a] text-white p-4 rounded-xl font-black text-xs hover:bg-[#00605d] uppercase shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95 border-b-4 border-[#004d4a]">
-                          <CheckSquare size={18} /> REALIZAR CHECKLIST E FINALIZAR
+
+                  <div className="grid grid-cols-1 gap-4">
+                      {/* OPÇÃO 1: CHECKLIST (RECOMENDADO) */}
+                      <button 
+                        onClick={() => navigate(`/checklist?maintenanceId=${closingTask.id}`)} 
+                        className="group w-full bg-[#007e7a] text-white p-5 rounded-2xl font-black text-sm hover:bg-[#00605d] uppercase shadow-lg shadow-teal-100 transition-all flex items-center justify-between active:scale-95 border-b-4 border-[#004d4a]"
+                      >
+                          <div className="flex items-center gap-4">
+                            <div className="bg-white/20 p-2 rounded-xl"><CheckSquare size={24} /></div>
+                            <div className="text-left">
+                                <span className="block leading-none">Realizar Checklist</span>
+                                <span className="text-[10px] font-bold opacity-60">Inspecionar e finalizar via campo</span>
+                            </div>
+                          </div>
+                          <ChevronRight size={20} className="opacity-0 group-hover:opacity-100 translate-x-[-10px] group-hover:translate-x-0 transition-all"/>
                       </button>
-                      <button onClick={() => setClosingTask(null)} className="w-full bg-gray-100 text-gray-500 p-4 rounded-xl font-black text-xs uppercase hover:bg-gray-200 transition-all">Cancelar</button>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          {/* OPÇÃO 2: FINALIZAR TOTAL */}
+                          <button 
+                            onClick={() => handleQuickClose('FINALIZADO')}
+                            className="group bg-white border-2 border-gray-100 p-5 rounded-2xl font-black text-sm text-gray-700 hover:border-blue-500 hover:text-blue-600 uppercase shadow-sm transition-all flex flex-col items-center gap-3 active:scale-95"
+                          >
+                              <div className="bg-blue-50 text-blue-600 p-3 rounded-full group-hover:bg-blue-600 group-hover:text-white transition-colors"><CheckCircle size={28} /></div>
+                              <div className="text-center">
+                                <span className="block leading-none">Finalizar Total</span>
+                                <span className="text-[8px] font-black opacity-40 mt-1">Concluir sem inspeção</span>
+                              </div>
+                          </button>
+
+                          {/* OPÇÃO 3: PARALISAR PARCIAL */}
+                          <button 
+                            onClick={() => handleQuickClose('PARCIAL')}
+                            className="group bg-white border-2 border-gray-100 p-5 rounded-2xl font-black text-sm text-gray-700 hover:border-orange-500 hover:text-orange-600 uppercase shadow-sm transition-all flex flex-col items-center gap-3 active:scale-95"
+                          >
+                              <div className="bg-orange-50 text-orange-600 p-3 rounded-full group-hover:bg-orange-600 group-hover:text-white transition-colors"><PauseCircle size={28} /></div>
+                              <div className="text-center">
+                                <span className="block leading-none">Pausar Parcial</span>
+                                <span className="text-[8px] font-black opacity-40 mt-1">Manter pendências</span>
+                              </div>
+                          </button>
+                      </div>
+
+                      <button onClick={() => setClosingTask(null)} className="w-full bg-gray-50 text-gray-400 p-4 rounded-xl font-black text-[10px] uppercase hover:bg-gray-100 hover:text-gray-600 transition-all mt-4">Retornar ao Painel</button>
                   </div>
               </div>
           </div>
