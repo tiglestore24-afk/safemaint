@@ -9,28 +9,24 @@ import { ARTAtividade } from './pages/ARTAtividade';
 import { Checklist } from './pages/Checklist';
 import { Schedule } from './pages/Schedule';
 import { TVSchedule } from './pages/TVSchedule';
-import { TVSplitView } from './pages/TVSplitView'; // Importado
+import { TVSplitView } from './pages/TVSplitView'; 
 import { Archive } from './pages/Archive';
 import { Trash } from './pages/Trash';
 import { Report } from './pages/Report';
 import { Settings } from './pages/Settings';
 import { ExtraDemands } from './pages/ExtraDemands'; 
 import { OMManagement } from './pages/OMManagement';
+import { AvailabilityBoard } from './pages/AvailabilityBoard';
 import { StorageService } from './services/storage';
 import { SplashScreen } from './components/SplashScreen';
-import { AvailabilityBoard } from './pages/AvailabilityBoard';
 import { AppHeader } from './components/AppHeader';
 
-// --- CONFIGURAÇÃO DE TEMPO DE ESPERA (MS) ---
-// 3 Minutos = 180000 ms (Conforme solicitado)
-const IDLE_TIMEOUT = 180000; 
+const IDLE_TIMEOUT = 28800000; 
 
-// --- COMPONENTE DE LAYOUT INTERNO ---
 const AppLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     
-    // Identifica se é o modo TV para remover header/sidebar
     const isTvMode = location.pathname === '/tv-schedule' || location.pathname === '/tv-split';
 
     if (isTvMode) {
@@ -66,13 +62,13 @@ const AppLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                         <Route path="/art-emergencial" element={<ARTEmergencial />} />
                         <Route path="/art-atividade" element={<ARTAtividade />} />
                         <Route path="/checklist" element={<Checklist />} />
-                        <Route path="/availability" element={<AvailabilityBoard />} />
                         <Route path="/schedule" element={<Schedule />} />
                         <Route path="/archive" element={<Archive />} />
                         <Route path="/trash" element={<Trash />} />
                         <Route path="/report" element={<Report />} />
                         <Route path="/extra-demands" element={<ExtraDemands />} /> 
                         <Route path="/settings" element={<Settings />} />
+                        <Route path="/indicators" element={<AvailabilityBoard />} />
                         <Route path="*" element={<Navigate to="/dashboard" />} />
                     </Routes>
                 </div>
@@ -82,11 +78,11 @@ const AppLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 };
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('safemaint_auth') === 'true';
+  });
   const [showSplash, setShowSplash] = useState(true);
   
-  // Standby State (Agora ativa o modo TV Split)
   const [isIdle, setIsIdle] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,7 +90,6 @@ const App: React.FC = () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (isIdle) setIsIdle(false);
       
-      // Só ativa o timer se estiver autenticado
       if (isAuthenticated) {
           idleTimerRef.current = setTimeout(() => {
               setIsIdle(true);
@@ -109,7 +104,10 @@ const App: React.FC = () => {
 
     if (isAuthenticated) {
         events.forEach(event => window.addEventListener(event, handleActivity));
-        resetIdleTimer(); // Inicia contagem
+        resetIdleTimer();
+        
+        StorageService.initialSync();
+        StorageService.setupSubscriptions();
     }
 
     return () => {
@@ -118,48 +116,21 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated, resetIdleTimer]);
 
-  useEffect(() => {
-    const auth = localStorage.getItem('safemaint_auth') === 'true';
-    setIsAuthenticated(auth);
-    
-    if (auth) {
-        StorageService.initialSync();
-        StorageService.setupSubscriptions();
-    }
-    
-    // ATUALIZAÇÃO AUTOMÁTICA: 5 MINUTOS (300.000 ms)
-    const syncInterval = setInterval(() => {
-        if (navigator.onLine && localStorage.getItem('safemaint_auth') === 'true') {
-            console.log('SAFEMAINT: Sincronização Automática (5 min)...');
-            StorageService.initialSync();
-        }
-    }, 300000);
-
-    setIsLoading(false);
-    
-    return () => clearInterval(syncInterval);
-  }, []);
-
   const handleLogin = () => {
+    localStorage.setItem('safemaint_auth', 'true');
     setIsAuthenticated(true);
-    StorageService.initialSync();
-    StorageService.setupSubscriptions();
   };
 
   const handleLogout = () => {
-      localStorage.removeItem('safemaint_auth');
-      localStorage.removeItem('safemaint_user');
-      localStorage.removeItem('safemaint_role');
+      StorageService.logoutUser();
       setIsAuthenticated(false);
-      setIsIdle(false); // Reseta standby ao sair
+      setIsIdle(false);
       window.location.href = '/';
   };
 
   if (showSplash) {
       return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
-
-  if (isLoading) return null;
 
   if (!isAuthenticated) {
       return (
@@ -173,7 +144,6 @@ const App: React.FC = () => {
 
   return (
     <>
-        {/* Se ficar idle, mostra o TV Split como overlay */}
         {isIdle && <TVSplitView onWake={resetIdleTimer} />}
         <HashRouter>
             <AppLayout onLogout={handleLogout} />

@@ -27,26 +27,39 @@ export const AppHeader: React.FC = () => {
 
   // Weather fetch
   useEffect(() => {
+    // Evita chamadas se estiver offline
+    if (!navigator.onLine) {
+        setWeatherError("Offline");
+        return;
+    }
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
           try {
+            // Weather API
             const weatherResponse = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
             if (!weatherResponse.ok) throw new Error('Weather API failed');
             const weatherData = await weatherResponse.json();
             
-            const cityResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
-                headers: {
-                    'User-Agent': 'SAFEMAINT-Web-App/1.0',
-                    'Accept-Language': 'pt-BR'
-                }
-            });
-            
+            // City API (Nominatim) - Tratamento de erro específico para não falhar tudo
             let cityName = 'Local';
-            if (cityResponse.ok) {
-                const cityData = await cityResponse.json();
-                cityName = cityData.address?.city || cityData.address?.town || cityData.address?.municipality || cityData.address?.village || 'Local';
+            try {
+                const cityResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
+                    headers: {
+                        'User-Agent': 'SAFEMAINT-Web-App/1.0',
+                        'Accept-Language': 'pt-BR'
+                    }
+                });
+                
+                if (cityResponse.ok) {
+                    const cityData = await cityResponse.json();
+                    cityName = cityData.address?.city || cityData.address?.town || cityData.address?.municipality || cityData.address?.village || 'Local';
+                }
+            } catch (cityErr) {
+                console.warn("Erro ao buscar cidade (Nominatim):", cityErr);
+                // Continua com 'Local' se falhar a cidade
             }
             
             setWeather({
@@ -55,12 +68,13 @@ export const AppHeader: React.FC = () => {
             });
             setWeatherError(null);
           } catch (error) {
-            console.error("Weather fetch error:", error);
+            // Log warning instead of error to avoid console noise on network issues
+            console.warn("Weather fetch failed (likely network or blocking):", error);
             setWeatherError("Clima indisponível");
           }
         },
         (error) => {
-          console.error("Geolocation error:", error);
+          console.warn("Geolocation error:", error.message);
           setWeatherError("Geolocalização negada");
         },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }

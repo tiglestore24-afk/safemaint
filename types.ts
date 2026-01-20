@@ -1,4 +1,3 @@
-
 export type MaintenanceType = 'MECANICA' | 'ELETRICA' | 'LUBRIFICACAO' | 'SOLDA' | 'OUTROS';
 
 export interface Employee {
@@ -16,6 +15,14 @@ export interface User {
   login: string;
   password?: string;
   role: 'ADMIN' | 'OPERADOR';
+}
+
+export interface ChatMessage {
+  id: string;
+  sender: string;
+  role: string;
+  text: string;
+  timestamp: string;
 }
 
 export interface ARTStep {
@@ -37,7 +44,7 @@ export interface RegisteredART {
   taskName: string;
   area: string;
   controlMeasures: string;
-  pdfUrl?: string; // Para visualização em PDF
+  pdfUrl?: string;
   risks?: ARTRiskItem[];
   steps?: ARTStep[];
 }
@@ -88,13 +95,13 @@ export interface ScheduleItem {
   timeStart: string;
   timeEnd: string;
   status: string;
-  weekNumber?: string; // Adicionado para controle de semanas
+  weekNumber?: string;
 }
 
 export interface ActiveMaintenance {
   id: string;
   omId?: string;
-  scheduleId?: string; // NOVO: Vínculo com item da Agenda
+  scheduleId?: string;
   header: HeaderData;
   startTime: string;
   artId: string;
@@ -116,16 +123,7 @@ export interface MaintenanceLog {
   duration: string;
   responsible: string;
   status: string;
-  type?: 'PREVENTIVA' | 'CORRETIVA' | 'DEMANDA_EXTRA'; // Adicionado para automação do quadro
-}
-
-export interface ChatMessage {
-  id: string;
-  sender: string;
-  role: string;
-  text: string;
-  timestamp: string;
-  isSystem?: boolean;
+  type?: 'PREVENTIVA' | 'CORRETIVA' | 'DEMANDA_EXTRA';
 }
 
 export interface OMRecord {
@@ -139,7 +137,7 @@ export interface OMRecord {
   pdfUrl?: string;
   createdBy: string;
   installationLocation?: string;
-  linkedScheduleOm?: string; // Novo campo para vínculo com programação
+  linkedScheduleOm?: string;
 }
 
 export interface ChecklistTemplateItem {
@@ -156,12 +154,36 @@ export interface PendingExtraDemand {
     createdAt: string;
     status: 'PENDENTE';
 }
-// FIX: Add Availability types for the new feature.
-export type AvailabilityStatus = 'PREV' | 'CORRETIVA' | 'DEMANDA_EXTRA' | 'SEM_FALHA' | 'INSPECAO' | 'PR' | 'LB' | 'PNEUS' | 'MOTOR' | 'META';
+
+export interface NotificationRecord {
+    id: string;
+    type: 'URGENT' | 'INFO' | 'SCHEDULE' | 'ACTIVE' | 'SYSTEM';
+    title: string;
+    message: string;
+    date: string;
+    createdAt: string;
+    read: boolean;
+    link?: string;
+}
+
+export type AvailabilityStatus = 
+  | 'SEM_FALHA'      // Bolinha Verde
+  | 'PREV'           // Triangulo Preto
+  | 'CORRETIVA'      // Bolinha Vermelha
+  | 'DEMANDA_EXTRA'  // Triangulo Vermelho
+  | 'INSPECAO'       // Bolinha/Texto
+  | 'PR'             // Texto PR (Parada Relevante)
+  | 'MOTOR'          // Texto
+  | 'LB'             // Texto LS (Lub Semanal)
+  | 'PNEUS'          // Texto
+  | 'META';          // Estrela
 
 export interface AvailabilityRecord {
-  id: string;
-  tag: string;
-  statusMap: Record<string, AvailabilityStatus[]>;
-  manualOverrides?: Record<string, boolean>; // NOVO: Controla se o dia foi editado manualmente
+    id: string;
+    tag: string;
+    // Mapeia data "DD/MM/YYYY" para lista de status
+    statusMap: Record<string, AvailabilityStatus[]>; 
+    // Contagem de eventos por dia (ex: 2 corretivas no dia 5)
+    statusCounts?: Record<string, Record<string, number>>;
+    manualOverrides?: Record<string, boolean>; // Se true, não sobrescreve com dados do sistema
 }

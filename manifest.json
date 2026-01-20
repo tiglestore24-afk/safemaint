@@ -1,16 +1,15 @@
-
 {
   "short_name": "SAFEMAINT",
   "name": "SAFEMAINT - Gestão à Vista Online",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3096/3096991.png",
-      "type": "image/png",
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiI+PGcgY2xpcC1wYXRoPSJ1cmwoI2EpIj48cGF0aCBmaWxsPSIjMWYyOTM3IiBkPSJNMCAwaDUxMnY1MTJIMHoiLz48ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSg0MC4wMyA0MC4wMykgc2NhbGUoMS43MTg2KSI+PHBhdGggZmlsbD0iIzAwN2U3YSIgZD0iTTEwIDI1YzAgMCAzNSA0MCA0MCA3MGwwLTM1Yy01LTE1LTI1LTI1LTQwLTM1WiIvPjxwYXRoIGZpbGw9IiNlZGIxMTEiIGQ9Ik01MCA2MGM1LTEwIDI1LTI1IDQ1LTMwbC0xNSA0MGMtMTAtNS0yNS0xMC00MCA1WiIvPjxwYXRoIGZpbGw9IiMwMDdlN2EiIGQ9Ik01MCA5NWwxNS00MGMtMTAtNS0yNS0xMC00MC01bDI1IDUwWiIvPjwvZz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJhIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMCAwaDUxMnY1MTJIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4=",
+      "type": "image/svg+xml",
       "sizes": "512x512"
     }
   ],
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#16a34a",
+  "theme_color": "#007e7a",
   "background_color": "#111827"
 }

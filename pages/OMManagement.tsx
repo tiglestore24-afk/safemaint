@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { OMRecord } from '../types';
-import { FileInput, Search, Plus, Trash2, Edit2, FileText, CheckCircle2, Loader2, Save, X, Calendar, PlayCircle, AlertOctagon, ArrowRight, ExternalLink, Download, Info, Eye } from 'lucide-react';
+import { FileInput, Search, Plus, Trash2, Edit2, FileText, CheckCircle2, Loader2, Save, X, Calendar, PlayCircle, AlertOctagon, ArrowRight, ExternalLink, Download, Info, Eye, Lock } from 'lucide-react';
 import { FeedbackModal } from '../components/FeedbackModal';
 import { useNavigate } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -272,6 +271,7 @@ export const OMManagement: React.FC = () => {
     om.tag.includes(searchQuery.toUpperCase()) ||
     om.description.includes(searchQuery.toUpperCase()))
   ).sort((a,b) => {
+      // Ordena OMs EM_ANDAMENTO primeiro
       const statusScore = (s: string) => s === 'EM_ANDAMENTO' ? 0 : 1; 
       return statusScore(a.status) - statusScore(b.status) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
@@ -380,75 +380,104 @@ export const OMManagement: React.FC = () => {
                   <span className="text-[10px] uppercase mt-1">Nenhuma ordem pendente neste momento.</span>
               </div>
           ) : (
-              filteredOms.map(om => (
-                  <div key={om.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all group relative flex flex-col">
-                      {/* Faixa lateral colorida por tipo */}
-                      <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${getTypeColor(om.type)}`}></div>
-                      
-                      <div className="p-5 pl-6 flex-1 flex flex-col">
-                          <div className="flex justify-between items-start mb-2">
-                              <span className="font-black text-lg text-gray-800 tracking-tight">{om.omNumber}</span>
-                              <div className="flex gap-1">
-                                <span className={`text-[8px] font-black px-2 py-1 rounded border uppercase ${om.status === 'EM_ANDAMENTO' ? 'bg-green-100 text-green-700 border-green-200 animate-pulse' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                                    {om.status.replace('_', ' ')}
-                                </span>
-                              </div>
-                          </div>
-                          
-                          <div className="mb-4 flex-1">
-                              <div className="flex justify-between items-center mb-1">
-                                  <span className={`text-sm font-black ${getTypeTextColor(om.type)}`}>{om.tag}</span>
-                                  <span className="text-[8px] font-bold text-gray-400 uppercase bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">{om.type}</span>
-                              </div>
-                              <p className="text-[10px] font-bold text-gray-500 uppercase line-clamp-2 leading-relaxed min-h-[2.5em]">
-                                  {om.description}
-                              </p>
-                          </div>
+              filteredOms.map(om => {
+                  // Verifica se a OM está bloqueada (Em Execução)
+                  const isLocked = om.status === 'EM_ANDAMENTO';
 
-                          {/* BOTÕES DE AÇÃO DO CARD */}
-                          <div className="space-y-2 mb-3">
-                              {/* Botão de PDF (Documento da OM) - Corrigido para mostrar se existe URL ou marcador TRUE */}
-                              {om.pdfUrl && (
-                                  <button
-                                      onClick={() => setViewingDoc({ url: om.pdfUrl || 'TRUE', title: `DOC OM: ${om.omNumber}`, id: om.id })}
-                                      className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors shadow-sm"
-                                  >
-                                      <FileText size={14} /> VER DOCUMENTO (OM/ART)
-                                  </button>
-                              )}
+                  return (
+                    <div key={om.id} className={`rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-all group relative flex flex-col ${isLocked ? 'bg-gray-50 border-yellow-200' : 'bg-white border-gray-200'}`}>
+                        {/* Faixa lateral colorida por tipo - Se bloqueada fica Amarela */}
+                        <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${isLocked ? 'bg-yellow-500' : getTypeColor(om.type)}`}></div>
+                        
+                        <div className="p-5 pl-6 flex-1 flex flex-col">
+                            <div className="flex justify-between items-start mb-2">
+                                <span className={`font-black text-lg tracking-tight ${isLocked ? 'text-gray-500' : 'text-gray-800'}`}>{om.omNumber}</span>
+                                <div className="flex gap-1">
+                                    {isLocked ? (
+                                        <span className="text-[8px] font-black px-2 py-1 rounded border uppercase bg-yellow-100 text-yellow-700 border-yellow-200 flex items-center gap-1 animate-pulse">
+                                            <Lock size={8}/> BLOQUEADA
+                                        </span>
+                                    ) : (
+                                        <span className="text-[8px] font-black px-2 py-1 rounded border uppercase bg-gray-100 text-gray-500 border-gray-200">
+                                            {om.status.replace('_', ' ')}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            <div className="mb-4 flex-1">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className={`text-sm font-black ${isLocked ? 'text-gray-500' : getTypeTextColor(om.type)}`}>{om.tag}</span>
+                                    <span className="text-[8px] font-bold text-gray-400 uppercase bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">{om.type}</span>
+                                </div>
+                                <p className={`text-[10px] font-bold uppercase line-clamp-2 leading-relaxed min-h-[2.5em] ${isLocked ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    {om.description}
+                                </p>
+                            </div>
 
-                              {/* Botão Principal de Início */}
-                              <button 
-                                onClick={() => handleStartActivity(om)}
-                                className={`w-full py-2.5 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 ${om.status === 'EM_ANDAMENTO' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                              >
-                                  {om.status === 'EM_ANDAMENTO' ? (
-                                      <>VER NO DASHBOARD <ArrowRight size={14}/></>
-                                  ) : (
-                                      <>{om.type === 'CORRETIVA' ? <AlertOctagon size={14}/> : <PlayCircle size={14}/>} INICIAR ATIVIDADE</>
-                                  )}
-                              </button>
-                          </div>
+                            {/* BOTÕES DE AÇÃO DO CARD */}
+                            <div className="space-y-2 mb-3">
+                                {/* Botão de PDF (Documento da OM) */}
+                                {om.pdfUrl && (
+                                    <button
+                                        onClick={() => setViewingDoc({ url: om.pdfUrl || 'TRUE', title: `DOC OM: ${om.omNumber}`, id: om.id })}
+                                        className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors shadow-sm"
+                                    >
+                                        <FileText size={14} /> VER DOCUMENTO (OM/ART)
+                                    </button>
+                                )}
 
-                          <div className="flex justify-between items-center border-t border-gray-100 pt-3 mt-auto">
-                              <div className="flex items-center gap-3">
-                                  <span className="text-[9px] font-bold text-gray-300 flex items-center gap-1">
-                                      <Calendar size={10}/> {new Date(om.createdAt).toLocaleDateString()}
-                                  </span>
-                              </div>
-                              
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-4 group-hover:translate-x-0">
-                                  <button onClick={() => handleOpenModal(om)} className="p-2 bg-gray-50 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition-colors" title="Editar">
-                                      <Edit2 size={14}/>
-                                  </button>
-                                  <button onClick={() => handleDelete(om.id)} className="p-2 bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
-                                      <Trash2 size={14}/>
-                                  </button>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-              ))
+                                {/* Botão Principal de Início / Bloqueio */}
+                                <button 
+                                    onClick={() => handleStartActivity(om)}
+                                    className={`w-full py-2.5 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 
+                                        ${isLocked 
+                                            ? 'bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100' 
+                                            : om.type === 'CORRETIVA' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+                                        }`}
+                                >
+                                    {isLocked ? (
+                                        <>
+                                            <Lock size={14}/> EM EXECUÇÃO (VER PAINEL)
+                                        </>
+                                    ) : (
+                                        <>
+                                            {om.type === 'CORRETIVA' ? <AlertOctagon size={14}/> : <PlayCircle size={14}/>} INICIAR ATIVIDADE
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+
+                            <div className="flex justify-between items-center border-t border-gray-100 pt-3 mt-auto">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-[9px] font-bold text-gray-300 flex items-center gap-1">
+                                        <Calendar size={10}/> {new Date(om.createdAt).toLocaleDateString()}
+                                    </span>
+                                </div>
+                                
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-4 group-hover:translate-x-0">
+                                    <button 
+                                        onClick={() => !isLocked && handleOpenModal(om)} 
+                                        disabled={isLocked}
+                                        className={`p-2 rounded-lg transition-colors ${isLocked ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-gray-50 text-gray-400 hover:text-orange-500 hover:bg-orange-50'}`} 
+                                        title={isLocked ? "Bloqueado para edição" : "Editar"}
+                                    >
+                                        <Edit2 size={14}/>
+                                    </button>
+                                    <button 
+                                        onClick={() => !isLocked && handleDelete(om.id)} 
+                                        disabled={isLocked}
+                                        className={`p-2 rounded-lg transition-colors ${isLocked ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50'}`} 
+                                        title={isLocked ? "Bloqueado para exclusão" : "Excluir"}
+                                    >
+                                        <Trash2 size={14}/>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                  );
+              })
           )}
       </div>
 

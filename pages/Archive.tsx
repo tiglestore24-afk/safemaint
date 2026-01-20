@@ -66,11 +66,12 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete }
 
 export const Archive: React.FC = () => {
   const navigate = useNavigate();
-  // REMOVIDO 'DEMANDAS' e UNIFICADO em 'ARTS'
   const [activeTab, setActiveTab] = useState<'ARTS' | 'CHECKLISTS' | 'RELATORIOS' | 'CRONOGRAMAS'>('ARTS');
   const [recentDocs, setRecentDocs] = useState<DocumentRecord[]>([]);
   const [archivedDocs, setArchivedDocs] = useState<DocumentRecord[]>([]);
   const [viewDoc, setViewDoc] = useState<DocumentRecord | null>(null);
+  
+  // BLOB URL STATES (FOR PDF VIEWER)
   const [docBlobUrl, setDocBlobUrl] = useState<string | null>(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
@@ -107,6 +108,7 @@ export const Archive: React.FC = () => {
     return () => window.removeEventListener('safemaint_storage_update', refreshDocs);
   }, [activeTab]);
 
+  // --- ENGINE DE PDF (BLOB) ---
   useEffect(() => {
       let activeUrl: string | null = null;
       const load = async () => {
@@ -122,20 +124,28 @@ export const Archive: React.FC = () => {
           const fileData = viewDoc.content?.manualFileUrl;
           if (fileData) {
               let finalData = fileData;
-              if (finalData === 'TRUE') {
+              if (finalData === 'TRUE' || finalData.length < 100) {
                   setIsLoadingPdf(true);
                   const remote = await StorageService.getRecordPdf('documents', viewDoc.id);
                   if (remote) finalData = remote;
                   setIsLoadingPdf(false);
               }
-              if (finalData && finalData !== 'TRUE' && finalData.startsWith('data:application/pdf;base64,')) {
-                  const byteCharacters = atob(finalData.split(',')[1]);
-                  const byteNumbers = new Array(byteCharacters.length);
-                  for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                  const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-                  activeUrl = URL.createObjectURL(blob);
-                  setDocBlobUrl(activeUrl);
-              } else { setDocBlobUrl(finalData); }
+              
+              if (finalData && finalData !== 'TRUE') {
+                  try {
+                      // LIMPEZA DE BASE64
+                      const base64Clean = finalData.includes('base64,') ? finalData.split('base64,')[1] : finalData;
+                      
+                      const byteCharacters = atob(base64Clean);
+                      const byteNumbers = new Array(byteCharacters.length);
+                      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                      const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+                      activeUrl = URL.createObjectURL(blob);
+                      setDocBlobUrl(activeUrl);
+                  } catch(e) {
+                      setDocBlobUrl(null);
+                  }
+              } else { setDocBlobUrl(null); }
           }
 
           // 2. Load Metadata
@@ -163,24 +173,24 @@ export const Archive: React.FC = () => {
           pdfData = await StorageService.getRecordPdf(table as any, target.id);
       }
 
-      if (pdfData && pdfData.startsWith('data:application/pdf;base64,')) {
-          const byteCharacters = atob(pdfData.split(',')[1]);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-          const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-          const url = URL.createObjectURL(blob);
-          setSecondaryPdfUrl(url);
-      } else if (pdfData) {
-          setSecondaryPdfUrl(pdfData);
+      if (pdfData && pdfData !== 'TRUE') {
+          try {
+              const base64Clean = pdfData.includes('base64,') ? pdfData.split('base64,')[1] : pdfData;
+              const byteCharacters = atob(base64Clean);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+              const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+              const url = URL.createObjectURL(blob);
+              setSecondaryPdfUrl(url);
+          } catch(e) { console.error("Erro blob secundário", e); }
       }
       setIsLoadingSecondary(false);
   };
 
   const renderFullDocument = (doc: DocumentRecord) => {
-      // Extrai o signatário principal para o cabeçalho
       const primarySigner = doc.signatures && doc.signatures.length > 0 ? doc.signatures[0] : null;
 
-      // Caso Relatório ou Upload Manual, mostramos o visualizador de PDF diretamente
+      // Caso Relatório ou Upload Manual
       if (doc.content?.isManualUpload && docBlobUrl) {
           return (
               <div className="flex flex-col h-full w-full bg-gray-100">
@@ -194,11 +204,11 @@ export const Archive: React.FC = () => {
           );
       }
 
-      // === LAYOUT DE DOCUMENTO OFICIAL (A4 MULTI-PAGE) ===
+      // === LAYOUT DE DOCUMENTO OFICIAL ===
       return (
           <div className="bg-white shadow-2xl mx-auto font-sans text-gray-900 border border-gray-200 print:border-none p-10 max-w-[21cm] w-full min-h-[29.7cm] flex flex-col mb-10 print:mb-0 print:shadow-none print:w-full print:max-w-none print:min-h-0 print:h-auto print:absolute print:top-0 print:left-0 print-area">
               
-              {/* HEADER OFICIAL - AVOID BREAK */}
+              {/* HEADER OFICIAL */}
               <div className="border-b-4 border-vale-green pb-4 mb-6 flex justify-between items-center avoid-break">
                   <div className="flex items-center gap-4">
                       <Logo size="lg" />
@@ -224,7 +234,7 @@ export const Archive: React.FC = () => {
               {/* CONTEÚDO PRINCIPAL */}
               <div className="flex-1 space-y-6">
                   
-                  {/* IDENTIFICAÇÃO (GRID DENSO) - AVOID BREAK */}
+                  {/* IDENTIFICAÇÃO */}
                   <div className="bg-gray-50 p-4 border border-gray-300 rounded-none print:border-gray-300 avoid-break">
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 border-b border-gray-200 pb-1">DADOS DA ATIVIDADE</h4>
                       <div className="grid grid-cols-4 gap-4">
@@ -305,7 +315,7 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
-                  {/* CHECKLIST - AGRUPADO POR SEÇÃO (MOTOR, HIDRÁULICO, ETC) */}
+                  {/* CHECKLIST */}
                   {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
                       <div className="space-y-4">
                         {Object.entries(doc.content.checklistItems.reduce((acc: any, item: any) => {
@@ -377,18 +387,10 @@ export const Archive: React.FC = () => {
                                   <p className="text-[10px] font-bold text-red-800 uppercase leading-tight">{doc.content.pendings}</p>
                               </div>
                           )}
-                          
-                          {/* LISTA DE EXECUTANTES NO RELATÓRIO */}
-                          {doc.content.executorsList && (
-                              <div className="p-3 border border-blue-100 bg-blue-50">
-                                  <h4 className="text-[10px] font-black text-blue-600 uppercase mb-1">EQUIPE EXECUTANTE REGISTRADA</h4>
-                                  <p className="text-[10px] font-bold text-gray-800 uppercase">{doc.content.executorsList}</p>
-                              </div>
-                          )}
                       </div>
                   )}
 
-                  {/* ASSINATURAS (LAYOUT COMPACTO DE RODAPÉ) - AVOID BREAK */}
+                  {/* ASSINATURAS */}
                   {doc.signatures && doc.signatures.length > 0 && (
                       <div className="mt-8 pt-4 border-t-2 border-gray-300 avoid-break">
                           <h4 className="font-black text-[9px] uppercase mb-4 text-gray-400 tracking-widest">RESPONSABILIDADE TÉCNICA E EXECUÇÃO</h4>
@@ -409,7 +411,7 @@ export const Archive: React.FC = () => {
                   )}
               </div>
               
-              {/* FOOTER OFICIAL - AVOID BREAK */}
+              {/* FOOTER OFICIAL */}
               <div className="mt-auto pt-2 border-t border-gray-300 text-[8px] text-gray-400 font-bold uppercase flex justify-between shrink-0 avoid-break">
                   <span>SAFEMAINT V4 • SISTEMA DE GESTÃO DE ATIVOS</span>
                   <span>ID: {doc.id.split('-')[0].toUpperCase()}</span>
