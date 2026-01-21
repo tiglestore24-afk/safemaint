@@ -1,13 +1,13 @@
-
 import React, { useState, useEffect } from 'react';
 import { CommonHeader } from '../components/CommonHeader';
 import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
-import { HeaderData, DocumentRecord, ActiveMaintenance, SignatureRecord, RegisteredART, OMRecord } from '../types';
+import { HeaderData, DocumentRecord, RegisteredART, SignatureRecord } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, CheckCircle, AlertTriangle, MapPin, List, ArrowRight, FileText, X, Eye, ExternalLink, Info, BookOpen } from 'lucide-react';
+import { ShieldCheck, CheckCircle, AlertTriangle, MapPin, List, FileText, Eye, BookOpen, Unlock, Timer, PlayCircle, Loader2 } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
 import { FeedbackModal } from '../components/FeedbackModal';
+import { PDFViewerModal } from '../components/PDFViewerModal'; // Importado
 
 export const ARTEmergencial: React.FC = () => {
   const navigate = useNavigate();
@@ -24,8 +24,11 @@ export const ARTEmergencial: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
 
   const [omId, setOmId] = useState<string | undefined>(undefined);
-  const [origin, setOrigin] = useState<'CORRETIVA' | 'DEMANDA_EXTRA'>('CORRETIVA');
+  // Atualizado para aceitar PREVENTIVA caso venha forçado para este fluxo
+  const [origin, setOrigin] = useState<'CORRETIVA' | 'DEMANDA_EXTRA' | 'PREVENTIVA'>('CORRETIVA');
   const [pendingDemandId, setPendingDemandId] = useState<string | undefined>(undefined);
+  const [maintenanceId, setMaintenanceId] = useState<string | undefined>(undefined);
+  const [isResuming, setIsResuming] = useState(false);
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
 
   // Risk Map States
@@ -35,10 +38,20 @@ export const ARTEmergencial: React.FC = () => {
   });
   const [checklistRisks, setChecklistRisks] = useState<Record<number, { checked: boolean; control: string }>>({});
 
-  // PDF Viewer States
-  const [viewingPdf, setViewingPdf] = useState<{ url: string, title: string, id?: string } | null>(null);
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  // PDF Viewer Integration
+  const [viewerState, setViewerState] = useState<{ isOpen: boolean; url?: string; title: string; id?: string; table?: 'oms' | 'arts' }>({
+      isOpen: false, title: ''
+  });
+
+  // Animation States for Status Cards
+  const [animStep1, setAnimStep1] = useState(false);
+  const [animStep2, setAnimStep2] = useState(false);
+  const [animStep3, setAnimStep3] = useState(false);
+
+  // Derived Completion States
+  const isStep1Complete = !!(header.om && header.tag);
+  const isStep2Complete = Object.values(checklistRisks).some((r: any) => r.checked) || !!selectedArt;
+  const isStep3Complete = signatures.length > 0;
 
   useEffect(() => {
     setRegisteredARTs(StorageService.getARTs());
@@ -49,51 +62,43 @@ export const ARTEmergencial: React.FC = () => {
         if (stateData.omId) setOmId(stateData.omId);
         if (stateData.origin) setOrigin(stateData.origin);
         if (stateData.demandId) setPendingDemandId(stateData.demandId);
+        if (stateData.maintenanceId) setMaintenanceId(stateData.maintenanceId);
+        if (stateData.isResuming) setIsResuming(true);
     } else {
         const now = new Date();
         setHeader(prev => ({ ...prev, time: now.toTimeString().slice(0,5) }));
     }
   }, [location]);
 
-  // Sincroniza ART selecionada para mostrar os passos
+  // Animation Triggers
+  useEffect(() => {
+      if (isStep1Complete) {
+          setAnimStep1(true);
+          const t = setTimeout(() => setAnimStep1(false), 1000);
+          return () => clearTimeout(t);
+      }
+  }, [isStep1Complete]);
+
+  useEffect(() => {
+      if (isStep2Complete) {
+          setAnimStep2(true);
+          const t = setTimeout(() => setAnimStep2(false), 1000);
+          return () => clearTimeout(t);
+      }
+  }, [isStep2Complete]);
+
+  useEffect(() => {
+      if (isStep3Complete) {
+          setAnimStep3(true);
+          const t = setTimeout(() => setAnimStep3(false), 1000);
+          return () => clearTimeout(t);
+      }
+  }, [isStep3Complete]);
+
   useEffect(() => {
     const art = registeredARTs.find(a => a.id === selectedArtId);
     setSelectedArt(art || null);
   }, [selectedArtId, registeredARTs]);
-
-  // Gerenciador de PDF Blobs (Evita memory leaks e corrige visualização mobile)
-  useEffect(() => {
-      let activeUrl: string | null = null;
-      const loadPdf = async () => {
-          if (!viewingPdf) { setPdfBlobUrl(null); return; }
-          let pdfData = viewingPdf.url;
-          
-          if (!pdfData || pdfData === 'TRUE') {
-              setIsLoadingPdf(true);
-              const table = viewingPdf.title.includes('OM') ? 'oms' : 'arts';
-              const remote = await StorageService.getRecordPdf(table as any, viewingPdf.id!);
-              if (remote) pdfData = remote;
-              setIsLoadingPdf(false);
-          }
-          
-          if (pdfData && pdfData !== 'TRUE') {
-              try {
-                  if (pdfData.startsWith('data:application/pdf;base64,')) {
-                      const byteCharacters = atob(pdfData.split(',')[1]);
-                      const byteNumbers = new Array(byteCharacters.length);
-                      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                      const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-                      activeUrl = URL.createObjectURL(blob);
-                      setPdfBlobUrl(activeUrl);
-                  } else {
-                      setPdfBlobUrl(pdfData);
-                  }
-              } catch (e) { setPdfBlobUrl(pdfData); }
-          }
-      };
-      loadPdf();
-      return () => { if (activeUrl) URL.revokeObjectURL(activeUrl); };
-  }, [viewingPdf]);
 
   const handleRiskChange = (id: number, checked: boolean) => {
     setChecklistRisks(prev => ({
@@ -138,7 +143,7 @@ export const ARTEmergencial: React.FC = () => {
           type: 'ART_EMERGENCIAL', 
           header, 
           createdAt: new Date().toISOString(), 
-          status: 'ATIVO', // MUDANÇA: ATIVO para aparecer no Arquivo imediatamente
+          status: 'ATIVO', 
           content: { 
             quadrantRisks, 
             checklistRisks, 
@@ -150,11 +155,25 @@ export const ARTEmergencial: React.FC = () => {
         };
         await StorageService.saveDocument(doc);
         const nowIso = new Date().toISOString();
+        
         await StorageService.startMaintenance({
-            id: crypto.randomUUID(), omId, header, startTime: nowIso, artId, artType: 'ART_EMERGENCIAL', origin, status: 'ANDAMENTO', currentSessionStart: nowIso, openedBy: localStorage.getItem('safemaint_user') || 'ADMIN'
+            id: maintenanceId || crypto.randomUUID(), 
+            omId, 
+            header, 
+            startTime: nowIso, 
+            artId, 
+            artType: 'ART_EMERGENCIAL', 
+            origin, 
+            status: 'ANDAMENTO', // GARANTE STATUS EM ANDAMENTO
+            currentSessionStart: nowIso, // GARANTE CRONOMETRO INICIANDO
+            openedBy: localStorage.getItem('safemaint_user') || 'ADMIN',
+            accumulatedTime: 0 
         });
+        
         if (pendingDemandId) await StorageService.deletePendingExtraDemand(pendingDemandId);
-        setIsProcessing(false); setIsSuccess(true);
+        
+        setIsProcessing(false); 
+        setIsSuccess(true);
         setTimeout(() => navigate('/dashboard'), 1500);
     } catch (e) { setIsProcessing(false); alert('Erro ao processar liberação.'); }
   };
@@ -170,30 +189,50 @@ export const ARTEmergencial: React.FC = () => {
 
   return (
     <div className="max-w-[1500px] mx-auto pb-32 px-4 relative animate-fadeIn">
-      <FeedbackModal isOpen={isProcessing || isSuccess} isSuccess={isSuccess} loadingText="LIBERANDO ATIVIDADE..." successText="EMERGÊNCIA LIBERADA!" />
+      <FeedbackModal isOpen={isProcessing || isSuccess} isSuccess={isSuccess} loadingText={isResuming ? "ASSUMINDO MANUTENÇÃO..." : "LIBERANDO E INICIANDO CRONÔMETRO..."} successText={isResuming ? "MANUTENÇÃO ASSUMIDA!" : "ATIVIDADE EM EXECUÇÃO!"} />
+      
+      {/* NOVO VISUALIZADOR DE PDF */}
+      <PDFViewerModal 
+        isOpen={viewerState.isOpen}
+        onClose={() => setViewerState(prev => ({ ...prev, isOpen: false }))}
+        title={viewerState.title}
+        fileUrl={viewerState.url}
+        recordId={viewerState.id}
+        table={viewerState.table || 'oms'}
+      />
 
       <div className="flex items-center gap-4 mb-4 border-b border-gray-200 pb-4 pt-4">
         <BackButton />
         <div className="bg-red-600/10 p-2 rounded-xl"><AlertTriangle className="text-red-600" size={24} /></div>
         <div>
-            <h2 className="text-xl font-black text-vale-darkgray uppercase tracking-tighter leading-none">ART Emergencial</h2>
+            <h2 className="text-xl font-black text-vale-darkgray uppercase tracking-tighter leading-none">
+                {isResuming ? 'Assumir ART Emergencial' : 'ART Emergencial'}
+            </h2>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Análise Preliminar de Risco (APR) - {origin.replace('_', ' ')}</p>
         </div>
       </div>
 
+      {isResuming && (
+          <div className="mb-4 bg-amber-50 border-2 border-amber-200 p-4 rounded-2xl flex items-center gap-4 animate-pulse">
+              <div className="bg-amber-100 p-2 rounded-lg text-amber-600"><Unlock size={24}/></div>
+              <div>
+                  <h4 className="font-black text-xs text-amber-800 uppercase leading-none">Retomada de Atividade</h4>
+                  <p className="text-[10px] font-bold text-amber-600 uppercase mt-1">Você está assumindo esta tarefa. Refaça o mapeamento de riscos e colete as assinaturas.</p>
+              </div>
+          </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           <div className="xl:col-span-9 space-y-4">
-              <CommonHeader data={header} onChange={setHeader} title="Identificação do Equipamento" />
+              <CommonHeader data={header} onChange={setHeader} title="Identificação do Equipamento" readOnly={isResuming} />
 
-              {/* CONTROLES DE DOCUMENTOS (OM & ART) - COMPACTO */}
               <div className="flex flex-col md:flex-row gap-2 relative z-20">
-                  {/* BOTÃO PDF DA OM */}
                   {header.om && header.om !== 'DEMANDA-EXTRA' && (
                       <button 
                         onClick={() => {
                             const oms = StorageService.getOMs();
                             const found = oms.find(o => o.omNumber === header.om);
-                            if (found) setViewingPdf({ url: found.pdfUrl || 'TRUE', title: `OM: ${found.omNumber}`, id: found.id });
+                            if (found) setViewerState({ isOpen: true, url: found.pdfUrl || 'TRUE', title: `OM: ${found.omNumber}`, id: found.id, table: 'oms' });
                             else alert("OM NÃO ENCONTRADA NO BANCO.");
                         }}
                         className="flex-none md:w-auto bg-white border border-gray-200 px-3 py-1.5 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors shadow-sm group h-9"
@@ -204,7 +243,6 @@ export const ARTEmergencial: React.FC = () => {
                       </button>
                   )}
 
-                  {/* SELETOR E PDF DA ART PADRÃO - COMPACTO */}
                   <div className="flex-1 bg-blue-50/50 border border-blue-100 p-1 rounded-lg flex items-center gap-2 shadow-sm h-9">
                       <select 
                         value={selectedArtId} 
@@ -215,12 +253,11 @@ export const ARTEmergencial: React.FC = () => {
                           {registeredARTs.map(art => <option key={art.id} value={art.id}>[{art.code}] {art.taskName}</option>)}
                       </select>
                       {selectedArt && (
-                          <button onClick={() => setViewingPdf({ url: selectedArt.pdfUrl || 'TRUE', title: `ART: ${selectedArt.code}`, id: selectedArt.id })} className="h-7 w-7 flex items-center justify-center bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm transition-colors"><Eye size={14}/></button>
+                          <button onClick={() => setViewerState({ isOpen: true, url: selectedArt.pdfUrl || 'TRUE', title: `ART: ${selectedArt.code}`, id: selectedArt.id, table: 'arts' })} className="h-7 w-7 flex items-center justify-center bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm transition-colors"><Eye size={14}/></button>
                       )}
                   </div>
               </div>
 
-              {/* PASSOS DA ART (VISUALIZAÇÃO DE INSPEÇÃO) */}
               {selectedArt && selectedArt.steps && selectedArt.steps.length > 0 && (
                   <section className="bg-white rounded-[1.5rem] shadow-sm border border-blue-100 overflow-hidden animate-fadeIn">
                       <div className="bg-blue-50 p-3 border-b border-blue-100 flex items-center gap-2">
@@ -243,7 +280,6 @@ export const ARTEmergencial: React.FC = () => {
                   </section>
               )}
 
-              {/* MAPEAMENTO DE RISCOS */}
               <section className="bg-white rounded-[1.5rem] shadow-sm border border-gray-200 overflow-hidden flex flex-col">
                   <div className="bg-gray-50 p-3 border-b flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -307,56 +343,66 @@ export const ARTEmergencial: React.FC = () => {
 
           <div className="xl:col-span-3">
               <div className="sticky top-6">
-                  <div className="bg-white rounded-2xl shadow-lg p-5 border border-gray-200 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 right-0 h-1.5 bg-red-600"></div>
-                      <h3 className="font-black text-sm text-gray-800 mb-4 flex items-center gap-2 uppercase"><ShieldCheck className="text-red-600" size={18} /> Status APR</h3>
-                      <div className="space-y-3">
-                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${header.om && header.tag ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
-                              {header.om && header.tag ? <CheckCircle size={16} className="text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
-                              <div className="font-black text-[10px] uppercase">1. Identificação</div>
+                  <div className="bg-vale-dark text-white rounded-2xl shadow-xl p-5 border-b-[8px] border-vale-green">
+                      <div className="flex items-center gap-3 mb-4">
+                          <div className="bg-white/10 p-1.5 rounded-lg"><ShieldCheck className="text-vale-green" size={18} /></div>
+                          <h3 className="font-black text-sm uppercase tracking-tight">Status</h3>
+                      </div>
+                      
+                      <div className="space-y-3 relative">
+                          <div className="absolute left-[13px] top-3 bottom-3 w-0.5 bg-gray-700 z-0"></div>
+
+                          {/* PASSO 1: IDENTIFICAÇÃO (COM ANIMAÇÃO DE FEEDBACK) */}
+                          <div className={`relative z-10 flex items-center gap-3 transition-transform ${animStep1 ? 'scale-105' : ''}`}>
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors duration-300 ${isStep1Complete ? 'bg-vale-green border-vale-green text-white' : 'bg-gray-800 border-gray-600 text-gray-500'} ${animStep1 ? 'animate-bounce shadow-[0_0_15px_rgba(0,126,122,0.8)]' : ''}`}>
+                                  {isStep1Complete ? <CheckCircle size={14}/> : '1'}
+                              </div>
+                              <div className={isStep1Complete ? 'opacity-100 text-white' : 'opacity-40'}>
+                                  <p className="text-[8px] font-black uppercase tracking-widest text-gray-400">Passo 1</p>
+                                  <p className="text-[10px] font-bold uppercase">Preenchimento</p>
+                              </div>
                           </div>
-                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${Object.values(checklistRisks).some((r: any) => r.checked) || selectedArt ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
-                              {Object.values(checklistRisks).some((r: any) => r.checked) || selectedArt ? <CheckCircle size={16} className="text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
-                              <div className="font-black text-[10px] uppercase">2. Riscos {selectedArt && '(ART VINC)'}</div>
+
+                          {/* PASSO 2: PROCEDIMENTO/RISCOS (COM ANIMAÇÃO DE FEEDBACK) */}
+                          <div className={`relative z-10 flex items-center gap-3 transition-transform ${animStep2 ? 'scale-105' : ''}`}>
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors duration-300 ${isStep2Complete ? 'bg-vale-green border-vale-green text-white' : 'bg-gray-800 border-gray-600 text-gray-500'} ${animStep2 ? 'animate-bounce shadow-[0_0_15px_rgba(0,126,122,0.8)]' : ''}`}>
+                                  {isStep2Complete ? <CheckCircle size={14}/> : '2'}
+                              </div>
+                              <div className={isStep2Complete ? 'opacity-100 text-white' : 'opacity-40'}>
+                                  <p className="text-[8px] font-black uppercase tracking-widest text-gray-400">Passo 2</p>
+                                  <p className="text-[10px] font-bold uppercase">Procedimento</p>
+                              </div>
                           </div>
-                          <div className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${signatures.length > 0 ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
-                              {signatures.length > 0 ? <CheckCircle size={16} className="text-green-600"/> : <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>}
-                              <div className="font-black text-[10px] uppercase">3. Assinaturas</div>
+
+                          {/* PASSO 3: ASSINATURAS (COM ANIMAÇÃO DE FEEDBACK) */}
+                          <div className={`relative z-10 flex items-center gap-3 transition-transform ${animStep3 ? 'scale-105' : ''}`}>
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors duration-300 ${isStep3Complete ? 'bg-vale-green border-vale-green text-white' : 'bg-gray-800 border-gray-600 text-gray-500'} ${animStep3 ? 'animate-bounce shadow-[0_0_15px_rgba(0,126,122,0.8)]' : ''}`}>
+                                  {isStep3Complete ? <CheckCircle size={14}/> : '3'}
+                              </div>
+                              <div className={isStep3Complete ? 'opacity-100 text-white' : 'opacity-40'}>
+                                  <p className="text-[8px] font-black uppercase tracking-widest text-gray-400">Passo 3</p>
+                                  <p className="text-[10px] font-bold uppercase">Assinaturas</p>
+                              </div>
                           </div>
                       </div>
-                      <div className="mt-6"><button onClick={handleSave} disabled={!signatures.length || isProcessing} className={`w-full py-3 rounded-lg font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 shadow-md transition-all ${signatures.length ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-200 text-gray-400'}`}><AlertTriangle size={16} /> Liberar</button></div>
+
+                      <div className="mt-6 pt-4 border-t border-gray-700/50">
+                           <button 
+                                onClick={handleSave} 
+                                disabled={!isStep3Complete || isProcessing} 
+                                className={`w-full py-3 rounded-lg shadow-lg font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isStep3Complete ? 'bg-vale-green hover:bg-[#00605d] text-white hover:scale-105 hover:shadow-xl' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
+                            >
+                                {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <PlayCircle size={16} />}
+                                LIBERAR E INICIAR CRONÔMETRO
+                            </button>
+                            <p className="text-[8px] text-gray-500 font-bold uppercase text-center mt-2">
+                                Ao iniciar, a atividade aparecerá no painel e o tempo começará a contar.
+                            </p>
+                      </div>
                   </div>
               </div>
           </div>
       </div>
-
-      {/* MODAL PDF VIEWER - OTIMIZADO PARA MOBILE 100DVH */}
-      {viewingPdf && (
-          <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden h-[100dvh]">
-              <div className="bg-gray-900 px-4 py-2 flex justify-between items-center text-white shrink-0 border-b border-gray-800">
-                  <div className="flex items-center gap-3">
-                      <FileText size={18} className="text-vale-green"/>
-                      <div><h3 className="font-black text-sm uppercase tracking-tighter">{viewingPdf.title}</h3></div>
-                  </div>
-                  <div className="flex gap-2">
-                    {pdfBlobUrl && <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-800 rounded hover:bg-gray-700 md:hidden"><ExternalLink size={16}/></a>}
-                    <button onClick={() => setViewingPdf(null)} className="p-2 bg-white/10 rounded hover:bg-red-600"><X size={16}/></button>
-                  </div>
-              </div>
-              <div className="flex-1 bg-black relative w-full h-full overflow-hidden">
-                  {isLoadingPdf ? (
-                      <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                          <Info size={48} className="animate-spin mb-2 opacity-30" />
-                          <h4 className="font-black text-xs uppercase">BAIXANDO DOCUMENTO...</h4>
-                      </div>
-                  ) : pdfBlobUrl ? (
-                      <iframe src={pdfBlobUrl} className="w-full h-full border-none" title="Viewer" />
-                  ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-gray-500"><AlertTriangle size={48} className="mb-2 opacity-30" /><h4 className="font-black text-xs uppercase">PDF INDISPONÍVEL</h4></div>
-                  )}
-              </div>
-          </div>
-      )}
     </div>
   );
 };

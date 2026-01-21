@@ -2,10 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord, RegisteredART, OMRecord } from '../types';
-import { Eye, Download, Trash2, X, FileText, CheckCircle, Clipboard, Filter, QrCode, Cloud, Archive as ArchiveIcon, Calendar, Hash, Tag, Printer, ShieldAlert, MapPin, AlertTriangle, AlertOctagon, Loader2, ExternalLink, Info, BookOpen, User } from 'lucide-react';
+import { Eye, Trash2, X, FileText, CheckCircle, Clipboard, Archive as ArchiveIcon, Calendar, Printer, Loader2, ExternalLink, MapPin, AlertOctagon, BookOpen, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BackButton } from '../components/BackButton';
 import { Logo } from '../components/Logo';
+import { PDFViewerModal } from '../components/PDFViewerModal'; // Importado
 
 const RISK_LIST = [
     "CONTATO COM SUPERFÍCIES CORTANTES/PERFURANTE", "PRENSAMENTO DE DEDOS OU MÃOS", "QUEDA DE PEÇAS/ESTRUTURAS/EQUIPAMENTOS",
@@ -21,9 +22,10 @@ interface ListItemProps {
   isArchived: boolean;
   onView: (doc: DocumentRecord) => void;
   onDelete: (e: React.MouseEvent, id: string) => void;
+  isAdmin: boolean;
 }
 
-const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete }) => {
+const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete, isAdmin }) => {
     const getTypeStyles = () => {
         if (isArchived) return { text: 'text-gray-400', bg: 'bg-gray-400', border: 'border-gray-200' };
         switch(doc.type) {
@@ -37,7 +39,6 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete }
     };
     const styles = getTypeStyles();
     
-    // Extrai o responsável da primeira assinatura (Executor/Responsável)
     const signer = doc.signatures && doc.signatures.length > 0 ? doc.signatures[0] : null;
     const signerText = signer ? `${signer.name.split(' ')[0]} (${signer.matricula})` : 'SEM ASSINATURA';
 
@@ -59,7 +60,12 @@ const ListItem: React.FC<ListItemProps> = ({ doc, isArchived, onView, onDelete }
                   <span className="text-[9px] font-black text-gray-400 uppercase">{signerText}</span>
               </div>
           </div>
-          <div className="flex items-center gap-1 shrink-0 bg-gray-50 md:bg-transparent p-1.5 rounded-lg w-full md:w-auto justify-center"><button onClick={(e) => { e.stopPropagation(); onView(doc); }} className="p-2 text-gray-400 hover:text-vale-green rounded-lg hover:bg-gray-100"><Eye size={16} /></button><button onClick={(e) => onDelete(e, doc.id)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"><Trash2 size={16} /></button></div>
+          <div className="flex items-center gap-1 shrink-0 bg-gray-50 md:bg-transparent p-1.5 rounded-lg w-full md:w-auto justify-center">
+              <button onClick={(e) => { e.stopPropagation(); onView(doc); }} className="p-2 text-gray-400 hover:text-vale-green rounded-lg hover:bg-gray-100"><Eye size={16} /></button>
+              {isAdmin && (
+                  <button onClick={(e) => onDelete(e, doc.id)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"><Trash2 size={16} /></button>
+              )}
+          </div>
       </div>
     );
 };
@@ -70,30 +76,29 @@ export const Archive: React.FC = () => {
   const [recentDocs, setRecentDocs] = useState<DocumentRecord[]>([]);
   const [archivedDocs, setArchivedDocs] = useState<DocumentRecord[]>([]);
   const [viewDoc, setViewDoc] = useState<DocumentRecord | null>(null);
-  
-  // BLOB URL STATES (FOR PDF VIEWER)
   const [docBlobUrl, setDocBlobUrl] = useState<string | null>(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  const [userRole, setUserRole] = useState('OPERADOR');
 
   // States for Linked Data in Viewer
   const [linkedOM, setLinkedOM] = useState<OMRecord | null>(null);
   const [linkedART, setLinkedART] = useState<RegisteredART | null>(null);
-  const [secondaryPdfUrl, setSecondaryPdfUrl] = useState<string | null>(null);
-  const [isLoadingSecondary, setIsLoadingSecondary] = useState(false);
+  
+  // Secondary Viewer Modal State
+  const [secondaryViewer, setSecondaryViewer] = useState<{ isOpen: boolean; url?: string; title: string; id?: string; table?: 'oms' | 'arts' }>({
+      isOpen: false, title: ''
+  });
 
   const refreshDocs = () => {
     const allDocs = StorageService.getDocuments();
     let filtered = allDocs.filter(d => d.status !== 'LIXEIRA' && d.status !== 'RASCUNHO');
     
-    // UNIFICAÇÃO: ARTS Tab agora inclui ART_ATIVIDADE e ART_EMERGENCIAL
     if (activeTab === 'ARTS') filtered = filtered.filter(d => d.type === 'ART_ATIVIDADE' || d.type === 'ART_EMERGENCIAL');
     else if (activeTab === 'CHECKLISTS') filtered = filtered.filter(d => d.type === 'CHECKLIST');
     else if (activeTab === 'CRONOGRAMAS') filtered = filtered.filter(d => d.type === 'CRONOGRAMA');
     else filtered = filtered.filter(d => d.type === 'RELATORIO');
     
-    // Sort logic
     setRecentDocs(filtered.filter(d => d.status !== 'ARQUIVADO').sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    // For Cronogramas, they are usually archived by default, so we check both
     if(activeTab === 'CRONOGRAMAS') {
         setRecentDocs(filtered.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         setArchivedDocs([]);
@@ -103,12 +108,14 @@ export const Archive: React.FC = () => {
   };
 
   useEffect(() => {
+    const role = localStorage.getItem('safemaint_role');
+    if(role) setUserRole(role);
+
     refreshDocs();
     window.addEventListener('safemaint_storage_update', refreshDocs);
     return () => window.removeEventListener('safemaint_storage_update', refreshDocs);
   }, [activeTab]);
 
-  // --- ENGINE DE PDF (BLOB) ---
   useEffect(() => {
       let activeUrl: string | null = null;
       const load = async () => {
@@ -116,39 +123,28 @@ export const Archive: React.FC = () => {
               setDocBlobUrl(null);
               setLinkedOM(null);
               setLinkedART(null);
-              setSecondaryPdfUrl(null);
               return;
           }
 
-          // 1. Load Main File (if exists, e.g. for reports or manual uploads)
           const fileData = viewDoc.content?.manualFileUrl;
           if (fileData) {
               let finalData = fileData;
-              if (finalData === 'TRUE' || finalData.length < 100) {
+              if (finalData === 'TRUE') {
                   setIsLoadingPdf(true);
                   const remote = await StorageService.getRecordPdf('documents', viewDoc.id);
                   if (remote) finalData = remote;
                   setIsLoadingPdf(false);
               }
-              
-              if (finalData && finalData !== 'TRUE') {
-                  try {
-                      // LIMPEZA DE BASE64
-                      const base64Clean = finalData.includes('base64,') ? finalData.split('base64,')[1] : finalData;
-                      
-                      const byteCharacters = atob(base64Clean);
-                      const byteNumbers = new Array(byteCharacters.length);
-                      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                      const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-                      activeUrl = URL.createObjectURL(blob);
-                      setDocBlobUrl(activeUrl);
-                  } catch(e) {
-                      setDocBlobUrl(null);
-                  }
-              } else { setDocBlobUrl(null); }
+              if (finalData && finalData !== 'TRUE' && finalData.startsWith('data:application/pdf;base64,')) {
+                  const byteCharacters = atob(finalData.split(',')[1]);
+                  const byteNumbers = new Array(byteCharacters.length);
+                  for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                  const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+                  activeUrl = URL.createObjectURL(blob);
+                  setDocBlobUrl(activeUrl);
+              } else { setDocBlobUrl(finalData); }
           }
 
-          // 2. Load Metadata
           const oms = StorageService.getOMs();
           const arts = StorageService.getARTs();
           const foundOM = oms.find(o => o.omNumber === viewDoc.header.om);
@@ -160,37 +156,29 @@ export const Archive: React.FC = () => {
       return () => { if (activeUrl) URL.revokeObjectURL(activeUrl); };
   }, [viewDoc]);
 
-  const viewSecondaryPdf = async (type: 'OM' | 'ART') => {
-      if (secondaryPdfUrl) { URL.revokeObjectURL(secondaryPdfUrl); setSecondaryPdfUrl(null); }
-      setIsLoadingSecondary(true);
-      
-      const target = type === 'OM' ? linkedOM : linkedART;
-      if (!target) { setIsLoadingSecondary(false); return; }
-
-      let pdfData = target.pdfUrl;
-      if (!pdfData || pdfData === 'TRUE') {
-          const table = type === 'OM' ? 'oms' : 'arts';
-          pdfData = await StorageService.getRecordPdf(table as any, target.id);
+  const viewSecondaryPdf = (type: 'OM' | 'ART') => {
+      if (type === 'OM' && linkedOM) {
+          setSecondaryViewer({
+              isOpen: true,
+              url: linkedOM.pdfUrl || 'TRUE',
+              title: `OM ${linkedOM.omNumber || ''}`,
+              id: linkedOM.id,
+              table: 'oms'
+          });
+      } else if (type === 'ART' && linkedART) {
+          setSecondaryViewer({
+              isOpen: true,
+              url: linkedART.pdfUrl || 'TRUE',
+              title: `ART ${linkedART.code || ''}`,
+              id: linkedART.id,
+              table: 'arts'
+          });
       }
-
-      if (pdfData && pdfData !== 'TRUE') {
-          try {
-              const base64Clean = pdfData.includes('base64,') ? pdfData.split('base64,')[1] : pdfData;
-              const byteCharacters = atob(base64Clean);
-              const byteNumbers = new Array(byteCharacters.length);
-              for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-              const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-              const url = URL.createObjectURL(blob);
-              setSecondaryPdfUrl(url);
-          } catch(e) { console.error("Erro blob secundário", e); }
-      }
-      setIsLoadingSecondary(false);
   };
 
   const renderFullDocument = (doc: DocumentRecord) => {
       const primarySigner = doc.signatures && doc.signatures.length > 0 ? doc.signatures[0] : null;
 
-      // Caso Relatório ou Upload Manual
       if (doc.content?.isManualUpload && docBlobUrl) {
           return (
               <div className="flex flex-col h-full w-full bg-gray-100">
@@ -204,11 +192,9 @@ export const Archive: React.FC = () => {
           );
       }
 
-      // === LAYOUT DE DOCUMENTO OFICIAL ===
       return (
           <div className="bg-white shadow-2xl mx-auto font-sans text-gray-900 border border-gray-200 print:border-none p-10 max-w-[21cm] w-full min-h-[29.7cm] flex flex-col mb-10 print:mb-0 print:shadow-none print:w-full print:max-w-none print:min-h-0 print:h-auto print:absolute print:top-0 print:left-0 print-area">
               
-              {/* HEADER OFICIAL */}
               <div className="border-b-4 border-vale-green pb-4 mb-6 flex justify-between items-center avoid-break">
                   <div className="flex items-center gap-4">
                       <Logo size="lg" />
@@ -231,10 +217,8 @@ export const Archive: React.FC = () => {
                   </div>
               </div>
 
-              {/* CONTEÚDO PRINCIPAL */}
               <div className="flex-1 space-y-6">
                   
-                  {/* IDENTIFICAÇÃO */}
                   <div className="bg-gray-50 p-4 border border-gray-300 rounded-none print:border-gray-300 avoid-break">
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 border-b border-gray-200 pb-1">DADOS DA ATIVIDADE</h4>
                       <div className="grid grid-cols-4 gap-4">
@@ -244,7 +228,6 @@ export const Archive: React.FC = () => {
                       </div>
                   </div>
 
-                  {/* REFERÊNCIAS EXTERNAS (BOTÕES PARA PDF DA OM/ART) - OCULTO NA IMPRESSÃO */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 no-print">
                       {linkedOM && (
                           <button onClick={() => viewSecondaryPdf('OM')} className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-all text-left">
@@ -260,7 +243,7 @@ export const Archive: React.FC = () => {
                       )}
                   </div>
 
-                  {/* CRONOGRAMA */}
+                  {/* RESTO DO CONTEÚDO (Mantido Igual) */}
                   {doc.type === 'CRONOGRAMA' && doc.content?.items && (
                       <div className="avoid-break">
                           <h4 className="text-xs font-black text-gray-700 uppercase mb-2">ITENS PROGRAMADOS</h4>
@@ -287,12 +270,10 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
-                  {/* ART EMERGENCIAL (MAPA DE RISCO) */}
                   {doc.type === 'ART_EMERGENCIAL' && doc.content?.quadrantRisks && (
                       <div className="space-y-6 border border-gray-300 p-4 avoid-break">
                           <h4 className="font-black text-xs text-red-600 uppercase flex items-center gap-2 border-b pb-2"><MapPin size={16}/> Mapeamento de Risco (APR)</h4>
                           <div className="flex flex-row gap-8 items-start justify-center">
-                              {/* Radar Visual */}
                               <div className="relative w-40 h-40 border-2 border-gray-300 rounded-full flex items-center justify-center shrink-0">
                                   <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
                                       <div className="border-r border-b border-gray-200 flex flex-col items-center justify-center p-2"><span className="text-[7px] font-black text-gray-400 absolute top-2">FRENTE</span>{doc.content.quadrantRisks['FRENTE']?.map((r: number) => <span key={r} className="w-4 h-4 bg-red-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white m-0.5">{r}</span>)}</div>
@@ -302,7 +283,6 @@ export const Archive: React.FC = () => {
                                   </div>
                                   <div className="w-4 h-4 bg-gray-800 rounded-full z-10 border-2 border-white"></div>
                               </div>
-                              {/* Lista de Riscos */}
                               <div className="flex-1 grid grid-cols-2 gap-2">
                                   {Object.entries(doc.content.checklistRisks || {}).filter(([,v]:any) => v.checked).map(([id, v]:any) => (
                                       <div key={id} className="text-[9px] border border-red-200 p-2 rounded bg-red-50/50">
@@ -315,7 +295,6 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
-                  {/* CHECKLIST */}
                   {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
                       <div className="space-y-4">
                         {Object.entries(doc.content.checklistItems.reduce((acc: any, item: any) => {
@@ -360,7 +339,6 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
-                  {/* RELATORIO DETALHADO */}
                   {doc.type === 'RELATORIO' && !doc.content?.isManualUpload && (
                       <div className="space-y-4 avoid-break">
                           <div className="p-4 border border-gray-300 bg-white rounded-none">
@@ -387,10 +365,16 @@ export const Archive: React.FC = () => {
                                   <p className="text-[10px] font-bold text-red-800 uppercase leading-tight">{doc.content.pendings}</p>
                               </div>
                           )}
+                          
+                          {doc.content.executorsList && (
+                              <div className="p-3 border border-blue-100 bg-blue-50">
+                                  <h4 className="text-[10px] font-black text-blue-600 uppercase mb-1">EQUIPE EXECUTANTE REGISTRADA</h4>
+                                  <p className="text-[10px] font-bold text-gray-800 uppercase">{doc.content.executorsList}</p>
+                              </div>
+                          )}
                       </div>
                   )}
 
-                  {/* ASSINATURAS */}
                   {doc.signatures && doc.signatures.length > 0 && (
                       <div className="mt-8 pt-4 border-t-2 border-gray-300 avoid-break">
                           <h4 className="font-black text-[9px] uppercase mb-4 text-gray-400 tracking-widest">RESPONSABILIDADE TÉCNICA E EXECUÇÃO</h4>
@@ -411,7 +395,6 @@ export const Archive: React.FC = () => {
                   )}
               </div>
               
-              {/* FOOTER OFICIAL */}
               <div className="mt-auto pt-2 border-t border-gray-300 text-[8px] text-gray-400 font-bold uppercase flex justify-between shrink-0 avoid-break">
                   <span>SAFEMAINT V4 • SISTEMA DE GESTÃO DE ATIVOS</span>
                   <span>ID: {doc.id.split('-')[0].toUpperCase()}</span>
@@ -422,7 +405,16 @@ export const Archive: React.FC = () => {
 
   return (
     <div className="max-w-[1600px] mx-auto pb-20 px-4">
-      {/* MODAL PRINCIPAL DE VISUALIZAÇÃO */}
+      {/* NOVO VISUALIZADOR SECUNDÁRIO (PARA OMs VINCULADAS NO ARQUIVO) */}
+      <PDFViewerModal 
+        isOpen={secondaryViewer.isOpen}
+        onClose={() => setSecondaryViewer(prev => ({ ...prev, isOpen: false }))}
+        title={secondaryViewer.title}
+        fileUrl={secondaryViewer.url}
+        recordId={secondaryViewer.id}
+        table={secondaryViewer.table || 'oms'}
+      />
+
       {viewDoc && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn h-[100dvh] overflow-hidden">
             <div className="bg-white p-3 flex justify-between items-center shrink-0 shadow-md border-b border-gray-200 relative z-[110] no-print">
@@ -448,26 +440,10 @@ export const Archive: React.FC = () => {
                     </div>
                 ) : renderFullDocument(viewDoc)}
             </div>
-
-            {/* VIEWER SECUNDÁRIO (OM/ART ORIGINAIS) */}
-            {secondaryPdfUrl && (
-                <div className="absolute inset-0 z-[120] bg-black/90 flex flex-col animate-fadeIn h-full overflow-hidden no-print">
-                    <div className="bg-gray-900 text-white p-3 flex justify-between items-center shrink-0 border-b border-gray-700">
-                        <div className="flex items-center gap-3"><FileText size={20} className="text-vale-green"/><div><h3 className="font-black text-xs uppercase">Documento Original Vinculado</h3></div></div>
-                        <div className="flex gap-2">
-                            <a href={secondaryPdfUrl} target="_blank" rel="noopener noreferrer" className="bg-blue-600 p-2 rounded hover:bg-blue-700 transition-colors"><ExternalLink size={16}/></a>
-                            <button onClick={() => { setSecondaryPdfUrl(null); }} className="p-2 bg-white/10 rounded hover:bg-red-600 transition-colors"><X size={16}/></button>
-                        </div>
-                    </div>
-                    <div className="flex-1 relative bg-black h-full">
-                        <iframe src={secondaryPdfUrl} className="w-full h-full border-none" title="Secondary Viewer" />
-                    </div>
-                </div>
-            )}
         </div>
       )}
 
-      {/* CABEÇALHO DA PÁGINA */}
+      {/* CABEÇALHO E TABS - MANTIDOS IGUAIS ... */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-5 rounded-2xl shadow-sm border border-gray-200 gap-4 no-print">
           <div className="flex items-center gap-3">
               <BackButton />
@@ -476,7 +452,6 @@ export const Archive: React.FC = () => {
           </div>
       </div>
 
-      {/* NAVEGAÇÃO DE CATEGORIAS */}
       <div className="flex overflow-x-auto gap-2 mb-8 pb-2 custom-scrollbar no-print">
           {[
               { id: 'ARTS', label: 'ARTS (GERAL)', icon: <FileText size={16}/> },
@@ -494,7 +469,6 @@ export const Archive: React.FC = () => {
           ))}
       </div>
 
-      {/* LISTAGEM DE DOCUMENTOS */}
       <div className="space-y-3 animate-fadeIn no-print">
           {recentDocs.length === 0 && archivedDocs.length === 0 ? (
               <div className="py-32 text-center bg-white rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-4">
@@ -513,6 +487,7 @@ export const Archive: React.FC = () => {
                             e.stopPropagation(); 
                             if(confirm('MOVER DOCUMENTO PARA A LIXEIRA?')) StorageService.moveToTrash(id);
                         }} 
+                        isAdmin={userRole === 'ADMIN'}
                     />
                 ))}
               </div>

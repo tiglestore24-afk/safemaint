@@ -2,18 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord } from '../types';
-import { Trash2, RotateCcw, XCircle, ArrowLeft, Eye, X, Printer, Loader2, ExternalLink, MapPin, FileText } from 'lucide-react';
+import { Trash2, RotateCcw, XCircle, ArrowLeft, Eye, X, Loader2, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '../components/Logo';
-
-const RISK_LIST = [
-    "CONTATO COM SUPERFÍCIES CORTANTES/PERFURANTE", "PRENSAMENTO DE DEDOS OU MÃOS", "QUEDA DE PEÇAS/ESTRUTURAS/EQUIPAMENTOS",
-    "PRENSAMENTO OU AGARRAMENTO DO CORPO", "ATROPELAMENTO/ESMAGAMENTO POR VEÍCULOS", "QUEDA, TROPEÇO OU ESCORREGÃO",
-    "ANIMAIS PEÇONHENTOS/INSETOS", "DESMORONAMENTOS DE PILHAS", "QUEDA DE PLATAFORMA OU ESCADAS", "ARCO E/OU CHOQUE ELÉTRICO",
-    "FONTES DE ENERGIA (HIDRÁULICA, PNEUMÁTICA)", "EXPOSIÇÃO A VAPORES, CONDENSADOS OU QUENTES", "GASES, VAPORES, POEIRAS OU FUMOS",
-    "PRODUTOS QUÍMICOS OU QUEIMADURAS", "PROJEÇÃO DE MATERIAIS NA FACE/OLHOS", "CONDIÇÕES CLIMÁTICAS ADVERSAS",
-    "QUEDA DE HOMEM AO MAR/AFOGAMENTO", "INTERFERÊNCIA ENTRE EQUIPES", "EXCESSO OU DEFICIÊNCIA DE ILUMINAÇÃO", "OUTRAS SITUAÇÕES DE RISCO"
-];
 
 export const Trash: React.FC = () => {
   const navigate = useNavigate();
@@ -36,7 +27,6 @@ export const Trash: React.FC = () => {
     setDocs(trashDocs);
   };
 
-  // Carregamento de PDF para visualização
   useEffect(() => {
       let activeUrl: string | null = null;
       const load = async () => {
@@ -45,7 +35,6 @@ export const Trash: React.FC = () => {
               return;
           }
 
-          // Load Manual File if exists
           const fileData = viewDoc.content?.manualFileUrl;
           if (fileData) {
               let finalData = fileData;
@@ -97,9 +86,6 @@ export const Trash: React.FC = () => {
   };
 
   const renderFullDocument = (doc: DocumentRecord) => {
-      // Reutiliza lógica de visualização (Simplificada para a Lixeira)
-      const primarySigner = doc.signatures && doc.signatures.length > 0 ? doc.signatures[0] : null;
-
       if (doc.content?.isManualUpload && docBlobUrl) {
           return (
               <div className="flex flex-col h-full w-full bg-gray-100">
@@ -115,7 +101,6 @@ export const Trash: React.FC = () => {
 
       return (
           <div className="bg-white shadow-2xl mx-auto font-sans text-gray-900 border border-gray-200 p-10 max-w-[21cm] w-full min-h-[29.7cm] flex flex-col mb-10 relative opacity-90">
-              {/* Marca d'água LIXEIRA */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                   <span className="text-[120px] font-black text-red-500 opacity-10 rotate-45 border-4 border-red-500 p-10 rounded-xl">LIXEIRA</span>
               </div>
@@ -144,8 +129,6 @@ export const Trash: React.FC = () => {
                           <div className="col-span-3"><span className="text-[8px] font-bold text-gray-500 block uppercase">DESCRIÇÃO</span><span className="font-bold text-sm uppercase leading-tight">{doc.header.description}</span></div>
                       </div>
                   </div>
-
-                  {/* Conteúdo Simplificado para Visualização Rápida */}
                   <div className="p-4 border border-gray-200">
                       <p className="text-center text-gray-400 text-xs font-bold uppercase italic">Detalhes completos disponíveis após restauração.</p>
                   </div>
@@ -156,8 +139,6 @@ export const Trash: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto pb-24">
-      
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 border-b border-gray-300 pb-4 gap-4">
         <div className="flex items-center gap-3 w-full md:w-auto">
              <button onClick={() => navigate(-1)} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors">
@@ -171,19 +152,13 @@ export const Trash: React.FC = () => {
                 <p className="text-xs font-bold text-gray-400 uppercase">Itens excluídos (Recuperáveis)</p>
             </div>
         </div>
-        
         {docs.length > 0 && (
-            <button 
-                onClick={handleEmptyTrash}
-                className="w-full md:w-auto bg-red-100 hover:bg-red-200 text-red-700 border border-red-300 px-6 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
-            >
-                <XCircle size={18} />
-                EXCLUIR TUDO (ESVAZIAR)
+            <button onClick={handleEmptyTrash} className="w-full md:w-auto bg-red-100 hover:bg-red-200 text-red-700 border border-red-300 px-6 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-colors shadow-sm">
+                <XCircle size={18} /> EXCLUIR TUDO (ESVAZIAR)
             </button>
         )}
       </div>
       
-      {/* TABLE */}
       <div className="bg-white shadow-md rounded-xl overflow-hidden border border-gray-200 mb-10">
         <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -223,27 +198,9 @@ export const Trash: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex justify-end gap-2">
-                                <button 
-                                    onClick={() => setViewDoc(doc)} 
-                                    className="p-2 bg-gray-100 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="Visualizar"
-                                >
-                                    <Eye size={18} />
-                                </button>
-                                <button 
-                                    onClick={(e) => handleRestore(e, doc.id)} 
-                                    className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
-                                    title="Restaurar"
-                                >
-                                    <RotateCcw size={18} />
-                                </button>
-                                <button 
-                                    onClick={(e) => handlePermanentDelete(e, doc.id)} 
-                                    className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-                                    title="Excluir Definitivamente"
-                                >
-                                    <XCircle size={18} />
-                                </button>
+                                <button onClick={() => setViewDoc(doc)} className="p-2 bg-gray-100 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Visualizar"><Eye size={18} /></button>
+                                <button onClick={(e) => handleRestore(e, doc.id)} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors" title="Restaurar"><RotateCcw size={18} /></button>
+                                <button onClick={(e) => handlePermanentDelete(e, doc.id)} className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Excluir Definitivamente"><XCircle size={18} /></button>
                             </div>
                         </td>
                     </tr>
@@ -252,7 +209,6 @@ export const Trash: React.FC = () => {
         </table>
       </div>
 
-      {/* VIEWER MODAL */}
       {viewDoc && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn h-[100dvh] overflow-hidden">
             <div className="bg-gray-900 p-3 flex justify-between items-center shrink-0 border-b border-gray-700">
@@ -264,15 +220,11 @@ export const Trash: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <button 
-                        onClick={(e) => handleRestore(e, viewDoc.id)}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-black text-xs uppercase flex items-center gap-2"
-                    >
+                    <button onClick={(e) => handleRestore(e, viewDoc.id)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-black text-xs uppercase flex items-center gap-2">
                         <RotateCcw size={16}/> RESTAURAR
                     </button>
                 </div>
             </div>
-            
             <div className="flex-1 overflow-auto bg-gray-800 p-2 md:p-10 flex flex-col items-center custom-scrollbar">
                 {isLoadingPdf ? (
                     <div className="flex flex-col items-center justify-center h-full text-white">

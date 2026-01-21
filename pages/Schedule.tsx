@@ -23,6 +23,8 @@ export const Schedule: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
   
+  const [userRole, setUserRole] = useState('OPERADOR');
+
   // Feedback
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -49,6 +51,9 @@ export const Schedule: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const role = localStorage.getItem('safemaint_role');
+    if(role) setUserRole(role);
+
     loadData(true);
     const handleSilentUpdate = () => loadData(false);
     window.addEventListener('safemaint_storage_update', handleSilentUpdate);
@@ -63,14 +68,12 @@ export const Schedule: React.FC = () => {
       const fullText = (item.frotaOm || '').toUpperCase();
       
       // 1. Extração de TAG (Prioridade: Padrão CA + Digitos)
-      // Conforme regra: "o número do tag onde se encontra na primeiro coluna onde o dia se inicia com CA"
-      // Assumindo que a importação (Settings) já fez o "Fill Down", o campo frotaOm contém essa info.
       const caMatch = fullText.match(/\b(CA-?\d+)\b/);
       
       if (caMatch) {
           tag = caMatch[1].replace('-', '');
       } else {
-          // Fallback para padrões gerais tipo TR-500, EQ-100, etc. se não achar CA
+          // Fallback para padrões gerais
           const genericTagMatch = fullText.match(/^([A-Z]{2,4}-?\d+)/);
           if (genericTagMatch) tag = genericTagMatch[1];
           else tag = fullText.split('/')[0].trim();
@@ -188,7 +191,6 @@ export const Schedule: React.FC = () => {
   }
 
   // --- PRINT MODE LOGIC ---
-  // We render a specific clean table for printing that overrides the main UI via CSS
   return (
     <>
         <style>{`
@@ -245,10 +247,16 @@ export const Schedule: React.FC = () => {
                         </div>
                     </div>
                     
-                    <button onClick={handleArchiveWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 shadow-lg h-[42px]">
-                        <FileText size={16}/> SALVAR PDF
-                    </button>
-                    <button onClick={handleClearAll} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors h-[42px]">LIMPAR</button>
+                    {/* AÇÕES DISPONÍVEIS APENAS PARA ADMIN */}
+                    {userRole === 'ADMIN' && (
+                        <>
+                            <button onClick={handleArchiveWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 shadow-lg h-[42px]">
+                                <FileText size={16}/> SALVAR PDF
+                            </button>
+                            <button onClick={handleClearAll} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors h-[42px]">LIMPAR</button>
+                        </>
+                    )}
+                    
                     <button onClick={() => setIsFullscreen(true)} className="bg-vale-dark text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest border-b-4 border-black active:translate-y-0.5 transition-all h-[42px]">TV MODE</button>
                 </div>
             </div>
@@ -276,10 +284,12 @@ export const Schedule: React.FC = () => {
                                         <tr key={item.id} className={`transition-colors border-b border-gray-50 group hover:bg-teal-50/30 ${isActive ? 'bg-green-50 opacity-60 grayscale' : ''}`}>
                                             <td className="p-2 text-center border-r border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-teal-50/50 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
                                                 <div className="flex gap-2 justify-center">
-                                                    {!isActive && (
+                                                    {!isActive && userRole === 'ADMIN' && (
                                                         <button onClick={() => handleStartMaintenance(item)} className="text-vale-green p-2 hover:scale-125 transition-transform bg-teal-50 rounded-lg" title="Iniciar Manutenção"><PlayCircle size={20} /></button>
                                                     )}
-                                                    <button onClick={() => { if(window.confirm("REMOVER ITEM?")) StorageService.deleteScheduleItem(item.id).then(() => loadData(false)) }} className="text-gray-200 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button>
+                                                    {userRole === 'ADMIN' && (
+                                                        <button onClick={() => { if(window.confirm("REMOVER ITEM?")) StorageService.deleteScheduleItem(item.id).then(() => loadData(false)) }} className="text-gray-200 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="p-4 font-black text-gray-900 border-r border-gray-50 text-[11px] uppercase">{item.frotaOm}</td>

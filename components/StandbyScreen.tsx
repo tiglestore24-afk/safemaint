@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Cube3D } from './Cube3D';
+import { Logo } from './Logo';
 
 interface StandbyScreenProps {
   onWake: () => void;
@@ -20,9 +20,11 @@ export const StandbyScreen: React.FC<StandbyScreenProps> = ({ onWake }) => {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#007e7a] rounded-full blur-[150px] opacity-5 animate-pulse-slow"></div>
       </div>
 
-      {/* 3D Object */}
-      <div className="scale-125 md:scale-150 mb-12 relative z-10 transition-transform duration-700 hover:scale-110">
-        <Cube3D size="xl" />
+      {/* Main Object */}
+      <div className="mb-12 relative z-10 transition-transform duration-700 hover:scale-110">
+        <div className="p-6 bg-white/5 rounded-3xl border border-white/10 backdrop-blur-sm">
+            <Logo size="xl" light showText={false} />
+        </div>
       </div>
 
       {/* Text Branding */}

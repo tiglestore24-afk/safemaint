@@ -5,9 +5,10 @@ import { SignatureSection } from '../components/SignatureSection';
 import { StorageService } from '../services/storage';
 import { HeaderData, DocumentRecord, RegisteredART, SignatureRecord, ActiveMaintenance, OMRecord } from '../types';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { FileText, Eye, CheckCircle, X, ShieldCheck, Save, Download, ShieldAlert, ArrowRight, BookOpen, Loader2, Link as LinkIcon, Search, Database, Lock, ExternalLink } from 'lucide-react';
+import { FileText, Eye, CheckCircle, X, ShieldCheck, Save, Download, ShieldAlert, ArrowRight, BookOpen, Loader2, Link as LinkIcon, Search, Database, Lock, ExternalLink, Timer, PlayCircle } from 'lucide-react';
 import { BackButton } from '../components/BackButton';
-import { FeedbackModal } from '../components/FeedbackModal'; // Importado
+import { FeedbackModal } from '../components/FeedbackModal'; 
+import { PDFViewerModal } from '../components/PDFViewerModal'; // Importado
 
 export const ARTAtividade: React.FC = () => {
   const navigate = useNavigate();
@@ -22,10 +23,12 @@ export const ARTAtividade: React.FC = () => {
   const [scheduleId, setScheduleId] = useState<string | undefined>(undefined); 
   const [registeredARTs, setRegisteredARTs] = useState<RegisteredART[]>([]);
   const [selectedART, setSelectedART] = useState<RegisteredART | null>(null);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  
+  // PDF Viewer State
+  const [viewerOpen, setViewerOpen] = useState(false);
+
   const [isConfirmed, setIsConfirmed] = useState(false); 
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   
   // SCHEDULE LINKING STATES
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -48,15 +51,11 @@ export const ARTAtividade: React.FC = () => {
 
     if (paramScheduleId) {
         setScheduleId(paramScheduleId);
-        // SE VIER DA AGENDA E AINDA NÃO TIVER OM VINCULADA, ABRE O MODAL
         if (!paramOmId) {
             setShowLinkModal(true);
-            // Pre-fill search with OM number from Schedule
             if (paramOm) {
                 setLinkSearchQuery(paramOm);
-                // Perform Auto-Search
                 const allOms = StorageService.getOMs();
-                // Match criteria: OM Number OR Tag matches
                 const matches = allOms.filter(o => 
                     o.omNumber.includes(paramOm) || 
                     (paramTag && o.tag.includes(paramTag))
@@ -82,29 +81,6 @@ export const ARTAtividade: React.FC = () => {
     }
   }, [searchParams]);
 
-  useEffect(() => {
-      if (selectedART?.pdfUrl && showPreviewModal) {
-          try {
-              if (selectedART.pdfUrl.startsWith('data:application/pdf;base64,')) {
-                  const byteCharacters = atob(selectedART.pdfUrl.split(',')[1]);
-                  const byteNumbers = new Array(byteCharacters.length);
-                  for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                  const byteArray = new Uint8Array(byteNumbers);
-                  const blob = new Blob([byteArray], { type: 'application/pdf' });
-                  const url = URL.createObjectURL(blob);
-                  setPdfBlobUrl(url);
-                  return () => URL.revokeObjectURL(url);
-              } else {
-                  setPdfBlobUrl(selectedART.pdfUrl);
-              }
-          } catch (e) {
-              setPdfBlobUrl(selectedART.pdfUrl);
-          }
-      } else {
-          setPdfBlobUrl(null);
-      }
-  }, [selectedART, showPreviewModal]);
-
   const handleARTSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const art = registeredARTs.find(a => a.id === e.target.value);
     setSelectedART(art || null);
@@ -113,31 +89,25 @@ export const ARTAtividade: React.FC = () => {
 
   const handleConfirmOriginal = () => {
       setIsConfirmed(true);
-      setShowPreviewModal(false);
+      setViewerOpen(false);
   };
 
   const handleLinkOm = (om: OMRecord) => {
-      // --- VALIDAÇÃO RIGOROSA: OM AGENDA vs OM BANCO ---
       if (scheduleId) {
-          // Limpa strings para comparar apenas números (remove espaços, traços, etc)
           const scheduleOmClean = header.om ? header.om.trim().replace(/\D/g, '') : '';
           const selectedOmClean = om.omNumber.trim().replace(/\D/g, '');
-
-          // Lógica: Se a agenda tem um número definido (mais de 5 dígitos), TEM QUE BATER.
           if (scheduleOmClean.length >= 5 && scheduleOmClean !== selectedOmClean) {
-              alert(`⛔ BLOQUEIO DE SEGURANÇA\n\nA OM selecionada (${om.omNumber}) não é a mesma programada na Agenda (${header.om}).\n\nRegra: O número da OM deve ser idêntico para prosseguir.`);
+              alert(`⛔ BLOQUEIO DE SEGURANÇA\n\nA OM selecionada (${om.omNumber}) não é a mesma programada na Agenda (${header.om}).`);
               return;
           }
       }
-      // -------------------------------------------------
-
       setOmId(om.id);
       setHeader(prev => ({
           ...prev,
           om: om.omNumber,
           tag: om.tag,
           description: om.description || prev.description,
-          type: om.type === 'CORRETIVA' ? 'MECANICA' : prev.type // Simple logic for now
+          type: om.type === 'CORRETIVA' ? 'MECANICA' : prev.type 
       }));
       setShowLinkModal(false);
   };
@@ -158,21 +128,22 @@ export const ARTAtividade: React.FC = () => {
     setIsProcessing(true);
 
     try {
-        // Simulate minimal delay for UX
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 800));
 
         const artId = crypto.randomUUID();
+        
+        // 1. SALVA O DOCUMENTO DA ART
         const doc: DocumentRecord = {
           id: artId,
           type: 'ART_ATIVIDADE',
           header,
           createdAt: new Date().toISOString(),
-          status: 'ATIVO', // MUDANÇA: ATIVO para aparecer no Arquivo imediatamente
+          status: 'ATIVO', 
           content: { 
               artId: selectedART.id, 
               artNumber: selectedART.code, 
               artName: selectedART.taskName,
-              manualFileUrl: selectedART.pdfUrl // CRUCIAL: Salva o PDF Original da ART no Documento
+              manualFileUrl: selectedART.pdfUrl 
           },
           signatures
         };
@@ -180,25 +151,26 @@ export const ARTAtividade: React.FC = () => {
         
         const nowIso = new Date().toISOString();
         
-        // START MAINTENANCE - THIS WILL CONSUME THE SCHEDULE ID
+        // 2. INICIA A MANUTENÇÃO (ISTO FAZ O CARD APARECER NO PAINEL E O CRONÔMETRO RODAR)
         await StorageService.startMaintenance({
             id: crypto.randomUUID(),
-            omId: omId,
-            scheduleId: scheduleId, // Passa o ID da agenda se existir (isso faz sumir da agenda)
+            omId: omId, // IMPORTANTE: PASSA O ID DA OM PARA VINCULAR E ATUALIZAR STATUS
+            scheduleId: scheduleId, 
             header,
             startTime: nowIso,
             artId: artId,
             artType: 'ART_ATIVIDADE',
             origin: 'PREVENTIVA',
-            status: 'ANDAMENTO',
-            currentSessionStart: nowIso,
+            status: 'ANDAMENTO', // CRUCIAL: STATUS 'ANDAMENTO' DISPARA O CRONÔMETRO
+            currentSessionStart: nowIso, // CRUCIAL: DATA DE INÍCIO DA SESSÃO ATUAL
+            accumulatedTime: 0,
             openedBy: localStorage.getItem('safemaint_user') || 'ANONIMO'
         });
         
         setIsProcessing(false);
         setIsSuccess(true);
         setTimeout(() => {
-            navigate('/dashboard');
+            navigate('/dashboard'); // REDIRECIONA PARA O PAINEL
         }, 1500);
     } catch (e) {
         setIsProcessing(false);
@@ -212,7 +184,19 @@ export const ARTAtividade: React.FC = () => {
         isOpen={isProcessing || isSuccess} 
         isSuccess={isSuccess} 
         loadingText="PROCESSANDO LIBERAÇÃO..." 
-        successText="ATIVIDADE LIBERADA!"
+        successText="CRONÔMETRO INICIADO!"
+      />
+
+      {/* PDF VIEWER MODAL INTEGRADO COM VALIDAÇÃO */}
+      <PDFViewerModal 
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        title={selectedART ? `VISUALIZAÇÃO DE SEGURANÇA - ${selectedART.code}` : 'DOCUMENTO'}
+        fileUrl={selectedART?.pdfUrl || 'TRUE'}
+        recordId={selectedART?.id}
+        table="arts"
+        onConfirm={!isConfirmed ? handleConfirmOriginal : undefined} // Só mostra o botão se ainda não estiver confirmado
+        confirmLabel="LI, COMPREENDI E VALIDO ESTE PROCEDIMENTO"
       />
 
       {/* Title Bar */}
@@ -229,10 +213,8 @@ export const ARTAtividade: React.FC = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           
-          {/* LEFT COLUMN - MAIN CONTENT - 9/12 (75%) */}
           <div className="xl:col-span-9 space-y-6">
               
-              {/* STEP 1: IDENTIFICATION */}
               <section className="relative">
                   <div className="absolute -left-3 top-6 bottom-0 w-0.5 bg-gray-200 hidden md:block"></div>
                   <div className="flex items-center gap-3 mb-4">
@@ -244,7 +226,6 @@ export const ARTAtividade: React.FC = () => {
                   </div>
               </section>
 
-              {/* STEP 2: PROCEDURE SELECTION & VALIDATION */}
               <section className="relative">
                   <div className="absolute -left-3 top-6 bottom-0 w-0.5 bg-gray-200 hidden md:block"></div>
                   <div className="flex items-center gap-3 mb-4">
@@ -254,7 +235,6 @@ export const ARTAtividade: React.FC = () => {
                   
                   <div className="md:pl-8">
                       <div className={`bg-white rounded-[1.5rem] shadow-sm border overflow-hidden transition-all ${isConfirmed ? 'border-green-500' : 'border-gray-200'}`}>
-                          {/* Header do Card */}
                           <div className={`p-4 border-b flex justify-between items-center ${isConfirmed ? 'bg-green-50 border-green-100' : 'bg-gray-50 border-gray-100'}`}>
                               <div className="flex items-center gap-3">
                                   <BookOpen size={18} className={isConfirmed ? 'text-green-600' : 'text-gray-400'} />
@@ -267,7 +247,6 @@ export const ARTAtividade: React.FC = () => {
                           </div>
 
                           <div className="p-6 space-y-4">
-                              {/* Selection Dropdown */}
                               <div>
                                   <label className="block text-[9px] font-black text-gray-400 uppercase mb-2 ml-1">Pesquisar Procedimento (ART)</label>
                                   <div className="relative">
@@ -286,7 +265,6 @@ export const ARTAtividade: React.FC = () => {
                                   </div>
                               </div>
 
-                              {/* Selected Context */}
                               {selectedART && (
                                   <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100 animate-fadeIn">
                                       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -296,28 +274,30 @@ export const ARTAtividade: React.FC = () => {
                                               <p className="text-[10px] font-bold text-gray-500 uppercase mt-1">Código: {selectedART.code}</p>
                                           </div>
 
-                                          <button 
-                                            onClick={() => setShowPreviewModal(true)} 
-                                            className={`
-                                                group relative px-5 py-3 rounded-lg font-black text-[10px] uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm active:scale-95 whitespace-nowrap
-                                                ${isConfirmed 
-                                                    ? 'bg-white border-2 border-green-500 text-green-600 hover:bg-green-50' 
-                                                    : 'bg-vale-blue text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-200'}
-                                            `}
-                                          >
-                                              {isConfirmed ? (
-                                                  <>
-                                                    <CheckCircle size={14} />
-                                                    Leitura Confirmada
-                                                  </>
-                                              ) : (
-                                                  <>
-                                                    <Eye size={14} />
-                                                    Ler e Validar PDF
-                                                  </>
-                                              )}
-                                              {!isConfirmed && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>}
-                                          </button>
+                                          <div className="flex flex-col gap-2">
+                                              <button 
+                                                onClick={() => setViewerOpen(true)} 
+                                                className={`
+                                                    group relative px-5 py-3 rounded-lg font-black text-[10px] uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm active:scale-95 whitespace-nowrap
+                                                    ${isConfirmed 
+                                                        ? 'bg-white border-2 border-green-500 text-green-600 hover:bg-green-50' 
+                                                        : 'bg-vale-blue text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-200'}
+                                                `}
+                                              >
+                                                  {isConfirmed ? (
+                                                      <>
+                                                        <CheckCircle size={14} />
+                                                        Documento Validado
+                                                      </>
+                                                  ) : (
+                                                      <>
+                                                        <Eye size={14} />
+                                                        Ler e Validar PDF
+                                                      </>
+                                                  )}
+                                                  {!isConfirmed && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>}
+                                              </button>
+                                          </div>
                                       </div>
                                   </div>
                               )}
@@ -326,7 +306,6 @@ export const ARTAtividade: React.FC = () => {
                   </div>
               </section>
 
-              {/* STEP 3: SIGNATURES */}
               {isConfirmed && (
                   <section className="relative animate-fadeIn">
                       <div className="flex items-center gap-3 mb-4">
@@ -340,7 +319,6 @@ export const ARTAtividade: React.FC = () => {
               )}
           </div>
 
-          {/* RIGHT COLUMN - STATUS PANEL - 3/12 (25%) */}
           <div className="xl:col-span-3">
               <div className="sticky top-6">
                   <div className="bg-vale-dark text-white rounded-2xl shadow-xl p-5 border-b-[8px] border-vale-green">
@@ -350,10 +328,8 @@ export const ARTAtividade: React.FC = () => {
                       </div>
                       
                       <div className="space-y-3 relative">
-                          {/* Linha conectora vertical */}
                           <div className="absolute left-[13px] top-3 bottom-3 w-0.5 bg-gray-700 z-0"></div>
 
-                          {/* Item 1 */}
                           <div className="relative z-10 flex items-center gap-3">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors ${header.om && header.tag ? 'bg-vale-green border-vale-green text-white' : 'bg-gray-800 border-gray-600 text-gray-500'}`}>
                                   {header.om && header.tag ? <CheckCircle size={14}/> : '1'}
@@ -364,7 +340,6 @@ export const ARTAtividade: React.FC = () => {
                               </div>
                           </div>
 
-                          {/* Item 2 */}
                           <div className="relative z-10 flex items-center gap-3">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors ${isConfirmed ? 'bg-vale-green border-vale-green text-white' : 'bg-gray-800 border-gray-600 text-gray-500'}`}>
                                   {isConfirmed ? <CheckCircle size={14}/> : '2'}
@@ -375,7 +350,6 @@ export const ARTAtividade: React.FC = () => {
                               </div>
                           </div>
 
-                          {/* Item 3 */}
                           <div className="relative z-10 flex items-center gap-3">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors ${signatures.length > 0 ? 'bg-vale-green border-vale-green text-white' : 'bg-gray-800 border-gray-600 text-gray-500'}`}>
                                   {signatures.length > 0 ? <CheckCircle size={14}/> : '3'}
@@ -393,16 +367,18 @@ export const ARTAtividade: React.FC = () => {
                                 disabled={!isConfirmed || signatures.length === 0 || isProcessing} 
                                 className={`w-full py-3 rounded-lg shadow-lg font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isConfirmed && signatures.length > 0 ? 'bg-vale-green hover:bg-[#00605d] text-white hover:scale-105' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
                             >
-                                {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                                Liberar
+                                {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <PlayCircle size={16} />}
+                                LIBERAR E INICIAR CRONÔMETRO
                             </button>
+                            <p className="text-[8px] text-gray-500 font-bold uppercase text-center mt-2">
+                                Ao iniciar, a atividade aparecerá no painel e o tempo começará a contar.
+                            </p>
                       </div>
                   </div>
               </div>
           </div>
       </div>
 
-      {/* SCHEDULE LINK MODAL - MOBILE OPTIMIZED (FULL SCREEN ON SMALL DEVICES) */}
       {showLinkModal && (
           <div className="fixed inset-0 z-[100] bg-gray-900/90 flex items-end md:items-center justify-center md:p-4 backdrop-blur-sm animate-fadeIn">
               <div className="bg-white w-full md:max-w-2xl h-[100dvh] md:h-auto md:max-h-[85vh] md:rounded-2xl p-6 shadow-2xl border-t-8 border-blue-600 flex flex-col">
@@ -490,54 +466,6 @@ export const ARTAtividade: React.FC = () => {
                           O número da OM deve ser idêntico.
                       </div>
                   </div>
-              </div>
-          </div>
-      )}
-
-      {/* PREVIEW MODAL - MOBILE OPTIMIZED (100dvh + EXTERNAL LINK) */}
-      {showPreviewModal && selectedART && (
-          <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-fadeIn overflow-hidden h-[100dvh]">
-              <div className="bg-gray-900 px-4 py-2 flex justify-between items-center text-white shrink-0 border-b border-gray-800">
-                  <div className="flex items-center gap-3">
-                      <FileText size={18} className="text-vale-green"/>
-                      <div>
-                          <h3 className="font-black text-sm tracking-tighter uppercase">Visualização de Segurança</h3>
-                          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{selectedART.code}</p>
-                      </div>
-                  </div>
-                  <div className="flex gap-2">
-                       {pdfBlobUrl && (
-                        <>
-                            <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors md:hidden" title="Abrir em Nova Aba (Melhor para Mobile)">
-                                <ExternalLink size={16}/>
-                            </a>
-                            <a href={pdfBlobUrl} download className="p-2 bg-gray-800 rounded hover:bg-gray-700 text-white transition-colors hidden md:block" title="Baixar">
-                                <Download size={16}/>
-                            </a>
-                        </>
-                       )}
-                       <button onClick={() => setShowPreviewModal(false)} className="p-2 bg-white/10 rounded hover:bg-red-600 transition-colors"><X size={16}/></button>
-                  </div>
-              </div>
-              
-              <div className="flex-1 bg-black relative w-full h-full overflow-hidden">
-                  {pdfBlobUrl ? (
-                      <iframe src={pdfBlobUrl} className="w-full h-full border-none" title="PDF Viewer" />
-                  ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                          <ShieldAlert size={48} className="mx-auto mb-2 opacity-30" />
-                          <h4 className="font-black text-xs uppercase">PDF Indisponível</h4>
-                      </div>
-                  )}
-              </div>
-
-              <div className="p-3 bg-gray-900 border-t border-gray-800 flex justify-between items-center shrink-0 safe-area-bottom">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase hidden md:block">
-                      Confirme a leitura e compreensão dos riscos.
-                  </div>
-                  <button onClick={handleConfirmOriginal} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-black shadow-lg uppercase text-xs tracking-widest transition-transform active:scale-95 w-full md:w-auto">
-                      Li e Concordo (Validar)
-                  </button>
               </div>
           </div>
       )}

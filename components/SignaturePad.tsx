@@ -1,7 +1,5 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-// Fix: Import PenTool from lucide-react
-import { PenTool } from 'lucide-react';
 
 interface SignaturePadProps {
   onSave: (dataUrl: string) => void;
@@ -14,35 +12,35 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
 
+  // Resize logic to ensure canvas fits container (crucial for modals/mobile)
   useEffect(() => {
     const resizeCanvas = () => {
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (canvas && container) {
-        const tempImage = hasSignature ? canvas.toDataURL() : null;
-        
+        // Set canvas dimensions to match container width
         canvas.width = container.clientWidth;
-        canvas.height = 200; // Altura fixa para conforto
+        canvas.height = 150; // Fixed height or dynamic
         
+        // Reset Context after resize
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
             ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            
-            if (tempImage) {
-                const img = new Image();
-                img.onload = () => ctx.drawImage(img, 0, 0);
-                img.src = tempImage;
-            }
         }
       }
     };
 
+    // Call initially
     resizeCanvas();
-    const timer = setTimeout(resizeCanvas, 300);
+    
+    // Call after a small delay to handle modal animations
+    const timer = setTimeout(resizeCanvas, 100);
+
+    // Call on window resize
     window.addEventListener('resize', resizeCanvas);
+
     return () => {
         window.removeEventListener('resize', resizeCanvas);
         clearTimeout(timer);
@@ -53,16 +51,8 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    
-    let clientX, clientY;
-    if ('touches' in e && e.touches.length > 0) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = (e as React.MouseEvent).clientX;
-      clientY = (e as React.MouseEvent).clientY;
-    }
-
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
     return {
       x: clientX - rect.left,
       y: clientY - rect.top
@@ -70,26 +60,25 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    // IMPORTANT: Prevents scrolling on touch devices
+    if(e.cancelable && e.type === 'touchstart') e.preventDefault();
+    
     setIsDrawing(true);
-    setHasSignature(true);
     const ctx = canvasRef.current?.getContext('2d');
     const pos = getPos(e);
-    if (ctx) {
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y);
-    }
-    if(e.cancelable) e.preventDefault();
+    ctx?.beginPath();
+    ctx?.moveTo(pos.x, pos.y);
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return;
+    if(e.cancelable && e.type === 'touchmove') e.preventDefault();
+
     const ctx = canvasRef.current?.getContext('2d');
     const pos = getPos(e);
-    if (ctx) {
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-    }
-    if(e.cancelable) e.preventDefault();
+    ctx?.lineTo(pos.x, pos.y);
+    ctx?.stroke();
+    setHasSignature(true);
   };
 
   const stopDrawing = () => {
@@ -102,24 +91,23 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
     if (canvas && ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       setHasSignature(false);
+      onSave(''); // Clear in parent
     }
   };
 
-  const handleConfirm = () => {
+  const save = () => {
     if (canvasRef.current && hasSignature) {
-        onSave(canvasRef.current.toDataURL());
-    } else {
-        alert("⚠️ Por favor, realize o traço da assinatura antes de confirmar.");
+      onSave(canvasRef.current.toDataURL());
     }
   };
 
   return (
-    <div className="border-2 border-gray-100 rounded-[2rem] p-6 bg-white shadow-sm" ref={containerRef}>
-      <label className="block text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest ml-1">{label}</label>
-      <div className="border-2 border-dashed border-gray-200 bg-gray-50 mb-6 cursor-crosshair overflow-hidden relative rounded-2xl h-[200px]">
+    <div className="border border-gray-300 rounded p-2 bg-white shadow-sm" ref={containerRef}>
+      <label className="block text-sm font-bold text-gray-700 mb-1">{label}</label>
+      <div className="border border-dashed border-gray-400 bg-gray-50 mb-2 cursor-crosshair overflow-hidden relative">
         <canvas
           ref={canvasRef}
-          style={{ touchAction: 'none' }}
+          style={{ touchAction: 'none', willChange: 'contents' }} // CRITICAL FIX FOR MOBILE
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}
@@ -127,27 +115,26 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onSave, label }) => 
           onTouchStart={startDrawing}
           onTouchMove={draw}
           onTouchEnd={stopDrawing}
-          className="w-full h-full block"
+          className="w-full block"
         />
         {!hasSignature && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-gray-300 select-none animate-pulse">
-                <PenTool size={32} className="mb-2 opacity-20" />
-                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Assine Aqui</span>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300 text-xs font-bold uppercase select-none">
+                Assine aqui
             </div>
         )}
       </div>
-      <div className="flex gap-4">
+      <div className="flex gap-2">
         <button
           type="button"
           onClick={clear}
-          className="px-8 py-4 text-[10px] bg-white text-red-500 border-2 border-red-50 rounded-xl font-black uppercase hover:bg-red-50 transition-all active:scale-95"
+          className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 font-bold"
         >
           LIMPAR
         </button>
         <button
           type="button"
-          onClick={handleConfirm}
-          className={`flex-1 py-4 text-[10px] text-white rounded-xl font-black uppercase shadow-lg transition-all active:scale-95 ${hasSignature ? 'bg-vale-green hover:bg-[#00605d]' : 'bg-gray-300 cursor-not-allowed'}`}
+          onClick={save}
+          className={`px-3 py-1 text-xs text-white rounded font-bold flex-1 ${hasSignature ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'}`}
           disabled={!hasSignature}
         >
           CONFIRMAR ASSINATURA

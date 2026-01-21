@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StorageService } from '../services/storage';
-import { OMRecord, ActiveMaintenance, DocumentRecord, PendingExtraDemand } from '../types';
-import { ClipboardList, PlayCircle, Search, AlertOctagon, Link as LinkIcon, Info, Trash2, FileText, X, Loader2 } from 'lucide-react';
+import { OMRecord, PendingExtraDemand } from '../types';
+import { ClipboardList, PlayCircle, Search, AlertOctagon, Link as LinkIcon, Info, Trash2, FileText } from 'lucide-react';
 import { FeedbackModal } from '../components/FeedbackModal';
+import { PDFViewerModal } from '../components/PDFViewerModal'; // Importado
 
 export const ExtraDemands: React.FC = () => {
   const navigate = useNavigate();
@@ -21,59 +22,25 @@ export const ExtraDemands: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Viewer State
-  const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string; id: string } | null>(null);
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  // User Role
+  const [userRole, setUserRole] = useState('OPERADOR');
+
+  // Viewer State (New)
+  const [viewerState, setViewerState] = useState<{ isOpen: boolean; url?: string; title: string; id?: string; table?: 'oms' | 'arts' | 'documents' }>({
+      isOpen: false, title: ''
+  });
 
   useEffect(() => {
+    const role = localStorage.getItem('safemaint_role');
+    if(role) setUserRole(role);
+
     loadData();
     window.addEventListener('safemaint_storage_update', loadData);
     return () => window.removeEventListener('safemaint_storage_update', loadData);
   }, []);
 
-  // PDF Blob Logic (With On-Demand Fetch)
-  useEffect(() => {
-    const loadPdf = async () => {
-        if (!viewingDoc) {
-            setPdfBlobUrl(null);
-            return;
-        }
-
-        let pdfData = viewingDoc.url;
-        let activeUrl: string | null = null;
-
-        if (!pdfData || pdfData === 'TRUE') {
-            setIsLoadingPdf(true);
-            const remotePdf = await StorageService.getRecordPdf('oms', viewingDoc.id);
-            if (remotePdf) pdfData = remotePdf;
-            setIsLoadingPdf(false);
-        }
-
-        if (pdfData && pdfData !== 'TRUE') {
-            try {
-                if (pdfData.startsWith('data:application/pdf;base64,')) {
-                    const parts = pdfData.split(',');
-                    if (parts.length > 1) {
-                        const byteCharacters = atob(parts[1]);
-                        const byteNumbers = new Array(byteCharacters.length);
-                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                        const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-                        activeUrl = URL.createObjectURL(blob);
-                        setPdfBlobUrl(activeUrl);
-                        return () => URL.revokeObjectURL(activeUrl!);
-                    }
-                } else setPdfBlobUrl(pdfData);
-            } catch (e) { setPdfBlobUrl(pdfData); }
-        } else setPdfBlobUrl(null);
-    };
-    
-    loadPdf();
-  }, [viewingDoc]);
-
   const loadData = () => {
       setPendingDemands(StorageService.getPendingExtraDemands());
-      // FILTRO RIGOROSO: Apenas OMs com status 'PENDENTE' podem ser vinculadas.
       setAvailableOms(StorageService.getOMs().filter(o => o.status === 'PENDENTE'));
   };
 
@@ -122,6 +89,15 @@ export const ExtraDemands: React.FC = () => {
         successText="REDIRECIONANDO..." 
       />
 
+      <PDFViewerModal 
+        isOpen={viewerState.isOpen}
+        onClose={() => setViewerState(prev => ({ ...prev, isOpen: false }))}
+        title={viewerState.title}
+        fileUrl={viewerState.url}
+        recordId={viewerState.id}
+        table={viewerState.table || 'oms'}
+      />
+
       <div className="flex items-center gap-4 mb-8 border-b border-gray-200 pb-6 pt-6">
         <div className="bg-pink-100 p-3 rounded-xl text-pink-600 border border-pink-200 shadow-sm">
             <ClipboardList size={32} />
@@ -150,26 +126,29 @@ export const ExtraDemands: React.FC = () => {
                       <div className="p-5">
                           <div className="flex justify-between items-start mb-2">
                               <h3 className="font-black text-lg text-gray-800 uppercase">{demand.tag}</h3>
-                              <button onClick={(e) => handleDeleteDemand(e, demand.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1"><Trash2 size={16}/></button>
+                              {userRole === 'ADMIN' && (
+                                <button onClick={(e) => handleDeleteDemand(e, demand.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1"><Trash2 size={16}/></button>
+                              )}
                           </div>
                           
                           <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 mb-4 h-32 overflow-y-auto custom-scrollbar">
                               <pre className="text-[10px] font-bold text-gray-600 whitespace-pre-wrap font-sans uppercase">{demand.description}</pre>
                           </div>
 
-                          <button 
-                            onClick={() => { setSelectedDemand(demand); setSelectedOmId(''); }}
-                            className="w-full py-3 bg-pink-600 text-white font-black text-xs uppercase rounded-lg hover:bg-pink-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
-                          >
-                              <PlayCircle size={16}/> SELECIONAR PARA INÍCIO
-                          </button>
+                          {userRole === 'ADMIN' && (
+                            <button 
+                                onClick={() => { setSelectedDemand(demand); setSelectedOmId(''); }}
+                                className="w-full py-3 bg-pink-600 text-white font-black text-xs uppercase rounded-lg hover:bg-pink-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            >
+                                <PlayCircle size={16}/> SELECIONAR PARA INÍCIO
+                            </button>
+                          )}
                       </div>
                   </div>
               ))
           )}
       </div>
 
-      {/* MODAL LINK OM & START */}
       {selectedDemand && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border-b-[6px] border-pink-500">
@@ -212,10 +191,9 @@ export const ExtraDemands: React.FC = () => {
                                   ))}
                               </select>
                               
-                              {/* VIEW PDF BUTTON */}
                               {selectedOMRecord && (selectedOMRecord.pdfUrl || true) && (
                                   <button 
-                                      onClick={() => setViewingDoc({ url: selectedOMRecord.pdfUrl || '', title: selectedOMRecord.omNumber, id: selectedOMRecord.id })}
+                                      onClick={() => setViewerState({ isOpen: true, url: selectedOMRecord.pdfUrl || '', title: selectedOMRecord.omNumber, id: selectedOMRecord.id, table: 'oms' })}
                                       className="w-full py-2.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors animate-fadeIn"
                                   >
                                       <FileText size={14} /> VISUALIZAR PDF ORIGINAL (IMPORTANTE)
@@ -247,41 +225,6 @@ export const ExtraDemands: React.FC = () => {
                   </button>
               </div>
           </div>
-      )}
-
-      {/* PDF VIEWER OVERLAY */}
-      {viewingDoc && (
-        <div className="fixed inset-0 z-[100] bg-gray-900/95 flex items-center justify-center p-0 backdrop-blur-md">
-            <div className="w-[98vw] h-[98vh] bg-white flex flex-col rounded-xl overflow-hidden shadow-2xl border-4 border-gray-900">
-                <div className="bg-white p-3 flex justify-between items-center shrink-0 border-b border-gray-200">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-[#007e7a] text-white p-1.5 rounded">
-                            <FileText size={18} />
-                        </div>
-                        <div>
-                            <span className="font-black text-xs text-gray-800 uppercase tracking-wide block">Visualização de Documento (Segurança)</span>
-                            <span className="font-bold text-[10px] text-[#007e7a] uppercase tracking-widest">{viewingDoc.title}</span>
-                        </div>
-                    </div>
-                    <button onClick={() => setViewingDoc(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-all"><X size={24}/></button>
-                </div>
-                <div className="flex-1 bg-gray-100 relative">
-                    {isLoadingPdf ? (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                            <Loader2 size={48} className="text-[#007e7a] animate-spin mb-4" />
-                            <h4 className="font-black text-xs uppercase">BAIXANDO ORIGINAL DO SERVIDOR...</h4>
-                        </div>
-                    ) : pdfBlobUrl ? (
-                        <iframe src={pdfBlobUrl} className="w-full h-full border-none bg-white" title="Viewer" />
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-                            <Info size={40} className="opacity-20" />
-                            <span className="font-bold text-[10px] uppercase tracking-widest">Carregando Documento...</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
       )}
     </div>
   );

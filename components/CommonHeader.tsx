@@ -41,18 +41,12 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
   };
 
   const selectOM = (om: OMRecord) => {
-    // MAPEAMENTO TÉCNICO DE TIPOS
-    let mappedType: MaintenanceType = 'MECANICA';
-    if (om.description?.toUpperCase().includes('ELETR')) mappedType = 'ELETRICA';
-    else if (om.description?.toUpperCase().includes('LUBRI')) mappedType = 'LUBRIFICACAO';
-    else if (om.description?.toUpperCase().includes('SOLDA')) mappedType = 'SOLDA';
-
     onChange({
       ...data,
       om: om.omNumber,
       tag: om.tag,
       description: om.description,
-      type: mappedType
+      type: om.type === 'CORRETIVA' ? 'MECANICA' : 'MECANICA'
     });
     setIsPickerOpen(false);
   };
@@ -64,6 +58,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
   );
 
   return (
+    // ESTILO COMPACTO OTIMIZADO
     <div className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-200 mb-2 relative animate-fadeIn">
       <div className="flex flex-row items-center justify-between mb-1.5 border-b border-gray-100 pb-1.5 gap-2">
         <div className="flex items-center gap-1.5">
@@ -84,6 +79,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-2">
+        {/* OM Number - 2 cols */}
         <div className="relative group col-span-1 md:col-span-1 lg:col-span-2">
             <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Ordem (OM)</label>
             <input 
@@ -96,6 +92,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
             />
         </div>
 
+        {/* TAG - 2 cols */}
         <div className="relative group col-span-1 md:col-span-1 lg:col-span-2">
             <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Tag</label>
             <input 
@@ -111,6 +108,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
             />
         </div>
 
+        {/* Date - 2 cols */}
         <div className="col-span-1 lg:col-span-2">
             <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Data</label>
             <input 
@@ -122,6 +120,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
             />
         </div>
 
+        {/* Time - 1 col */}
         <div className="col-span-1 lg:col-span-2">
             <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Hora</label>
             <input 
@@ -133,6 +132,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
             />
         </div>
 
+        {/* Type Selection - 2 cols */}
         <div className="col-span-2 lg:col-span-2">
             <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Tipo</label>
             <div className="relative">
@@ -152,6 +152,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
             </div>
         </div>
 
+        {/* Description - Full Row */}
         <div className="col-span-2 md:col-span-4 lg:col-span-12">
             <label className="block text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5 ml-1">Descrição da Atividade</label>
             <input 
@@ -164,6 +165,7 @@ export const CommonHeader: React.FC<CommonHeaderProps> = ({
         </div>
       </div>
 
+      {/* OM Picker Modal */}
       {isPickerOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">

@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Lock, User, Activity, Settings, Cog, Wifi, WifiOff, Database, UserPlus, CheckCircle, ArrowLeft } from 'lucide-react';
+import { ArrowRight, Lock, User, Activity, WifiOff, Database, UserPlus, CheckCircle, ArrowLeft } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { checkConnection } from '../services/supabase';
-import { Cube3D } from '../components/Cube3D';
+import { Logo } from '../components/Logo';
 import { User as UserType } from '../types';
 
 interface LoginProps {
@@ -13,24 +13,22 @@ interface LoginProps {
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const navigate = useNavigate();
-  // CRÍTICO: Recupera o último login salvo para não ter que digitar toda hora
-  const [user, setUser] = useState(() => localStorage.getItem('safemaint_last_login') || '');
+  // Login States
+  const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
   
+  // Register States
   const [isRegistering, setIsRegistering] = useState(false);
   const [newName, setNewName] = useState('');
   const [newMatricula, setNewMatricula] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
 
+  // UI States
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
-
-  const displayChar = isRegistering 
-    ? (newName.trim() ? newName.trim().charAt(0).toUpperCase() : '') 
-    : (user.trim() ? user.trim().charAt(0).toUpperCase() : '');
 
   useEffect(() => {
       const verify = async () => {
@@ -44,15 +42,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setSuccessMsg('');
     
     setTimeout(async () => {
         try {
             const authenticatedUser = await StorageService.validateUser(user, pass);
 
             if (authenticatedUser) {
-              // Salva a matrícula para o próximo acesso (Auto-fill)
-              localStorage.setItem('safemaint_last_login', authenticatedUser.login.toUpperCase());
-              
               localStorage.setItem('safemaint_auth', 'true');
               localStorage.setItem('safemaint_user', authenticatedUser.login.toUpperCase());
               localStorage.setItem('safemaint_role', authenticatedUser.role);
@@ -63,10 +59,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               setIsLoading(false);
             }
         } catch(e: any) {
-            setError('Erro de conexão ou dados incorretos');
+            if (e.message === "ALREADY_LOGGED_IN") {
+                setError('USUÁRIO JÁ LOGADO NO SISTEMA');
+            } else {
+                setError('Erro de conexão ou dados incorretos');
+            }
             setIsLoading(false);
         }
-    }, 600);
+    }, 800);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -79,7 +79,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           return;
       }
       if (newPass.length < 3) {
-          setError('Mínimo 3 caracteres.');
+          setError('A senha deve ter no mínimo 3 caracteres.');
+          return;
+      }
+      if (!newMatricula || !newName) {
+          setError('Preencha todos os campos.');
           return;
       }
 
@@ -91,24 +95,26 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           matricula: newMatricula.toUpperCase(),
           login: newMatricula.toUpperCase(),
           password: newPass,
-          role: 'OPERADOR'
+          role: 'OPERADOR' 
       };
 
       try {
           const result = await StorageService.registerUser(newUser);
           if (result.success) {
-              setSuccessMsg('Usuário cadastrado com sucesso!');
+              setSuccessMsg('Usuário cadastrado no banco de autenticação!');
               setUser(newUser.matricula);
+              setPass('');
               setTimeout(() => {
                   setIsRegistering(false);
                   setIsLoading(false);
-              }, 1500);
+                  setSuccessMsg('');
+              }, 2000);
           } else {
               setError(result.message);
               setIsLoading(false);
           }
       } catch (e) {
-          setError('Erro ao cadastrar.');
+          setError('Erro ao cadastrar. Tente novamente.');
           setIsLoading(false);
       }
   };
@@ -117,132 +123,186 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       setIsRegistering(!isRegistering);
       setError('');
       setSuccessMsg('');
+      if (!isRegistering) {
+          setNewName('');
+          setNewMatricula('');
+          setNewPass('');
+          setConfirmPass('');
+      }
   };
 
   return (
-    <div className="min-h-screen bg-vale-dark flex items-center justify-center font-sans overflow-hidden relative">
+    <div className="min-h-screen bg-[#111827] flex items-center justify-center font-sans overflow-hidden relative">
       
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-24 -left-24 opacity-[0.03] text-white animate-spin-slow">
-              <Settings size={400} strokeWidth={0.5} />
-          </div>
-          <div className="absolute -bottom-32 -right-32 opacity-[0.03] text-vale-yellow animate-spin-reverse-slow">
-              <Cog size={500} strokeWidth={0.5} />
-          </div>
-      </div>
+      {/* --- BACKGROUND LIMPO COM GRADIENTE SUTIL --- */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#111827] via-[#0f2530] to-[#003836]"></div>
+      <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')] opacity-20"></div>
 
       <div className="w-full max-w-sm p-6 relative z-10">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-10 border-t-8 border-vale-green relative overflow-hidden transition-all">
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border-t-8 border-[#007e7a] relative overflow-hidden transition-all duration-500 ease-in-out">
             
             <div className="absolute top-4 right-4">
                 {isConnected === null ? (
                     <div className="animate-pulse bg-gray-100 p-1.5 rounded-full"><Activity size={12} className="text-gray-400"/></div>
                 ) : isConnected ? (
-                    <div className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded-full border border-green-200" title="Banco Online">
+                    <div className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded-full border border-green-200 shadow-sm" title="Conectado ao Banco de Dados">
                         <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-[8px] font-black text-green-700 uppercase">Online</span>
+                        <span className="text-[8px] font-black text-green-700 uppercase tracking-wider">Online</span>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-1 bg-red-50 px-2 py-1 rounded-full border border-red-200" title="Banco Offline">
+                    <div className="flex items-center gap-1 bg-red-50 px-2 py-1 rounded-full border border-red-200 shadow-sm" title="Modo Offline">
                         <WifiOff size={10} className="text-red-500"/>
-                        <span className="text-[8px] font-black text-red-700 uppercase">Offline</span>
+                        <span className="text-[8px] font-black text-red-700 uppercase tracking-wider">Offline</span>
                     </div>
                 )}
             </div>
 
-            <div className="text-center mb-8">
-                <div className="flex justify-center mb-6 h-24 items-center">
-                    {displayChar ? (
-                        <div className="relative animate-fadeIn">
-                            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#007e7a] to-[#005c97] flex items-center justify-center shadow-2xl border-4 border-white">
-                                <span className="text-5xl font-black text-white select-none">{displayChar}</span>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="scale-90 animate-fadeIn"><Cube3D size="md" /></div>
-                    )}
+            <div className="text-center mb-8 mt-2">
+                <div className="flex justify-center mb-6">
+                    <div className="p-4 bg-gray-50 rounded-full shadow-inner border border-gray-200">
+                        <Logo size="lg" />
+                    </div>
                 </div>
-                <h1 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">
-                    {isRegistering ? 'Novo Registro' : 'Acesso SafeMaint'}
+                <h1 className="text-xl font-black text-gray-800 uppercase tracking-tighter">
+                    {isRegistering ? 'Novo Cadastro' : 'Acesso ao Sistema'}
                 </h1>
-                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">Gestão de Manutenção de Ativos</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase mt-1 tracking-[0.2em]">
+                    Gestão de Manutenção e Segurança
+                </p>
             </div>
 
             <form onSubmit={isRegistering ? handleRegister : handleLogin} className="space-y-4">
+                
                 {isRegistering && (
-                    <div className="space-y-1">
-                        <label className="block text-[9px] font-black text-gray-400 uppercase ml-1">Nome Completo</label>
-                        <input 
-                            type="text" 
-                            value={newName}
-                            onChange={(e) => setNewName(e.target.value)}
-                            className="block w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-xs font-black text-gray-700 uppercase focus:border-vale-green outline-none transition-all"
-                            required
-                        />
+                    <div className="space-y-1 group animate-fadeIn">
+                        <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wide">Nome Completo</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-300">
+                                <User size={18} strokeWidth={2.5} />
+                            </div>
+                            <input 
+                                type="text" 
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-[#007e7a] focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
+                                required
+                                disabled={isLoading}
+                            />
+                        </div>
                     </div>
                 )}
 
-                <div className="space-y-1">
-                    <label className="block text-[9px] font-black text-gray-400 uppercase ml-1">Matrícula (Login)</label>
+                <div className="space-y-1 group">
+                    <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wide group-focus-within:text-[#007e7a] transition-colors">
+                        {isRegistering ? 'Matrícula (Será seu Login)' : 'Matrícula / ID'}
+                    </label>
                     <div className="relative">
-                        <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-300 group-focus-within:text-[#007e7a] transition-colors">
+                            <User size={18} strokeWidth={2.5} />
+                        </div>
                         <input 
                             type="text" 
                             value={isRegistering ? newMatricula : user}
                             onChange={(e) => isRegistering ? setNewMatricula(e.target.value) : setUser(e.target.value)}
-                            className="block w-full pl-12 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-xs font-black text-gray-700 uppercase focus:border-vale-green outline-none transition-all"
+                            className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-[#007e7a] focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
                             required
+                            disabled={isLoading}
                         />
                     </div>
                 </div>
 
-                <div className="space-y-1">
-                    <label className="block text-[9px] font-black text-gray-400 uppercase ml-1">Senha</label>
+                <div className="space-y-1 group">
+                    <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wide group-focus-within:text-[#007e7a] transition-colors">
+                        {isRegistering ? 'Criar Senha' : 'Senha de Acesso'}
+                    </label>
                     <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-300 group-focus-within:text-[#007e7a] transition-colors">
+                            <Lock size={18} strokeWidth={2.5} />
+                        </div>
                         <input 
                             type="password" 
                             value={isRegistering ? newPass : pass}
                             onChange={(e) => isRegistering ? setNewPass(e.target.value) : setPass(e.target.value)}
-                            className="block w-full pl-12 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-xs font-black text-gray-700 uppercase focus:border-vale-green outline-none transition-all"
+                            className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-[#007e7a] focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
                             required
+                            disabled={isLoading}
                         />
                     </div>
                 </div>
 
                 {isRegistering && (
-                    <div className="space-y-1">
-                        <label className="block text-[9px] font-black text-gray-400 uppercase ml-1">Confirmar Senha</label>
-                        <input 
-                            type="password" 
-                            value={confirmPass}
-                            onChange={(e) => setConfirmPass(e.target.value)}
-                            className="block w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-xs font-black text-gray-700 uppercase focus:border-vale-green outline-none transition-all"
-                            required
-                        />
+                    <div className="space-y-1 group animate-fadeIn">
+                        <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wide">Confirmar Senha</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-300">
+                                <Lock size={18} strokeWidth={2.5} />
+                            </div>
+                            <input 
+                                type="password" 
+                                value={confirmPass}
+                                onChange={(e) => setConfirmPass(e.target.value)}
+                                className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase focus:border-[#007e7a] focus:bg-white focus:ring-0 outline-none transition-all placeholder:text-gray-300"
+                                required
+                                disabled={isLoading}
+                            />
+                        </div>
                     </div>
                 )}
 
-                {error && <div className="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-[9px] font-black text-center border-l-4 border-red-500 uppercase">{error}</div>}
-                {successMsg && <div className="bg-green-50 text-green-600 px-4 py-2 rounded-xl text-[9px] font-black text-center border-l-4 border-green-500 uppercase">{successMsg}</div>}
+                {error && (
+                    <div className="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-[9px] font-black text-center border-l-4 border-red-500 uppercase flex items-center justify-center gap-2 animate-pulse">
+                        <Activity size={12} /> {error}
+                    </div>
+                )}
+
+                {successMsg && (
+                    <div className="bg-green-50 text-green-600 px-4 py-2 rounded-xl text-[9px] font-black text-center border-l-4 border-green-500 uppercase flex items-center justify-center gap-2 animate-fadeIn">
+                        <CheckCircle size={12} /> {successMsg}
+                    </div>
+                )}
 
                 <button 
                     type="submit"
                     disabled={isLoading}
-                    className="w-full font-black py-4 bg-vale-green hover:bg-[#00605d] text-white rounded-2xl uppercase text-xs flex items-center justify-center gap-3 transition-all shadow-lg active:scale-95 disabled:bg-gray-200"
+                    className={`
+                        w-full font-black py-3.5 rounded-xl uppercase text-xs flex items-center justify-center gap-3 transition-all duration-300 shadow-lg transform mt-4
+                        ${isLoading ? 'bg-gray-100 text-gray-400 cursor-wait' : 'bg-[#007e7a] hover:bg-[#00605d] text-white hover:scale-[1.02] active:scale-95 hover:shadow-teal-500/30'}
+                    `}
                 >
-                    {isLoading ? 'AGUARDE...' : isRegistering ? 'CADASTRAR' : 'ENTRAR NO SISTEMA'}
+                    {isLoading ? (
+                        <>
+                            <Database className="animate-pulse" size={16} />
+                            <span>PROCESSANDO...</span>
+                        </>
+                    ) : isRegistering ? (
+                        <>
+                            <UserPlus size={16} strokeWidth={3} /> FINALIZAR CADASTRO
+                        </>
+                    ) : (
+                        <>
+                            ACESSAR SISTEMA <ArrowRight size={16} strokeWidth={3} />
+                        </>
+                    )}
                 </button>
             </form>
 
-            <button 
-                onClick={toggleMode}
-                className="w-full mt-6 text-[10px] font-bold text-gray-400 hover:text-vale-green uppercase tracking-widest underline underline-offset-4"
-            >
-                {isRegistering ? 'Voltar ao Login' : 'Novo por aqui? Criar Acesso'}
-            </button>
+            <div className="mt-4 pt-4 border-t border-gray-100 text-center">
+                <button 
+                    onClick={toggleMode}
+                    className="text-[10px] font-bold text-gray-500 hover:text-[#007e7a] uppercase tracking-wide underline decoration-gray-300 hover:decoration-[#007e7a] transition-all flex items-center justify-center gap-2 mx-auto"
+                >
+                    {isRegistering ? <><ArrowLeft size={10}/> Voltar para Login</> : 'Não tem conta? Cadastrar Novo Acesso'}
+                </button>
+            </div>
           </div>
-          <p className="text-center mt-8 text-[8px] font-black text-gray-600 uppercase tracking-[0.3em] opacity-40">Vale S.A &copy; 2024</p>
+          
+          <div className="text-center mt-8 space-y-1">
+             <div className="flex items-center justify-center gap-2 text-gray-500 opacity-60">
+                 <Lock size={10} />
+                 <p className="text-[9px] font-black uppercase tracking-widest">Conexão Segura SSL</p>
+             </div>
+             <p className="text-[9px] font-bold text-gray-600 uppercase opacity-40">Vale S.A &copy; 2024</p>
+          </div>
       </div>
     </div>
   );
