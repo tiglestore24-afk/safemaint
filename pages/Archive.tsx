@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { DocumentRecord, RegisteredART, OMRecord } from '../types';
-import { Eye, Trash2, X, FileText, CheckCircle, Clipboard, Archive as ArchiveIcon, Calendar, Printer, Loader2, ExternalLink, MapPin, AlertOctagon, BookOpen, User } from 'lucide-react';
+import { Eye, Trash2, X, FileText, CheckCircle, Clipboard, Archive as ArchiveIcon, Calendar, Printer, Loader2, ExternalLink, MapPin, AlertOctagon, BookOpen, User, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BackButton } from '../components/BackButton';
 import { Logo } from '../components/Logo';
@@ -195,11 +195,14 @@ export const Archive: React.FC = () => {
       return (
           <div className="bg-white shadow-2xl mx-auto font-sans text-gray-900 border border-gray-200 print:border-none p-10 max-w-[21cm] w-full min-h-[29.7cm] flex flex-col mb-10 print:mb-0 print:shadow-none print:w-full print:max-w-none print:min-h-0 print:h-auto print:absolute print:top-0 print:left-0 print-area">
               
+              {/* CABEÇALHO PADRÃO DOCUMENTO OFICIAL */}
               <div className="border-b-4 border-vale-green pb-4 mb-6 flex justify-between items-center avoid-break">
                   <div className="flex items-center gap-4">
                       <Logo size="lg" />
                       <div className="border-l-2 border-gray-300 pl-4 flex flex-col justify-center h-10">
-                          <h1 className="text-xl font-black text-vale-darkgray uppercase leading-none tracking-tight">{doc.type.replace('_', ' ')}</h1>
+                          <h1 className="text-xl font-black text-vale-darkgray uppercase leading-none tracking-tight">
+                              {doc.type === 'CHECKLIST' ? 'CHECKLIST DE INSPEÇÃO' : doc.type.replace('_', ' ')}
+                          </h1>
                           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">SISTEMA INTEGRADO DE GESTÃO</p>
                       </div>
                   </div>
@@ -210,8 +213,7 @@ export const Archive: React.FC = () => {
                       <p className="text-[9px] font-bold text-gray-400 uppercase">{new Date(doc.createdAt).toLocaleDateString()} • {new Date(doc.createdAt).toLocaleTimeString().slice(0,5)}</p>
                       {primarySigner && (
                           <div className="mt-1 border-t border-gray-200 pt-1">
-                              <p className="text-[8px] font-black text-gray-500 uppercase">RESPONSÁVEL: {primarySigner.name}</p>
-                              <p className="text-[8px] font-bold text-gray-400 uppercase">MAT: {primarySigner.matricula}</p>
+                              <p className="text-[8px] font-black text-gray-500 uppercase">RESP: {primarySigner.name}</p>
                           </div>
                       )}
                   </div>
@@ -219,12 +221,13 @@ export const Archive: React.FC = () => {
 
               <div className="flex-1 space-y-6">
                   
+                  {/* DADOS DA ATIVIDADE - BLOCO COMUM */}
                   <div className="bg-gray-50 p-4 border border-gray-300 rounded-none print:border-gray-300 avoid-break">
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 border-b border-gray-200 pb-1">DADOS DA ATIVIDADE</h4>
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 border-b border-gray-200 pb-1 flex items-center gap-2"><Wrench size={12}/> DADOS TÉCNICOS</h4>
                       <div className="grid grid-cols-4 gap-4">
                           <div className="col-span-1"><span className="text-[8px] font-bold text-gray-500 block uppercase">EQUIPAMENTO (TAG)</span><span className="font-black text-base text-vale-green">{doc.header.tag}</span></div>
                           <div className="col-span-1"><span className="text-[8px] font-bold text-gray-500 block uppercase">TIPO</span><span className="font-bold text-sm uppercase">{doc.header.type}</span></div>
-                          <div className="col-span-2"><span className="text-[8px] font-bold text-gray-500 block uppercase">DESCRIÇÃO TÉCNICA</span><span className="font-bold text-sm uppercase leading-tight">{doc.header.description}</span></div>
+                          <div className="col-span-2"><span className="text-[8px] font-bold text-gray-500 block uppercase">DESCRIÇÃO ATIVIDADE</span><span className="font-bold text-sm uppercase leading-tight">{doc.header.description}</span></div>
                       </div>
                   </div>
 
@@ -243,7 +246,52 @@ export const Archive: React.FC = () => {
                       )}
                   </div>
 
-                  {/* RESTO DO CONTEÚDO (Mantido Igual) */}
+                  {/* VISUALIZAÇÃO ESPECÍFICA PARA CHECKLIST FORMATADA COMO PDF */}
+                  {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
+                      <div className="space-y-6">
+                        {Object.entries(doc.content.checklistItems.reduce((acc: any, item: any) => {
+                            (acc[item.section] = acc[item.section] || []).push(item);
+                            return acc;
+                        }, {})).map(([section, items]: any) => (
+                            <div key={section} className="border border-gray-400 avoid-break">
+                                <div className="bg-gray-200 p-2 font-black text-xs text-gray-900 uppercase border-b border-gray-400 flex justify-between">
+                                    <span>{section}</span>
+                                    <span className="text-[9px] text-gray-600">SISTEMA</span>
+                                </div>
+                                <table className="w-full text-[9px] border-collapse font-mono">
+                                    <thead className="bg-gray-100 border-b border-gray-400">
+                                        <tr>
+                                            <th className="p-1 border-r border-gray-400 w-10 text-center">ITEM</th>
+                                            <th className="p-1 border-r border-gray-400 text-left w-1/2">DESCRIÇÃO DA VERIFICAÇÃO</th>
+                                            <th className="p-1 border-r border-gray-400 text-center w-20">CONDIÇÃO</th>
+                                            <th className="p-1 text-left">OBSERVAÇÕES</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-300">
+                                        {items.map((item: any, idx: number) => (
+                                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                <td className="p-1.5 font-bold text-gray-700 border-r border-gray-400 text-center">{item.legacyId || item.id}</td>
+                                                <td className="p-1.5 font-bold text-gray-900 border-r border-gray-400 uppercase">{item.desc}</td>
+                                                <td className="p-1.5 text-center border-r border-gray-400">
+                                                    {item.status === 'ATENDE' ? (
+                                                        <span className="font-black text-black">OK</span>
+                                                    ) : item.status === 'NAO_ATENDE' ? (
+                                                        <span className="font-black text-white bg-black px-1 rounded">FALHA</span>
+                                                    ) : (
+                                                        <span className="text-gray-400">-</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-1.5 uppercase font-bold text-gray-700">{item.obs}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ))}
+                      </div>
+                  )}
+
+                  {/* VISUALIZAÇÃO ESPECÍFICA PARA CRONOGRAMA */}
                   {doc.type === 'CRONOGRAMA' && doc.content?.items && (
                       <div className="avoid-break">
                           <h4 className="text-xs font-black text-gray-700 uppercase mb-2">ITENS PROGRAMADOS</h4>
@@ -270,6 +318,7 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
+                  {/* VISUALIZAÇÃO ESPECÍFICA PARA ART EMERGENCIAL (MAPA) */}
                   {doc.type === 'ART_EMERGENCIAL' && doc.content?.quadrantRisks && (
                       <div className="space-y-6 border border-gray-300 p-4 avoid-break">
                           <h4 className="font-black text-xs text-red-600 uppercase flex items-center gap-2 border-b pb-2"><MapPin size={16}/> Mapeamento de Risco (APR)</h4>
@@ -295,50 +344,7 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
-                  {doc.type === 'CHECKLIST' && doc.content?.checklistItems && (
-                      <div className="space-y-4">
-                        {Object.entries(doc.content.checklistItems.reduce((acc: any, item: any) => {
-                            (acc[item.section] = acc[item.section] || []).push(item);
-                            return acc;
-                        }, {})).map(([section, items]: any) => (
-                            <div key={section} className="border border-gray-300 avoid-break">
-                                <div className="bg-gray-100 p-2 font-black text-xs text-gray-800 uppercase border-b border-gray-300">
-                                    {section}
-                                </div>
-                                <table className="w-full text-[9px] border-collapse">
-                                    <thead className="bg-gray-50 border-b border-gray-200">
-                                        <tr>
-                                            <th className="p-1.5 text-left border-r border-gray-200 w-10 text-center">ITEM</th>
-                                            <th className="p-1.5 text-left border-r border-gray-200">VERIFICAÇÃO</th>
-                                            <th className="p-1.5 text-center w-16">STATUS</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200">
-                                        {items.map((item: any, idx: number) => (
-                                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}>
-                                                <td className="p-1.5 font-bold text-gray-500 border-r border-gray-200 text-center">{item.id || item.legacyId}</td>
-                                                <td className="p-1.5 font-bold text-gray-700 border-r border-gray-200 leading-tight">
-                                                    {item.desc}
-                                                    {item.obs && <div className="text-[8px] text-red-600 italic mt-0.5 border-l-2 border-red-300 pl-1">OBS: {item.obs}</div>}
-                                                </td>
-                                                <td className="p-1.5 text-center">
-                                                    {item.status === 'ATENDE' ? (
-                                                        <span className="font-black text-green-700">CONFORME</span>
-                                                    ) : item.status === 'NAO_ATENDE' ? (
-                                                        <span className="font-black text-white bg-red-600 px-1.5 py-0.5 rounded text-[8px]">FALHA</span>
-                                                    ) : (
-                                                        <span className="text-gray-300">-</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ))}
-                      </div>
-                  )}
-
+                  {/* VISUALIZAÇÃO ESPECÍFICA PARA RELATÓRIO */}
                   {doc.type === 'RELATORIO' && !doc.content?.isManualUpload && (
                       <div className="space-y-4 avoid-break">
                           <div className="p-4 border border-gray-300 bg-white rounded-none">
@@ -375,6 +381,7 @@ export const Archive: React.FC = () => {
                       </div>
                   )}
 
+                  {/* ASSINATURAS (COMUM A TODOS) */}
                   {doc.signatures && doc.signatures.length > 0 && (
                       <div className="mt-8 pt-4 border-t-2 border-gray-300 avoid-break">
                           <h4 className="font-black text-[9px] uppercase mb-4 text-gray-400 tracking-widest">RESPONSABILIDADE TÉCNICA E EXECUÇÃO</h4>

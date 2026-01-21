@@ -3,24 +3,27 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StorageService, KEYS } from '../services/storage';
 import { AvailabilityRecord, AvailabilityStatus } from '../types';
 import { BackButton } from '../components/BackButton';
-import { Plus, Trash2, X, RefreshCw, Activity, Save, Monitor, Calendar, Lock, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, X, RefreshCw, Activity, Save, Monitor, Calendar, Lock, AlertCircle, Eraser, CheckCircle2 } from 'lucide-react';
 
 const BLACKLIST_KEY = 'safemaint_avail_blacklist';
 
-// LEGENDA AJUSTADA
+// LEGENDA AJUSTADA (REMOVIDO FILMAGEM E LB)
 const STATUS_CONFIG: Record<string, { label: string, type: 'SHAPE' | 'TEXT', color: string, bgColor: string, symbol: any }> = {
     'PREV': { label: 'PREV.', type: 'SHAPE', color: 'text-gray-900', bgColor: 'bg-transparent', symbol: '▲' },
     'CORRETIVA': { label: 'CORRETIVA', type: 'SHAPE', color: 'text-red-600', bgColor: 'bg-transparent', symbol: '●' },
     'SEM_FALHA': { label: 'SEM FALHA', type: 'SHAPE', color: 'text-green-600', bgColor: 'bg-transparent', symbol: '●' },
     'META': { label: 'META APÓS CORRETIVA', type: 'SHAPE', color: 'text-gray-900', bgColor: 'bg-transparent', symbol: '★' },
     'DEMANDA_EXTRA': { label: 'DEMANDA EXTRA', type: 'SHAPE', color: 'text-red-500', bgColor: 'bg-transparent', symbol: '▲' }, 
-    'FILMAGEM': { label: 'FILMAGEM', type: 'SHAPE', color: 'text-green-500', bgColor: 'bg-transparent', symbol: '▲' },
     'PR': { label: 'PARADA RELEVANTE', type: 'TEXT', color: 'text-red-500', bgColor: 'bg-transparent', symbol: 'PR' },
     'INSPECAO': { label: 'INSPEÇÃO', type: 'SHAPE', color: 'text-gray-500', bgColor: 'bg-transparent', symbol: '⧫' }, 
     'MOTOR': { label: 'MOTOR', type: 'TEXT', color: 'text-gray-800', bgColor: 'bg-transparent', symbol: 'M' },
-    'LB': { label: 'LUB. SEMANAL', type: 'TEXT', color: 'text-blue-600', bgColor: 'bg-transparent', symbol: 'LS' },
     'PNEUS': { label: 'PNEUS', type: 'TEXT', color: 'text-gray-600', bgColor: 'bg-transparent', symbol: 'Pn' },
 };
+
+// ORDEM DE PRIORIDADE (REMOVIDO FILMAGEM E LB)
+const PRIORITY_ORDER: AvailabilityStatus[] = [
+    'PREV', 'PR', 'DEMANDA_EXTRA', 'MOTOR', 'INSPECAO', 'PNEUS', 'META', 'SEM_FALHA'
+];
 
 interface AvailabilityBoardProps {
     variant?: 'DEFAULT' | 'TV' | 'SPLIT';
@@ -53,16 +56,9 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
     
     // Initial Load
     const initialRecords = StorageService.getAvailability();
-    if (JSON.stringify(initialRecords) !== JSON.stringify(recordsRef.current)) {
-        recordsRef.current = initialRecords;
-        setRecords(initialRecords);
-    }
-    
-    // Auto-Sync Data Logic (Schedule + Cards)
-    setTimeout(() => syncWithSystem(days), 500);
+    syncWithSystem(days, initialRecords); 
     
     const handleExternalUpdate = (e: any) => {
-        // Se a atualização vier da própria persistência do quadro, atualiza estado
         if (e.detail?.key === KEYS.AVAILABILITY) {
             const newRecs = StorageService.getAvailability();
             if (JSON.stringify(newRecs) !== JSON.stringify(recordsRef.current)) {
@@ -70,7 +66,6 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
                 setRecords(newRecs);
             }
         } else {
-            // Se mudou Schedule, History ou Active, recalcula lógica automática
             syncWithSystem(daysInMonth.length > 0 ? daysInMonth : days);
         }
     };
@@ -79,11 +74,10 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
     return () => window.removeEventListener('safemaint_storage_update', handleExternalUpdate);
   }, [selectedMonth, selectedYear]);
 
-  // Helpers de Data e Tag
+  // Helpers
   const normalizeDateKey = (input: string | Date): string => {
       if (!input) return '';
       if (input instanceof Date) return input.toLocaleDateString('pt-BR');
-      // Tenta detectar formato ISO
       if (typeof input === 'string' && input.includes('-') && input.includes('T')) {
           return new Date(input).toLocaleDateString('pt-BR');
       }
@@ -92,9 +86,14 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
 
   const extractTag = (text: string): string | null => {
       if (!text) return null;
-      const clean = text.toUpperCase().trim().replace(/\s/g, '');
-      const match = clean.match(/CA-?(\d+)/); 
-      if (match) return `CA${match[1]}`;
+      const clean = text.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
+      const match = clean.match(/CA(\d+)/); 
+      if (match) {
+          const normalizedTag = `CA${match[1]}`;
+          if (normalizedTag.startsWith('CA5')) {
+              return normalizedTag;
+          }
+      }
       return null;
   };
 
@@ -112,28 +111,24 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
       localStorage.setItem(BLACKLIST_KEY, JSON.stringify(list));
   };
 
-  // --- LÓGICA DE NEGÓCIO AUTOMÁTICA ---
+  // --- LÓGICA DE NEGÓCIO PRINCIPAL ---
   const getSystemEventsForCell = (tag: string, dateKey: string): AvailabilityStatus[] => {
       const schedule = StorageService.getSchedule();
       const history = StorageService.getHistory();
       const activeTasks = StorageService.getActiveMaintenances();
-      const systemStatuses: AvailabilityStatus[] = [];
+      const rawStatuses: AvailabilityStatus[] = [];
 
       // 1. PROGRAMAÇÃO (AGENDA)
-      // Regras: Preventiva, Motor, Inspeção, Pneus
       const dailySchedule = schedule.filter(item => item.dateStart === dateKey && extractTag(item.frotaOm) === tag);
       dailySchedule.forEach(item => {
           const desc = (item.description || '').toUpperCase();
-          if (desc.includes('MOTOR')) systemStatuses.push('MOTOR');
-          else if (desc.includes('PNEU')) systemStatuses.push('PNEUS');
-          else if (desc.includes('INSPE')) systemStatuses.push('INSPECAO');
-          else systemStatuses.push('PREV');
+          if (desc.includes('MOTOR')) rawStatuses.push('MOTOR');
+          else if (desc.includes('PNEU')) rawStatuses.push('PNEUS');
+          else if (desc.includes('INSPE')) rawStatuses.push('INSPECAO');
+          else rawStatuses.push('PREV');
       });
 
-      // 2. CARDS REALIZADOS (HISTÓRICO) OU EM ANDAMENTO
-      // Regras: Corretiva, Demanda Extra
-      // IMPORTANTE: Conta QUANTOS cards existem. Se houver 2 corretivas, adiciona 2x.
-      
+      // 2. CARDS REALIZADOS OU EM ANDAMENTO
       const combinedCards = [
           ...history.map(h => ({ type: h.type, tag: h.tag, date: normalizeDateKey(h.endTime) })),
           ...activeTasks.map(a => ({ type: a.origin, tag: a.header.tag, date: normalizeDateKey(a.startTime) }))
@@ -141,40 +136,54 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
 
       combinedCards.forEach(card => {
           if (card.date === dateKey && extractTag(card.tag) === tag) {
-              if (card.type === 'CORRETIVA' || (card.type as any) === 'ART_EMERGENCIAL') systemStatuses.push('CORRETIVA');
-              if (card.type === 'DEMANDA_EXTRA') systemStatuses.push('DEMANDA_EXTRA');
+              if (card.type === 'CORRETIVA' || (card.type as any) === 'ART_EMERGENCIAL') rawStatuses.push('CORRETIVA');
+              if (card.type === 'DEMANDA_EXTRA') rawStatuses.push('DEMANDA_EXTRA');
           }
       });
 
-      return systemStatuses;
+      // 3. APLICAÇÃO DAS REGRAS (FILTRO)
+      const corretivas = rawStatuses.filter(s => s === 'CORRETIVA'); 
+      const others = rawStatuses.filter(s => s !== 'CORRETIVA');
+      
+      const finalStatuses: AvailabilityStatus[] = [...corretivas];
+
+      if (others.length > 0) {
+          others.sort((a, b) => {
+              const idxA = PRIORITY_ORDER.indexOf(a);
+              const idxB = PRIORITY_ORDER.indexOf(b);
+              return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+          });
+          finalStatuses.push(others[0]);
+      }
+
+      return finalStatuses;
   };
 
-  const syncWithSystem = async (currentDays?: Date[]) => {
+  const syncWithSystem = async (currentDays?: Date[], forceRecords?: AvailabilityRecord[]) => {
       if (mode !== 'SPLIT') setIsSyncing(true);
       
       try {
-          const rawRecords = StorageService.getAvailability();
+          const rawRecords = forceRecords || StorageService.getAvailability();
           const blacklist = getBlacklist();
           const uniqueRecordMap = new Map<string, AvailabilityRecord>();
 
-          // 1. Carrega estrutura existente
+          // 1. Carrega e Sanitiza
           rawRecords.forEach(rec => {
               const cleanTag = extractTag(rec.tag);
               if (!cleanTag || blacklist.includes(cleanTag)) return; 
+              
               if (uniqueRecordMap.has(cleanTag)) {
                   const existing = uniqueRecordMap.get(cleanTag)!;
-                  // Merge inteligente
                   existing.manualOverrides = { ...existing.manualOverrides, ...rec.manualOverrides };
-                  // Copia status antigos, mas vamos sobrescrever os não manuais abaixo
                   Object.entries(rec.statusMap).forEach(([d, s]) => existing.statusMap[d] = s);
               } else {
-                  rec.tag = cleanTag;
+                  rec.tag = cleanTag; 
                   if(!rec.manualOverrides) rec.manualOverrides = {};
                   uniqueRecordMap.set(cleanTag, rec);
               }
           });
 
-          // 2. Garante linhas para Tags CA5 do sistema
+          // 2. Auto-Discovery
           const allSystemTags = [
               ...StorageService.getSchedule().map(i => i.frotaOm), 
               ...StorageService.getActiveMaintenances().map(i => i.header.tag),
@@ -183,37 +192,38 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
 
           allSystemTags.forEach(tagRaw => {
               const t = extractTag(tagRaw || '');
-              if (t && t.startsWith('CA5') && !uniqueRecordMap.has(t) && !blacklist.includes(t)) {
+              if (t && !uniqueRecordMap.has(t) && !blacklist.includes(t)) {
                   uniqueRecordMap.set(t, { id: crypto.randomUUID(), tag: t, statusMap: {}, manualOverrides: {} });
               }
           });
 
-          // 3. Processa Lógica Automática para os dias visíveis
+          // 3. Lógica Automática
+          const today = new Date();
+          today.setHours(23, 59, 59, 999); 
+
           if (currentDays) {
               uniqueRecordMap.forEach((rec) => {
                   currentDays.forEach(day => {
                       const dateKey = normalizeDateKey(day);
+                      if (rec.manualOverrides && rec.manualOverrides[dateKey]) return; 
+
+                      let autoEvents = getSystemEventsForCell(rec.tag, dateKey);
                       
-                      // SE TIVER OVERRIDE MANUAL, PULA A LÓGICA AUTOMÁTICA PARA ESTE DIA
-                      if (rec.manualOverrides && rec.manualOverrides[dateKey]) {
-                          return; 
+                      if (autoEvents.length === 0 && day <= today) {
+                          autoEvents = ['SEM_FALHA'];
+                      } else if (autoEvents.length > 0) {
+                          autoEvents = autoEvents.filter(s => s !== 'SEM_FALHA');
                       }
 
-                      // LÓGICA AUTOMÁTICA
-                      const autoEvents = getSystemEventsForCell(rec.tag, dateKey);
-                      
-                      // Só atualiza se houver eventos, senão deixa vazio (ou limpa se tinha auto antigo)
-                      // Nota: O estado "Sem Falha" é puramente manual, o sistema não adivinha.
                       rec.statusMap[dateKey] = autoEvents;
                   });
               });
           }
 
           const finalRecords = Array.from(uniqueRecordMap.values())
-                .filter(r => r.tag.startsWith('CA5'))
                 .sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
 
-          if (JSON.stringify(rawRecords) !== JSON.stringify(finalRecords)) {
+          if (JSON.stringify(rawRecords) !== JSON.stringify(finalRecords) || !forceRecords) {
               await StorageService.saveAvailability(finalRecords);
               recordsRef.current = finalRecords;
               setRecords(finalRecords);
@@ -222,6 +232,19 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
               setRecords(finalRecords);
           }
 
+      } finally {
+          setIsSyncing(false);
+      }
+  };
+
+  const saveAll = async () => {
+      setIsSyncing(true);
+      try {
+          // FORCE SYNC TO BACKEND
+          await StorageService.saveAvailability(records);
+          alert("TODOS OS DADOS FORAM SINCRONIZADOS COM O BANCO DE DADOS!");
+      } catch(e) {
+          alert("ERRO AO SALVAR NO BANCO. DADOS SALVOS LOCALMENTE.");
       } finally {
           setIsSyncing(false);
       }
@@ -237,25 +260,15 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
       let newStatuses = [...tempStatuses];
       
       if (status === 'SEM_FALHA') {
-          // EXCLUSIVO: Limpa tudo e seta Sem Falha
           newStatuses = ['SEM_FALHA'];
       } else if (status === 'CORRETIVA') {
-          // ACUMULATIVO: Adiciona mais uma corretiva à lista
-          // Remove "Sem Falha" se existir
           newStatuses = newStatuses.filter(s => s !== 'SEM_FALHA');
           newStatuses.push('CORRETIVA');
       } else {
-          // TOGGLE PADRÃO (Adiciona/Remove)
           newStatuses = newStatuses.filter(s => s !== 'SEM_FALHA');
-          if (newStatuses.includes(status)) {
-              // Remove a primeira ocorrência desse status
-              const idx = newStatuses.indexOf(status);
-              if (idx > -1) newStatuses.splice(idx, 1);
-          } else {
-              newStatuses.push(status);
-          }
+          newStatuses = newStatuses.filter(s => s === 'CORRETIVA');
+          newStatuses.push(status);
       }
-      
       setTempStatuses(newStatuses);
   };
 
@@ -265,11 +278,29 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
       const rec = newRecords.find(r => r.tag === editingCell.tag);
       if(rec) {
           rec.statusMap[editingCell.dateKey] = tempStatuses;
-          // MARCA COMO MANUAL PARA O SISTEMA NÃO SOBRESCREVER
           if (!rec.manualOverrides) rec.manualOverrides = {};
           rec.manualOverrides[editingCell.dateKey] = true;
 
           setRecords(newRecords);
+          // GARANTE SALVAMENTO IMEDIATO NO BANCO
+          await StorageService.saveAvailability(newRecords);
+      }
+      setEditingCell(null);
+      setTempStatuses([]);
+  };
+
+  const handleWipeDay = async () => {
+      // LIMPA O DIA E TRAVA COMO MANUAL (VAZIO)
+      if(!editingCell) return;
+      const newRecords = [...records];
+      const rec = newRecords.find(r => r.tag === editingCell.tag);
+      if(rec) {
+          rec.statusMap[editingCell.dateKey] = []; // Vazio
+          if (!rec.manualOverrides) rec.manualOverrides = {};
+          rec.manualOverrides[editingCell.dateKey] = true; // Trava
+
+          setRecords(newRecords);
+          // GARANTE SALVAMENTO IMEDIATO NO BANCO
           await StorageService.saveAvailability(newRecords);
       }
       setEditingCell(null);
@@ -277,18 +308,26 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
   };
 
   const handleClearCell = async () => { 
+      // RESTAURA PARA AUTOMÁTICO (REMOVE A TRAVA)
       if(!editingCell) return;
       const newRecords = [...records];
       const rec = newRecords.find(r => r.tag === editingCell.tag);
       if (rec) {
-          // REMOVE TRAVA MANUAL (VOLTA P/ AUTOMÁTICO)
           if (rec.manualOverrides) delete rec.manualOverrides[editingCell.dateKey];
           
-          // Recalcula auto imediatamente
           const autoEvents = getSystemEventsForCell(rec.tag, editingCell.dateKey);
-          rec.statusMap[editingCell.dateKey] = autoEvents;
+          const day = new Date(editingCell.dateKey.split('/').reverse().join('-')); 
+          const today = new Date();
+          
+          let finalEvents = autoEvents;
+          if (finalEvents.length === 0 && day <= today) {
+              finalEvents = ['SEM_FALHA'];
+          }
+
+          rec.statusMap[editingCell.dateKey] = finalEvents;
 
           setRecords(newRecords);
+          // GARANTE SALVAMENTO IMEDIATO NO BANCO
           await StorageService.saveAvailability(newRecords);
       }
       setEditingCell(null);
@@ -296,13 +335,20 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
   };
   
   const addRow = async () => {
-      const tag = prompt("DIGITE O TAG (Ex: CA530):");
+      const tag = prompt("DIGITE O TAG (Ex: CA5302):");
       if (!tag) return;
       const cleanTag = extractTag(tag);
-      if (!cleanTag || !cleanTag.startsWith('CA5')) { alert("Apenas equipamentos CA5 permitidos."); return; }
+      
+      if (!cleanTag) { 
+          alert("TAG INVÁLIDO. Deve começar com CA5 seguido de números (Ex: CA5302)."); 
+          return; 
+      }
       
       removeFromBlacklist(cleanTag);
-      if (records.find(r => r.tag === cleanTag)) { alert("Já existe."); return; }
+      if (records.some(r => r.tag === cleanTag)) { 
+          alert(`O equipamento ${cleanTag} JÁ EXISTE no quadro.`); 
+          return; 
+      }
       
       const newRec: AvailabilityRecord = { id: crypto.randomUUID(), tag: cleanTag, statusMap: {}, manualOverrides: {} };
       const updated = [...records, newRec].sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
@@ -322,11 +368,9 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
   const renderCellContent = (statusList: AvailabilityStatus[]) => {
       if(!statusList || statusList.length === 0) return null;
       
-      // Agrupa Corretivas para mostrar contador
       const corretivaCount = statusList.filter(s => s === 'CORRETIVA').length;
       const otherStatuses = statusList.filter(s => s !== 'CORRETIVA');
       
-      // Prioridade visual
       const sorted = [...otherStatuses].sort((a,b) => {
           const confA = STATUS_CONFIG[a] || { type: 'TEXT' };
           const confB = STATUS_CONFIG[b] || { type: 'TEXT' };
@@ -336,7 +380,6 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
 
       return (
           <div className="flex flex-wrap items-center justify-center gap-0.5 w-full h-full relative">
-              {/* Renderiza Corretiva com Contador se houver */}
               {corretivaCount > 0 && (
                   <div className="relative inline-flex items-center justify-center">
                       <span className="text-red-600 font-black text-sm drop-shadow-sm">●</span>
@@ -425,7 +468,6 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
       );
   }
 
-  // CONTADOR DE CORRETIVAS NO MODAL
   const modalCorretivaCount = tempStatuses.filter(s => s === 'CORRETIVA').length;
 
   return (
@@ -442,7 +484,8 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
                 <div className="px-4 text-center min-w-[120px]"><span className="block text-xs font-black text-gray-800 uppercase tracking-wide">{new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span></div>
                 <button onClick={() => { if(selectedMonth===11) { setSelectedMonth(0); setSelectedYear(y=>y+1) } else setSelectedMonth(m=>m+1) }} className="p-1.5 hover:bg-white rounded-lg transition-all text-gray-600"><Calendar size={14}/></button>
             </div>
-            <button onClick={() => syncWithSystem(daysInMonth)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95"><RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} /> Atualizar Sistema</button>
+            <button onClick={saveAll} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 border-b-2 border-green-800 active:border-b-0 active:translate-y-0.5"><Save size={14} /> SALVAR ALTERAÇÕES (BANCO)</button>
+            <button onClick={() => syncWithSystem(daysInMonth)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95"><RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} /> Atualizar</button>
             <button onClick={addRow} className="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-sm active:scale-95"><Plus size={14} /> Add Linha</button>
             <button onClick={() => setIsTvModeInternal(true)} className="flex items-center gap-2 bg-gray-900 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg hover:shadow-xl active:scale-95 border-b-4 border-black"><Monitor size={14} /> Modo TV</button>
         </div>
@@ -475,7 +518,6 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
                   {daysInMonth.map(date => {
                     const dateKey = normalizeDateKey(date);
                     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                    // Check if is manually overridden
                     const isManual = record.manualOverrides && record.manualOverrides[dateKey];
                     
                     return (
@@ -534,11 +576,12 @@ export const AvailabilityBoard: React.FC<AvailabilityBoardProps> = ({ variant = 
                       })}
                   </div>
                   <div className="bg-yellow-50 p-3 text-[9px] text-yellow-800 font-bold border-t border-yellow-100 flex items-center justify-center gap-2">
-                      <AlertCircle size={12}/> Ao salvar, este dia ficará travado em MANUAL (Ignora Agenda/Cards).
+                      <AlertCircle size={12}/> Ao salvar ou limpar, este dia ficará travado em MANUAL.
                   </div>
-                  <div className="p-4 bg-gray-50 border-t border-gray-200 flex gap-3">
-                      <button onClick={handleClearCell} className="flex-1 bg-white border border-red-200 text-red-600 px-4 py-3 rounded-xl font-black text-xs uppercase hover:bg-red-50 transition-colors flex items-center justify-center gap-2"><Trash2 size={16}/> Restaurar Auto</button>
-                      <button onClick={handleConfirmEdit} className="flex-[2] bg-[#007e7a] hover:bg-[#00605d] text-white px-4 py-3 rounded-xl font-black text-xs uppercase shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"><Save size={16}/> Salvar Manual</button>
+                  <div className="p-4 bg-gray-50 border-t border-gray-200 flex gap-2">
+                      <button onClick={handleWipeDay} className="flex-1 bg-white border border-gray-300 text-gray-700 px-3 py-3 rounded-xl font-black text-[10px] uppercase hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"><Eraser size={16}/> Limpar Dia</button>
+                      <button onClick={handleClearCell} className="flex-1 bg-white border border-red-200 text-red-600 px-3 py-3 rounded-xl font-black text-[10px] uppercase hover:bg-red-50 transition-colors flex items-center justify-center gap-2"><RefreshCw size={16}/> Restaurar Auto</button>
+                      <button onClick={handleConfirmEdit} className="flex-[2] bg-[#007e7a] hover:bg-[#00605d] text-white px-3 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"><Save size={16}/> Salvar Manual</button>
                   </div>
               </div>
           </div>

@@ -91,17 +91,9 @@ const App: React.FC = () => {
         StorageService.setupSubscriptions();
     }
     
-    // ATUALIZAÇÃO AUTOMÁTICA: 5 MINUTOS (300.000 ms)
-    const syncInterval = setInterval(() => {
-        if (navigator.onLine && localStorage.getItem('safemaint_auth') === 'true') {
-            console.log('SAFEMAINT: Sincronização Automática (5 min)...');
-            StorageService.initialSync();
-        }
-    }, 300000);
+    // ATUALIZAÇÃO MANUAL APENAS: Intervalo de 5 min removido conforme solicitação.
 
     setIsLoading(false);
-    
-    return () => clearInterval(syncInterval);
   }, []);
 
   const handleLogin = () => {

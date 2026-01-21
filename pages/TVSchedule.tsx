@@ -40,14 +40,13 @@ export const TVSchedule: React.FC<TVScheduleProps> = ({ variant = 'FULL' }) => {
 
   useEffect(() => {
     const clockInterval = setInterval(() => setNow(new Date()), 1000);
-    const dataInterval = setInterval(refreshData, 300000); // Atualiza dados a cada 5 Minutos (300.000ms)
+    // Intervalo de dados removido - Atualização Manual
     
     window.addEventListener('safemaint_storage_update', refreshData);
     refreshData();
 
     return () => { 
         clearInterval(clockInterval); 
-        clearInterval(dataInterval);
         window.removeEventListener('safemaint_storage_update', refreshData);
     };
   }, [viewDate]); // Recarrega se a data de visualização mudar

@@ -157,8 +157,8 @@ export interface PendingExtraDemand {
     status: 'PENDENTE';
 }
 
-// FIX: Add Availability types for the new feature.
-export type AvailabilityStatus = 'PREV' | 'CORRETIVA' | 'DEMANDA_EXTRA' | 'SEM_FALHA' | 'INSPECAO' | 'PR' | 'LB' | 'PNEUS' | 'MOTOR' | 'META';
+// FIX: Remove 'FILMAGEM' and 'LB' as requested.
+export type AvailabilityStatus = 'PREV' | 'CORRETIVA' | 'DEMANDA_EXTRA' | 'SEM_FALHA' | 'INSPECAO' | 'PR' | 'PNEUS' | 'MOTOR' | 'META';
 
 export interface AvailabilityRecord {
   id: string;
